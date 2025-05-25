@@ -10,7 +10,9 @@ import (
 )
 
 func RunServer() {
+	fmt.Printf("调试信息：准备启动服务。当前 GVA_CONFIG.System.UseRedis 配置为: %v\n", global.GVA_CONFIG.System.UseRedis)
 	if global.GVA_CONFIG.System.UseRedis {
+		fmt.Println("调试信息：GVA_CONFIG.System.UseRedis 条件为 true。即将调用 initialize.Redis()...")
 		// 初始化redis服务
 		initialize.Redis()
 		if global.GVA_CONFIG.System.UseMultipoint {
