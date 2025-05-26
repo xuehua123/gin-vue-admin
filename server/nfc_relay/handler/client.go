@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"errors"
+	"io"
+	"net"
 	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
@@ -38,12 +40,26 @@ type ProcessableMessage struct {
 	RawMessage []byte  // 原始消息字节
 }
 
+// WebsocketConnection 定义了 Client 所需的 WebSocket 连接方法。
+// 这允许在测试中使用模拟连接。
+type WebsocketConnection interface {
+	Close() error
+	SetReadLimit(limit int64)
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+	SetPongHandler(h func(string) error)
+	ReadMessage() (messageType int, p []byte, err error)
+	NextWriter(messageType int) (io.WriteCloser, error)
+	WriteMessage(messageType int, data []byte) error
+	RemoteAddr() net.Addr
+}
+
 // Client 是 WebSocket 连接和 Hub 之间的中间人。
 type Client struct {
 	hub *Hub
 
 	// conn 是 WebSocket 连接。
-	conn *websocket.Conn
+	conn WebsocketConnection
 
 	// send 是一个缓冲的出站消息通道。
 	send chan []byte
@@ -87,25 +103,35 @@ func (c *Client) GetCurrentRole() protocol.RoleType {
 
 // Send 将消息发送到客户端的出站通道。
 // 这是 ClientInfoProvider 接口的一部分。
-func (c *Client) Send(message []byte) error {
-	// 这里需要考虑 c.send 通道是否可能被关闭，以及如何处理错误
-	// 一个简单的实现是直接发送，但可能阻塞或 panic 如果通道已关闭且未被 Hub 正确处理
-	// 更好的方式可能是使用 select 和超时，或者检查通道是否仍然打开
-	// 为了简单起见，我们假设 Hub 会处理通道关闭的情况
+func (c *Client) Send(message []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			// 检查 panic 是否因为 "send on closed channel"
+			// 注意：依赖具体的 panic 信息字符串可能不够健壮，但对于这个特定场景是常见的做法
+			if e, ok := r.(error); ok && e.Error() == "send on closed channel" {
+				global.GVA_LOG.Warn("客户端 Send 方法：尝试向已关闭的 send 通道发送消息", zap.String("clientID", c.ID))
+				err = errors.New("failed to send message to client: channel is closed")
+			} else {
+				// 如果是其他 panic，重新抛出
+				panic(r)
+			}
+		}
+	}()
+
 	select {
 	case c.send <- message:
 		return nil
 	default:
-		// 如果通道已满或关闭，可以返回一个错误
-		// 或者记录日志并认为发送失败
-		global.GVA_LOG.Warn("客户端 Send 方法：发送消息到 c.send 通道失败（可能已满或关闭）", zap.String("clientID", c.ID))
-		return errors.New("failed to send message to client: channel full or closed") // 需要导入 "errors"
+		// 如果 default 被执行，说明通道已满（因为如果通道关闭，上面的 case 会 panic 被 recover 捕获）
+		// 或者 c.send 为 nil (虽然本代码中不太可能，因为 make 初始化了)
+		global.GVA_LOG.Warn("客户端 Send 方法：发送消息到 c.send 通道失败（已满）", zap.String("clientID", c.ID))
+		return errors.New("failed to send message to client: channel full") // 调整错误信息
 	}
 }
 
 // NewClient 创建一个新的 Client 实例。
 // hub 被传递进来，以便客户端可以注册自己并发送消息。
-func NewClient(hub *Hub, conn *websocket.Conn) *Client {
+func NewClient(hub *Hub, conn WebsocketConnection) *Client {
 	return &Client{
 		hub:  hub,
 		conn: conn,
