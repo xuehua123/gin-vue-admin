@@ -305,106 +305,159 @@ func (h *Hub) handleClientAuth(client *Client, rawMsg json.RawMessage) {
 
 // handleDeclareRole 处理客户端声明角色和在线状态的请求
 func (h *Hub) handleDeclareRole(client *Client, messageBytes []byte) {
-	// 日志添加: 函数入口
-	global.GVA_LOG.Debug("handleDeclareRole: Entered function", zap.String("clientID", client.ID), zap.String("userID", client.UserID))
-
 	var declareMsg protocol.DeclareRoleMessage
 	if err := json.Unmarshal(messageBytes, &declareMsg); err != nil {
 		global.GVA_LOG.Error("Hub: Error unmarshalling declare role message", zap.Error(err), zap.String("clientID", client.GetID()))
 		sendErrorMessage(client, protocol.ErrorCodeBadRequest, "Invalid declare role message format")
 		return
 	}
-	// 日志添加: 消息解析成功
-	global.GVA_LOG.Debug("handleDeclareRole: DeclareRoleMessage unmarshalled successfully",
-		zap.String("clientID", client.ID),
-		zap.String("requestedRole", string(declareMsg.Role)),
-		zap.Bool("requestedOnline", declareMsg.Online),
-		zap.String("requestedProviderName", declareMsg.ProviderName),
+
+	global.GVA_LOG.Info("Hub: Received DeclareRoleMessage",
+		zap.String("clientID", client.GetID()),
+		zap.String("role", string(declareMsg.Role)),
+		zap.Bool("online", declareMsg.Online),
+		zap.String("providerName", declareMsg.ProviderName),
 	)
 
 	if declareMsg.Role != protocol.RoleProvider && declareMsg.Role != protocol.RoleReceiver && declareMsg.Role != protocol.RoleNone {
-		global.GVA_LOG.Warn("Hub: Invalid role in DeclareRoleMessage", zap.String("role", string(declareMsg.Role)), zap.String("clientID", client.GetID()))
+		global.GVA_LOG.Warn("Hub: Invalid role in DeclareRoleMessage",
+			zap.String("clientID", client.GetID()),
+			zap.String("roleReceived", string(declareMsg.Role)),
+		)
 		sendErrorMessage(client, protocol.ErrorCodeBadRequest, "Invalid role specified")
 		return
 	}
 
+	var (
+		shouldNotifyProviderList bool
+		userIDToNotify           string
+		finalDisplayName         string
+		logMessage               string
+		logFields                []zap.Field
+	)
+
+	// --- Critical section for updating shared Hub state and client state ---
 	h.providerMutex.Lock()
-	defer h.providerMutex.Unlock()
 
 	oldRole := client.CurrentRole
 	oldIsOnline := client.IsOnline
-	// 日志添加: 记录旧状态
-	global.GVA_LOG.Debug("handleDeclareRole: Client old state",
-		zap.String("clientID", client.ID),
-		zap.String("oldRole", string(oldRole)),
-		zap.Bool("oldIsOnline", oldIsOnline),
-		zap.String("oldDisplayName", client.DisplayName),
-	)
+	// oldDisplayName := client.DisplayName // Keep a copy if needed for complex logic not present now
 
 	client.CurrentRole = declareMsg.Role
 	client.IsOnline = declareMsg.Online
+	finalDisplayName = client.DisplayName // Default to current if not changed by provider logic
 
-	if declareMsg.Role == protocol.RoleProvider {
+	providerStatusChanged := false
+	roleChangedFromProvider := false
+	roleChangedToProviderOffline := false
+
+	if client.CurrentRole == protocol.RoleProvider {
 		if declareMsg.ProviderName != "" {
 			client.DisplayName = declareMsg.ProviderName
-		} else if client.DisplayName == "" {
-			client.DisplayName = "Default Provider " + client.GetID()[:6]
-		}
+			finalDisplayName = declareMsg.ProviderName
+		} else if client.DisplayName == "" { // Only set default if current is empty and no new name provided
+			id := client.GetID()
+			idSuffix := id
+			if len(id) > 8 {
+				idSuffix = id[:8]
+			}
+			defaultName := "Provider " + idSuffix
+			client.DisplayName = defaultName
+			finalDisplayName = defaultName
+			global.GVA_LOG.Info("Hub: Provider declared without name, using default",
+				zap.String("clientID", client.GetID()),
+				zap.String("defaultName", client.DisplayName),
+			)
+		} // If ProviderName in msg is empty but client.DisplayName already exists, keep existing client.DisplayName
 
 		if client.IsOnline {
-			h.cardProviders[client.GetID()] = client
-			global.GVA_LOG.Info("Hub: Provider declared and now online", // 修改日志消息使其更清晰
-				zap.String("clientID", client.GetID()),
-				zap.String("userID", client.GetUserID()),
-				zap.String("providerName", client.DisplayName),
-			)
+			if _, exists := h.cardProviders[client.GetID()]; !exists || oldRole != protocol.RoleProvider || !oldIsOnline {
+				h.cardProviders[client.GetID()] = client
+				providerStatusChanged = true
+				logMessage = "Hub: Provider declared and online, added to available list."
+				logFields = []zap.Field{zap.String("providerID", client.GetID()), zap.String("displayName", client.DisplayName)}
+			} else {
+				// Provider was already online and in list, possibly just a DisplayName update or re-affirmation
+				logMessage = "Hub: Online provider re-declared role/status (or updated display name)."
+				logFields = []zap.Field{zap.String("providerID", client.GetID()), zap.String("newDisplayName", client.DisplayName)}
+				if oldIsOnline && oldRole == protocol.RoleProvider && client.DisplayName != finalDisplayName { // Check if only display name changed for an existing online provider
+					// Notification might not be strictly needed for only display name change,
+					// but current logic below triggers if providerStatusChanged is true.
+					// For now, we assume any change to an online provider or bringing one online needs notification.
+				}
+			}
+		} else { // Provider is declaring as offline
+			if _, exists := h.cardProviders[client.GetID()]; exists {
+				delete(h.cardProviders, client.GetID())
+				providerStatusChanged = true        // Status changed from online (in map) to offline
+				roleChangedToProviderOffline = true // Specifically for notification logic
+				logMessage = "Hub: Provider declared offline, removed from available list."
+				logFields = []zap.Field{zap.String("providerID", client.GetID())}
+			} else {
+				logMessage = "Hub: Provider declared offline (was not in available list)."
+				logFields = []zap.Field{zap.String("providerID", client.GetID())}
+			}
+		}
+	} else { // Role is Receiver or None
+		finalDisplayName = ""         // Receivers/None don't have display names in this context
+		if client.DisplayName != "" { // Clear display name if it was set (e.g. from previous provider role)
+			client.DisplayName = ""
+		}
+		if oldRole == protocol.RoleProvider { // Was a provider before
+			if _, exists := h.cardProviders[client.GetID()]; exists {
+				delete(h.cardProviders, client.GetID())
+				providerStatusChanged = true   // Status changed as provider removed
+				roleChangedFromProvider = true // Specifically for notification logic
+				logMessage = "Hub: Client changed role from provider, removed from available list."
+				logFields = []zap.Field{zap.String("clientID", client.GetID()), zap.String("newRole", string(client.CurrentRole))}
+			} else {
+				logMessage = "Hub: Client changed role from provider (was not in available list)."
+				logFields = []zap.Field{zap.String("clientID", client.GetID()), zap.String("newRole", string(client.CurrentRole))}
+			}
 		} else {
-
-			delete(h.cardProviders, client.GetID())
-			global.GVA_LOG.Info("Hub: Provider declared and now offline", // 修改日志消息
-				zap.String("clientID", client.GetID()),
-				zap.String("userID", client.GetUserID()),
-				zap.String("providerName", client.DisplayName), // 即使离线也记录名称
-			)
+			logMessage = "Hub: Client declared role."
+			logFields = []zap.Field{zap.String("clientID", client.GetID()), zap.String("role", string(client.CurrentRole))}
 		}
-	} else {
-		if oldRole == protocol.RoleProvider {
-			delete(h.cardProviders, client.GetID())
-			global.GVA_LOG.Info("Hub: Client changed role from provider, removed from provider list", zap.String("clientID", client.GetID()), zap.String("userID", client.GetUserID()))
-		}
-		client.DisplayName = ""
 	}
 
-	global.GVA_LOG.Info("Hub: Client role/status updated successfully", // 修改日志消息
-		zap.String("clientID", client.GetID()),
-		zap.String("userID", client.GetUserID()),
-		zap.String("newRole", string(client.CurrentRole)),
-		zap.Bool("isOnline", client.IsOnline),
-		zap.String("displayName", client.DisplayName),
-	)
+	if logMessage != "" {
+		global.GVA_LOG.Info(logMessage, append(logFields, zap.String("userID", client.GetUserID()))...)
+	}
 
-	response := protocol.RoleDeclaredResponseMessage{
+	// Determine if notification is needed based on status changes relevant to provider list
+	if providerStatusChanged || roleChangedFromProvider || roleChangedToProviderOffline {
+		shouldNotifyProviderList = true
+		userIDToNotify = client.GetUserID() // UserID of the client whose provider status might have changed
+	}
+
+	// Capture necessary state for response before unlocking
+	responseRole := string(client.CurrentRole)
+	responseIsOnline := client.IsOnline
+
+	h.providerMutex.Unlock()
+	// --- End of critical section ---
+
+	// Send response message outside of the lock
+	responseMessage := protocol.RoleDeclaredResponseMessage{
 		Type:    protocol.MessageTypeRoleDeclaredResponse,
 		Success: true,
-		Role:    client.CurrentRole,
-		Online:  client.IsOnline,
+		Role:    protocol.RoleType(responseRole),
+		Online:  responseIsOnline,
+		// SessionID: responseClientID, // Removed: Field is commented out in struct definition
 	}
-	// 日志添加: 发送响应前
-	global.GVA_LOG.Debug("handleDeclareRole: Attempting to send RoleDeclaredResponseMessage", zap.String("clientID", client.ID))
-	if err := sendProtoMessage(client, response); err != nil {
-		global.GVA_LOG.Error("Hub: Failed to send role declared response", zap.Error(err), zap.String("clientID", client.GetID()))
-	} else {
-		// 日志添加: 发送响应成功
-		global.GVA_LOG.Debug("handleDeclareRole: RoleDeclaredResponseMessage sent successfully", zap.String("clientID", client.ID))
+	if err := sendProtoMessage(client, responseMessage); err != nil {
+		global.GVA_LOG.Error("Hub: Failed to send role declared response",
+			zap.String("clientID", client.GetID()),
+			zap.Error(err),
+		)
+		// Do not return, still attempt to notify if needed as state change might have occurred
 	}
 
-	if (oldRole == protocol.RoleProvider && (oldRole != client.CurrentRole || oldIsOnline != client.IsOnline)) || (client.CurrentRole == protocol.RoleProvider && (oldRole != client.CurrentRole || oldIsOnline != client.IsOnline)) {
-		// 日志添加: 准备通知订阅者
-		global.GVA_LOG.Debug("handleDeclareRole: Provider status changed, will notify subscribers", zap.String("clientID", client.ID), zap.String("userID", client.GetUserID()))
-		h.notifyProviderListSubscribers(client.GetUserID())
+	// Spawn notification goroutine outside of the lock
+	if shouldNotifyProviderList && userIDToNotify != "" {
+		global.GVA_LOG.Debug("Hub: Notifying provider list subscribers due to role/status change", zap.String("userID", userIDToNotify), zap.String("triggeringClientID", client.GetID()))
+		go h.notifyProviderListSubscribers(userIDToNotify)
 	}
-	// 日志添加: 函数出口
-	global.GVA_LOG.Debug("handleDeclareRole: Exiting function", zap.String("clientID", client.ID))
 }
 
 // handleClientDisconnect 处理客户端断开连接时与会话相关的逻辑
