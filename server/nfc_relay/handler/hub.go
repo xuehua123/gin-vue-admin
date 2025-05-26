@@ -14,6 +14,7 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/nfc_relay/session"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils" // 导入JWT工具包
 	"github.com/google/uuid"
+
 	// "github.com/prometheus/client_golang/prometheus" // Removed: imported and not used
 	"go.uber.org/zap"
 )
@@ -304,12 +305,22 @@ func (h *Hub) handleClientAuth(client *Client, rawMsg json.RawMessage) {
 
 // handleDeclareRole 处理客户端声明角色和在线状态的请求
 func (h *Hub) handleDeclareRole(client *Client, messageBytes []byte) {
+	// 日志添加: 函数入口
+	global.GVA_LOG.Debug("handleDeclareRole: Entered function", zap.String("clientID", client.ID), zap.String("userID", client.UserID))
+
 	var declareMsg protocol.DeclareRoleMessage
 	if err := json.Unmarshal(messageBytes, &declareMsg); err != nil {
 		global.GVA_LOG.Error("Hub: Error unmarshalling declare role message", zap.Error(err), zap.String("clientID", client.GetID()))
 		sendErrorMessage(client, protocol.ErrorCodeBadRequest, "Invalid declare role message format")
 		return
 	}
+	// 日志添加: 消息解析成功
+	global.GVA_LOG.Debug("handleDeclareRole: DeclareRoleMessage unmarshalled successfully",
+		zap.String("clientID", client.ID),
+		zap.String("requestedRole", string(declareMsg.Role)),
+		zap.Bool("requestedOnline", declareMsg.Online),
+		zap.String("requestedProviderName", declareMsg.ProviderName),
+	)
 
 	if declareMsg.Role != protocol.RoleProvider && declareMsg.Role != protocol.RoleReceiver && declareMsg.Role != protocol.RoleNone {
 		global.GVA_LOG.Warn("Hub: Invalid role in DeclareRoleMessage", zap.String("role", string(declareMsg.Role)), zap.String("clientID", client.GetID()))
@@ -322,6 +333,13 @@ func (h *Hub) handleDeclareRole(client *Client, messageBytes []byte) {
 
 	oldRole := client.CurrentRole
 	oldIsOnline := client.IsOnline
+	// 日志添加: 记录旧状态
+	global.GVA_LOG.Debug("handleDeclareRole: Client old state",
+		zap.String("clientID", client.ID),
+		zap.String("oldRole", string(oldRole)),
+		zap.Bool("oldIsOnline", oldIsOnline),
+		zap.String("oldDisplayName", client.DisplayName),
+	)
 
 	client.CurrentRole = declareMsg.Role
 	client.IsOnline = declareMsg.Online
@@ -329,32 +347,35 @@ func (h *Hub) handleDeclareRole(client *Client, messageBytes []byte) {
 	if declareMsg.Role == protocol.RoleProvider {
 		if declareMsg.ProviderName != "" {
 			client.DisplayName = declareMsg.ProviderName
-		} else if client.DisplayName == "" { // 如果客户端没有提供名称，且之前也没有名称，则使用默认
-			client.DisplayName = "Default Provider " + client.GetID()[:6] // 例如，使用部分ID作为默认名
+		} else if client.DisplayName == "" {
+			client.DisplayName = "Default Provider " + client.GetID()[:6]
 		}
-		// 如果 Online 为 true, 添加到 cardProviders 列表
+
 		if client.IsOnline {
 			h.cardProviders[client.GetID()] = client
-			global.GVA_LOG.Info("Hub: Provider declared and online",
+			global.GVA_LOG.Info("Hub: Provider declared and now online", // 修改日志消息使其更清晰
 				zap.String("clientID", client.GetID()),
 				zap.String("userID", client.GetUserID()),
 				zap.String("providerName", client.DisplayName),
 			)
 		} else {
-			// 如果 Online 为 false, 从 cardProviders 列表移除
+
 			delete(h.cardProviders, client.GetID())
-			global.GVA_LOG.Info("Hub: Provider declared offline", zap.String("clientID", client.GetID()), zap.String("userID", client.GetUserID()))
+			global.GVA_LOG.Info("Hub: Provider declared and now offline", // 修改日志消息
+				zap.String("clientID", client.GetID()),
+				zap.String("userID", client.GetUserID()),
+				zap.String("providerName", client.DisplayName), // 即使离线也记录名称
+			)
 		}
 	} else {
-		// 如果角色不是 provider, 或者从 provider 变更为其他角色，则从 cardProviders 列表移除
 		if oldRole == protocol.RoleProvider {
 			delete(h.cardProviders, client.GetID())
-			global.GVA_LOG.Info("Hub: Client changed role from provider, removed from list", zap.String("clientID", client.GetID()), zap.String("userID", client.GetUserID()))
+			global.GVA_LOG.Info("Hub: Client changed role from provider, removed from provider list", zap.String("clientID", client.GetID()), zap.String("userID", client.GetUserID()))
 		}
-		client.DisplayName = "" // 非 provider 清除显示名称
+		client.DisplayName = ""
 	}
 
-	global.GVA_LOG.Info("Hub: Client role/status updated",
+	global.GVA_LOG.Info("Hub: Client role/status updated successfully", // 修改日志消息
 		zap.String("clientID", client.GetID()),
 		zap.String("userID", client.GetUserID()),
 		zap.String("newRole", string(client.CurrentRole)),
@@ -362,25 +383,28 @@ func (h *Hub) handleDeclareRole(client *Client, messageBytes []byte) {
 		zap.String("displayName", client.DisplayName),
 	)
 
-	// 发送响应给客户端
 	response := protocol.RoleDeclaredResponseMessage{
 		Type:    protocol.MessageTypeRoleDeclaredResponse,
 		Success: true,
 		Role:    client.CurrentRole,
 		Online:  client.IsOnline,
 	}
+	// 日志添加: 发送响应前
+	global.GVA_LOG.Debug("handleDeclareRole: Attempting to send RoleDeclaredResponseMessage", zap.String("clientID", client.ID))
 	if err := sendProtoMessage(client, response); err != nil {
 		global.GVA_LOG.Error("Hub: Failed to send role declared response", zap.Error(err), zap.String("clientID", client.GetID()))
+	} else {
+		// 日志添加: 发送响应成功
+		global.GVA_LOG.Debug("handleDeclareRole: RoleDeclaredResponseMessage sent successfully", zap.String("clientID", client.ID))
 	}
 
-	// 检查发卡方列表是否有变化，并通知订阅者
-	// 只有当旧角色是 provider 或新角色是 provider，并且在线状态有变化，或者名称有变化时，才需要通知
-	// 或者更简单：只要 client.UserID 下的 provider 列表状态可能因这次操作而改变，就通知。
 	if (oldRole == protocol.RoleProvider && (oldRole != client.CurrentRole || oldIsOnline != client.IsOnline)) || (client.CurrentRole == protocol.RoleProvider && (oldRole != client.CurrentRole || oldIsOnline != client.IsOnline)) {
-		// 当 provider 上线、下线、或从 provider 角色改变时，其 UserID 下的列表会发生变化，需要通知
+		// 日志添加: 准备通知订阅者
+		global.GVA_LOG.Debug("handleDeclareRole: Provider status changed, will notify subscribers", zap.String("clientID", client.ID), zap.String("userID", client.GetUserID()))
 		h.notifyProviderListSubscribers(client.GetUserID())
-		// 如果 provider 之前是别的 UserID（不太可能发生，因为 UserID 在认证后固定），也需要处理旧 UserID 的通知
 	}
+	// 日志添加: 函数出口
+	global.GVA_LOG.Debug("handleDeclareRole: Exiting function", zap.String("clientID", client.ID))
 }
 
 // handleClientDisconnect 处理客户端断开连接时与会话相关的逻辑
@@ -497,24 +521,21 @@ func sendErrorMessage(client session.ClientInfoProvider, code int, message strin
 
 	HubErrors.WithLabelValues(strconv.Itoa(code), "nfc_relay_hub.sendErrorMessage").Inc()
 
-	logFields := []zap.Field{
-		zap.String("client_id_interface", client.GetID()), // Generic ID from interface
-	}
-	if c, ok := client.(*Client); ok { // Attempt to cast to *Client to get more specific details
-		logFields = append(logFields, zap.String("client_id_concrete", c.ID))
-		if c.UserID != "" {
-			logFields = append(logFields, zap.String("user_id", c.UserID))
+	logFields := []zap.Field{}
+	if client != nil { // Add client related fields only if client is not nil
+		logFields = append(logFields, zap.String("client_id", client.GetID()))
+		if client.GetUserID() != "" {
+			logFields = append(logFields, zap.String("user_id", client.GetUserID()))
 		}
-		if c.SessionID != "" {
-			logFields = append(logFields, zap.String("session_id", c.SessionID))
-		}
-		if c.conn != nil {
-			logFields = append(logFields, zap.String("source_ip", c.conn.RemoteAddr().String()))
-		}
-	} else {
-		// If not *Client, try to get SessionID via interface if available
 		if client.GetSessionID() != "" {
-			logFields = append(logFields, zap.String("session_id_interface", client.GetSessionID()))
+			logFields = append(logFields, zap.String("session_id", client.GetSessionID()))
+		}
+		if c, ok := client.(*Client); ok { // Attempt to cast to *Client to get more specific details
+			if c.conn != nil {
+				logFields = append(logFields, zap.String("client_ip", c.conn.RemoteAddr().String()))
+			}
+			// If c.ID is different from client.GetID() or provides more specificty, ensure "client_id" is prioritized.
+			// Current GetID() for *Client returns c.ID, so it's covered.
 		}
 	}
 
