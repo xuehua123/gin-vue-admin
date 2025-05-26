@@ -37,4 +37,7 @@ type Server struct {
 
 	// MCP配置
 	MCP MCP `mapstructure:"mcp" json:"mcp" yaml:"mcp"`
+
+	// // NFC Relay 配置
+	NfcRelay NfcRelay `mapstructure:"nfc-relay" json:"nfc-relay" yaml:"nfc-relay"`
 }

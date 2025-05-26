@@ -7,8 +7,10 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/docs"
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
+	NFCRelayRouter "github.com/flipped-aurora/gin-vue-admin/server/nfc_relay/router"
 	"github.com/flipped-aurora/gin-vue-admin/server/router"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -39,6 +41,9 @@ func Routers() *gin.Engine {
 	if gin.Mode() == gin.DebugMode {
 		Router.Use(gin.Logger())
 	}
+
+	// Add Prometheus 指标处理程序
+	Router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	sseServer := McpRun()
 
@@ -82,6 +87,12 @@ func Routers() *gin.Engine {
 			c.JSON(http.StatusOK, "ok")
 		})
 	}
+
+	// 初始化 NFC 中继 WebSocket 路由
+	// 通常 WebSocket 端点有自己的会话和认证机制，可以放在 PublicGroup
+	// 或者为其创建一个不经过主要鉴权中间件的特定 Group
+	NFCRelayRouter.InitNFCRelayRouter(PublicGroup)
+
 	{
 		systemRouter.InitBaseRouter(PublicGroup) // 注册基础功能路由 不做鉴权
 		systemRouter.InitInitRouter(PublicGroup) // 自动初始化相关
