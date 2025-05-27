@@ -67,16 +67,47 @@ func mockClientForHubTests(hub *Hub) *Client {
 
 // setupHubTestGlobalConfig initializes global configurations needed for hub tests.
 func setupHubTestGlobalConfig(t *testing.T) {
-	// Ensure GVA_CONFIG and NfcRelay are initialized
-	if global.GVA_CONFIG.NfcRelay.WebsocketPongWaitSec == 0 { // Check one of the fields
-		global.GVA_CONFIG.NfcRelay = config.NfcRelay{
-			HubCheckIntervalSec:       60,
-			SessionInactiveTimeoutSec: 300,
-			WebsocketWriteWaitSec:     10,
-			WebsocketPongWaitSec:      60,
-			WebsocketMaxMessageBytes:  2048,
+	// Ensure GVA_CONFIG itself is not nil and then check/initialize NfcRelay.
+	// Viper usually populates GVA_CONFIG, but in tests, we might need to ensure it.
+	// A simple check could be on a top-level field of GVA_CONFIG if one is always expected.
+	// For now, let's assume GVA_CONFIG structure is allocated and focus on NfcRelay part.
+	// A more robust way would be to ensure config.Server is initialized if any part of it is zero/default.
+
+	// If GVA_CONFIG itself is the zero value of config.Server, initialize it.
+	// This is a basic check. In a real scenario, Viper would populate this from a file.
+	if global.GVA_CONFIG.System.Addr == 0 { // Check a field from System part of Server config
+		global.GVA_CONFIG = config.Server{
+			System: config.System{
+				Addr: 8888, // Default test address
+			},
+			JWT: config.JWT{
+				SigningKey:  "test-signing-key",
+				ExpiresTime: "24h",
+				BufferTime:  "1h",
+				Issuer:      "test-issuer",
+			},
+			NfcRelay: config.NfcRelay{ // Initialize NfcRelay along with Server
+				HubCheckIntervalSec:       60,
+				SessionInactiveTimeoutSec: 300,
+				WebsocketWriteWaitSec:     10,
+				WebsocketPongWaitSec:      60,
+				WebsocketMaxMessageBytes:  2048,
+			},
+			// Initialize other necessary parts of config.Server with defaults for tests
+		}
+	} else {
+		// GVA_CONFIG is already somewhat initialized, ensure NfcRelay part is.
+		if global.GVA_CONFIG.NfcRelay.WebsocketPongWaitSec == 0 {
+			global.GVA_CONFIG.NfcRelay = config.NfcRelay{
+				HubCheckIntervalSec:       60,
+				SessionInactiveTimeoutSec: 300,
+				WebsocketWriteWaitSec:     10,
+				WebsocketPongWaitSec:      60,
+				WebsocketMaxMessageBytes:  2048,
+			}
 		}
 	}
+
 	// Ensure GVA_LOG is initialized
 	if global.GVA_LOG == nil {
 		// For tests, we can use a Nop logger or a test logger

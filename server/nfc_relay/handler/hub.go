@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -456,84 +455,76 @@ func (h *Hub) handleDeclareRole(client *Client, messageBytes []byte) {
 
 	// Spawn notification goroutine outside of the lock
 	if shouldNotifyProviderList && userIDToNotify != "" {
-		global.GVA_LOG.Debug("Hub: Notifying provider list subscribers due to role/status change", zap.String("userID", userIDToNotify), zap.String("triggeringClientID", client.GetID()))
+		global.GVA_LOG.Debug("Hub (handleDeclareRole): Notifying provider list subscribers due to role/status change.", zap.String("userID", userIDToNotify), zap.String("triggeringClientID", client.GetID()))
 		go h.notifyProviderListSubscribers(userIDToNotify)
 	}
 }
 
 // handleClientDisconnect 处理客户端断开连接时与会话相关的逻辑
 func (h *Hub) handleClientDisconnect(client *Client) {
-	// 从发卡方列表中移除 (如果存在)
-	if client.CurrentRole == "provider" {
-		h.providerMutex.Lock()
-		delete(h.cardProviders, client.GetID())
-		// 需要通知相关 UserID 的订阅者，因为一个 provider 下线了
-		userIDOfDisconnectedProvider := client.UserID
-		h.providerMutex.Unlock() // 先解锁再通知，避免死锁
-		global.GVA_LOG.Info("发卡方客户端断开连接，已从可用列表移除", zap.String("clientID", client.GetID()), zap.String("userID", client.UserID))
-		if userIDOfDisconnectedProvider != "" {
-			go h.notifyProviderListSubscribers(userIDOfDisconnectedProvider)
-		}
+	clientID := client.GetID() // Cache client ID for logging after client might be nilled or its state changed
+	clientUserID := client.GetUserID()
+
+	global.GVA_LOG.Info("开始处理客户端断开连接", zap.String("clientID", clientID), zap.String("userID", clientUserID))
+
+	// 检查客户端是否在会话中，如果是，则终止会话
+	// 注意：terminateSessionByID 内部有自己的锁，并且会修改 client.SessionID
+	// 为避免死锁或竞争，在调用它之前，不要持有 h.providerMutex
+	currentSessionID := client.GetSessionID() // Get SessionID before it's cleared by terminateSessionByID
+	if currentSessionID != "" {
+		global.GVA_LOG.Info("客户端断开连接时仍在会话中，准备终止会话",
+			zap.String("clientID", clientID),
+			zap.String("sessionID", currentSessionID),
+		)
+		// 异步终止会话，以避免阻塞此处理流程，并确保锁的正确管理
+		// terminateSessionByID 将处理通知和清理
+		go h.terminateSessionByID(currentSessionID, "客户端断开连接", clientID, clientUserID)
+		// 等待一小段时间让 terminateSessionByID 中的清理逻辑（如SessionID清空）有机会执行
+		// 这是一个临时的辅助手段，理想情况下应有更健壮的同步机制。
+		// 但考虑到 terminateSessionByID 是异步的，直接检查 client.SessionID 可能不是最新的。
+		// 主要目的是让后续的 provider 状态检查能基于会话已尝试终止的假设。
+		// time.Sleep(50 * time.Millisecond) // 暂时移除，看是否是导致测试不稳定的原因
 	}
 
-	var sessionToEndNotifyUserID string
-	originalSessionID := client.SessionID // Store original session ID before it's potentially cleared
+	wasProvider := false
+	userIDOfDisconnectedProvider := client.GetUserID() // Ensure we have this before the client's state might change further
 
-	if client.SessionID != "" {
-		// We need to lock earlier to safely read client.SessionID and then h.sessions
-		h.providerMutex.Lock()
-		s, exists := h.sessions[client.SessionID]
-		if exists {
-			global.GVA_LOG.Info("客户端断开，开始处理其活动会话的终止",
-				zap.String("clientID", client.ID),
-				zap.String("sessionID", client.SessionID),
-			)
-			// Store peer info before session is deleted by terminateSessionByID
-			peer := s.GetPeer(client)
-			var peerUserIDIfProvider string
-			if peerConcrete, ok := peer.(*Client); ok {
-				if peerConcrete.CurrentRole == "provider" {
-					peerUserIDIfProvider = peerConcrete.UserID
-				}
-			}
-			h.providerMutex.Unlock() // Unlock before calling terminateSessionByID which locks internally
-
-			h.terminateSessionByID(originalSessionID, "客户端断开连接", client.GetID(), client.GetUserID())
-
-			// After termination, if the peer was a provider and became free, we might need to notify its subscribers
-			// This logic is now partly handled within terminateSessionByID if a provider becomes free.
-			// However, notifyProviderListSubscribers relies on UserID. Let's check if the peer (now free) needs its list updated.
-			if peerUserIDIfProvider != "" {
-				sessionToEndNotifyUserID = peerUserIDIfProvider
-			}
-
-		} else {
-			// Session doesn't exist in h.sessions, might have been terminated by other means.
-			// Clear client's session ID just in case.
-			client.SessionID = ""
-			h.providerMutex.Unlock()
-		}
-	} else {
-		// Client was not in a session or SessionID was already cleared.
-	}
-
-	// If a provider (the peer of the disconnected client) became free due to session termination
-	if sessionToEndNotifyUserID != "" {
-		go h.notifyProviderListSubscribers(sessionToEndNotifyUserID)
-	}
-
-	// 从所有 providerListSubscribers 中移除断开的客户端
 	h.providerMutex.Lock()
-	for userID, subscribers := range h.providerListSubscribers {
-		if _, ok := subscribers[client]; ok {
-			delete(h.providerListSubscribers[userID], client)
-			if len(h.providerListSubscribers[userID]) == 0 {
-				delete(h.providerListSubscribers, userID)
+	// 从 cardProviders 中移除 (如果存在)
+	if _, ok := h.cardProviders[clientID]; ok {
+		delete(h.cardProviders, clientID)
+		wasProvider = true
+		global.GVA_LOG.Debug("Provider explicitly deleted from cardProviders map in handleClientDisconnect", zap.String("clientID", clientID))
+		global.GVA_LOG.Info("发卡方客户端断开连接，从可用列表中移除 (in lock)", zap.String("clientID", clientID), zap.String("userID", userIDOfDisconnectedProvider))
+	}
+
+	// 从所有 providerListSubscribers 订阅列表中移除此断开连接的客户端
+	// 这确保如果这个客户端本身是一个订阅者，它会被清理
+	for forUserID, subscribersMap := range h.providerListSubscribers {
+		if _, subscribed := subscribersMap[client]; subscribed {
+			delete(subscribersMap, client)
+			global.GVA_LOG.Debug("已断开的客户端从其订阅的提供者列表(for UserID)中移除",
+				zap.String("disconnectedClientID", clientID),
+				zap.String("subscribedToProviderListForUserID", forUserID),
+			)
+			if len(subscribersMap) == 0 {
+				delete(h.providerListSubscribers, forUserID)
+				global.GVA_LOG.Debug("特定UserID的提供者列表订阅者集合已空，移除该UserID的订阅者映射", zap.String("userID", forUserID))
 			}
-			global.GVA_LOG.Debug("已从发卡方列表订阅者中移除断开的客户端", zap.String("clientID", client.GetID()), zap.String("subscribedToUserID", userID))
 		}
 	}
 	h.providerMutex.Unlock()
+
+	// 如果断开的是一个 Provider，需要通知其 UserID 的订阅者列表已更改
+	if wasProvider {
+		global.GVA_LOG.Info("发卡方客户端已断开，准备通知其 UserID 的订阅者有关列表状态变更",
+			zap.String("disconnectedProviderClientID", clientID),
+			zap.String("userIDOfDisconnectedProvider", userIDOfDisconnectedProvider),
+		)
+		go h.notifyProviderListSubscribers(userIDOfDisconnectedProvider) // Corrected method name and called in a goroutine
+	}
+
+	global.GVA_LOG.Info("客户端断开连接处理完毕", zap.String("clientID", clientID), zap.String("userID", clientUserID))
 }
 
 // sendProtoMessage 是一个辅助函数，用于将 protocol 包中定义的结构体序列化为 JSON 并发送给客户端
@@ -1066,8 +1057,14 @@ func (h *Hub) notifyProviderListSubscribers(targetUserID string) {
 
 	subscribersToNotify, ok := h.providerListSubscribers[targetUserID]
 	if !ok || len(subscribersToNotify) == 0 {
+		global.GVA_LOG.Debug("notifyProviderListSubscribers: No subscribers to notify for UserID or list is empty.", zap.String("targetUserID", targetUserID))
 		return // No one is subscribed to this user's provider list
 	}
+
+	global.GVA_LOG.Debug("notifyProviderListSubscribers: Found subscribers to notify.",
+		zap.String("targetUserID", targetUserID),
+		zap.Int("subscriberCount", len(subscribersToNotify)),
+	)
 
 	var currentProvidersForUser []protocol.CardProviderInfo
 	for pID, providerEntry := range h.cardProviders {
@@ -1107,16 +1104,28 @@ func (h *Hub) notifyProviderListSubscribers(targetUserID string) {
 	}
 
 	for subClient := range subscribersToNotify {
-		if subClient.GetUserID() == targetUserID { // Ensure only relevant subscribers get this specific list
-			if err := sendProtoMessage(subClient, response); err != nil {
-				global.GVA_LOG.Error("notifyProviderListSubscribers: Failed to send provider list to subscriber",
-					zap.Error(err),
-					zap.String("subscriberID", subClient.GetID()),
-					zap.String("targetUserID", targetUserID),
-				)
-				// Optionally, handle unresponsive subscriber (e.g., remove from subscribers)
-			}
+		// Log details for each subscriber before the UserID check
+		global.GVA_LOG.Debug("notifyProviderListSubscribers: Processing subscriber in loop",
+			zap.String("targetUserIDLoop", targetUserID), // Renamed to avoid conflict with outer scope var if any
+			zap.String("subscriberClientIDLoop", subClient.GetID()),
+			zap.String("subscriberClientUserIDLoop", subClient.GetUserID()),
+		)
+		// REMOVED: if subClient.GetUserID() == targetUserID { // Ensure only relevant subscribers get this specific list
+		global.GVA_LOG.Debug("notifyProviderListSubscribers: Attempting to send CardProvidersListMessage to subscriber for targetUserID's provider list",
+			zap.String("targetUserIDForList", targetUserID),
+			zap.String("subscriberClientID", subClient.GetID()),
+			zap.String("subscriberActualUserID", subClient.GetUserID()), // Added for clarity
+			zap.Int("providerCountInList", len(response.Providers)),
+		)
+		if err := sendProtoMessage(subClient, response); err != nil {
+			global.GVA_LOG.Error("notifyProviderListSubscribers: Failed to send provider list to subscriber",
+				zap.Error(err),
+				zap.String("subscriberID", subClient.GetID()),
+				zap.String("targetUserIDForList", targetUserID),
+			)
+			// Optionally, handle unresponsive subscriber (e.g., remove from subscribers)
 		}
+		// REMOVED: }
 	}
 	global.GVA_LOG.Info("Notified subscribers about provider list update", zap.String("targetUserID", targetUserID), zap.Int("subscriberCount", len(subscribersToNotify)), zap.Int("providerCount", len(currentProvidersForUser)))
 }
@@ -1180,25 +1189,40 @@ func (h *Hub) handleEndSession(requestingClient *Client, messageBytes []byte) {
 
 // checkInactiveSessions 检查并清理不活动的会话
 func (h *Hub) checkInactiveSessions() {
-	h.providerMutex.Lock()
-	defer h.providerMutex.Unlock()
+	h.providerMutex.RLock() // Use RLock for initial scan
 
 	now := time.Now()
+	var sessionsToTerminate []string // Slice to store IDs of sessions to terminate
+
+	// First loop: Identify sessions to terminate
 	for sessionID, s := range h.sessions {
-		// 检查会话是否超时
-		inactivityTimeout := time.Duration(global.GVA_CONFIG.NfcRelay.HubCheckIntervalSec) * time.Second // 使用与 Hub 检查相同的间隔，或定义单独的会话超时配置
-		if s.LastActivityTime.IsZero() || now.Sub(s.LastActivityTime) > inactivityTimeout*2 {            // 乘以2作为宽限期
-			global.GVA_LOG.Info("检测到不活动会话，正在终止",
+		// 从配置加载会话不活动超时时间
+		sessionTimeoutDuration := time.Duration(global.GVA_CONFIG.NfcRelay.SessionInactiveTimeoutSec) * time.Second
+		if sessionTimeoutDuration <= 0 {
+			// 如果配置无效或未设置，则使用一个合理的默认值，例如2分钟
+			sessionTimeoutDuration = 2 * time.Minute
+			global.GVA_LOG.Warn("SessionInactiveTimeoutSec 配置无效或过小，使用默认值2分钟", zap.Duration("configuredValue", sessionTimeoutDuration))
+		}
+
+		if s.LastActivityTime.IsZero() || now.Sub(s.LastActivityTime) > sessionTimeoutDuration {
+			global.GVA_LOG.Info("标记不活动会话准备终止",
 				zap.String("sessionID", sessionID),
 				zap.Time("lastActivity", s.LastActivityTime),
 				zap.Duration("inactivityDuration", now.Sub(s.LastActivityTime)),
+				zap.Duration("timeoutThreshold", sessionTimeoutDuration),
 			)
-			// 从 sessions map 中删除
-			delete(h.sessions, sessionID)
-			// 其他清理逻辑，例如通知相关客户端（如果需要）
-			// ...
-			ActiveSessions.Dec()
-			SessionTerminations.WithLabelValues("timeout").Inc()
+			sessionsToTerminate = append(sessionsToTerminate, sessionID)
+		}
+	}
+	h.providerMutex.RUnlock() // Release RLock after scanning
+
+	// Second part: Terminate identified sessions
+	// terminateSessionByID 会自行处理其内部的锁 (h.providerMutex.Lock())
+	// 所以在这里调用它之前，我们不应该持有 h.providerMutex
+	if len(sessionsToTerminate) > 0 {
+		for _, sessionID := range sessionsToTerminate {
+			global.GVA_LOG.Info("执行不活动会话的终止", zap.String("sessionID", sessionID))
+			h.terminateSessionByID(sessionID, "会话因长时间无活动已超时", "system", "")
 		}
 	}
 }
@@ -1207,129 +1231,382 @@ func (h *Hub) checkInactiveSessions() {
 // reason 用于通知客户端会话终止的原因
 // actingClientID 是执行此终止操作的客户端ID，如果是系统行为则为空或特定字符串 (如 "system")
 func (h *Hub) terminateSessionByID(sessionID string, reason string, actingClientID string, actingClientUserID string) {
-	h.providerMutex.Lock()
-	defer h.providerMutex.Unlock()
+	h.providerMutex.Lock() // Acquire lock
 
-	activeSession, sessionExists := h.sessions[sessionID]
-	if !sessionExists {
-		global.GVA_LOG.Warn("Hub (terminateSessionByID): Attempted to terminate a non-existent session", zap.String("sessionID", sessionID))
-		return // 会话已不存在
+	sessionToEnd, ok := h.sessions[sessionID]
+	if !ok {
+		h.providerMutex.Unlock() // Unlock before return
+		global.GVA_LOG.Warn("Hub (terminateSessionByID): Attempted to terminate a non-existent session",
+			zap.String("sessionID", sessionID),
+			zap.String("reason", reason),
+			zap.String("actingClientID", actingClientID),
+		)
+		return
 	}
 
-	// 从 Hub 的活动会话列表中移除
-	delete(h.sessions, sessionID)
-	activeSession.Terminate() // 标记会话对象本身为终止状态
-	ActiveSessions.Dec()      // Decrement active sessions metric
-
-	global.GVA_LOG.Info("会话已终止", zap.String("sessionID", sessionID), zap.String("reason", reason), zap.String("actingClientID", actingClientID))
-
-	// Audit Log for session termination
-	var eventType string
-
-	// Determine eventType based on reason or actingClientID
-	if actingClientID != "" && actingClientID != "system" { // Assumes system passes "system" or empty
-		if strings.Contains(reason, "客户端主动请求结束") {
-			eventType = "session_terminated_by_client_request"
-		} else if strings.Contains(reason, "客户端断开连接") { // Check if reason indicates a disconnect
-			eventType = "session_terminated_by_client_disconnect"
-		} else {
-			// Default if an actingClientID is present but reason doesn't match specific client-initiated reasons
-			eventType = "session_terminated_by_client_action"
-		}
-	} else if strings.Contains(reason, "会话因长时间无活动已超时") {
-		eventType = "session_terminated_by_timeout"
-	} else if strings.Contains(reason, "APDU转发失败导致会话终止") {
-		eventType = "session_terminated_by_apdu_error"
+	// Log initial client details from sessionToEnd
+	var logCardClientID, logCardClientUserID, logPosClientID, logPosClientUserID string
+	if sessionToEnd.CardEndClient != nil {
+		logCardClientID = sessionToEnd.CardEndClient.GetID()
+		logCardClientUserID = sessionToEnd.CardEndClient.GetUserID()
 	} else {
-		eventType = "session_terminated_by_system" // Default system termination
+		logCardClientID = "<nil>"
+		logCardClientUserID = "<nil>"
+	}
+	if sessionToEnd.POSEndClient != nil {
+		logPosClientID = sessionToEnd.POSEndClient.GetID()
+		logPosClientUserID = sessionToEnd.POSEndClient.GetUserID()
+	} else {
+		logPosClientID = "<nil>"
+		logPosClientUserID = "<nil>"
+	}
+	global.GVA_LOG.Debug("terminateSessionByID: Initial client details from sessionToEnd",
+		zap.String("sessionID", sessionID),
+		zap.String("sessionCardClientID", logCardClientID),
+		zap.String("sessionCardClientUserID", logCardClientUserID),
+		zap.String("sessionPosClientID", logPosClientID),
+		zap.String("sessionPosClientUserID", logPosClientUserID),
+	)
+
+	// Extract client information for notifications and audit *before* unlocking and modifying client state
+	// This also ensures we are working with the state as it was when the session existed.
+	var cardClientConcrete, posClientConcrete *Client
+	var cardClientID, cardClientUserID, cardClientRole string
+	var posClientID, posClientUserID, posClientRole string
+
+	cardClientProvider := sessionToEnd.CardEndClient
+	posClientProvider := sessionToEnd.POSEndClient
+
+	if cardClientProvider != nil {
+		if cc, okAssert := cardClientProvider.(*Client); okAssert {
+			cardClientConcrete = cc // Store concrete client for later use outside lock
+			cardClientID = cc.GetID()
+			cardClientUserID = cc.GetUserID()
+			cardClientRole = string(cc.GetCurrentRole())
+		} else {
+			cardClientID = cardClientProvider.GetID()
+			cardClientUserID = cardClientProvider.GetUserID()
+			cardClientRole = string(cardClientProvider.GetRole())
+			global.GVA_LOG.Warn("terminateSessionByID: CardEndClient from session was not a concrete *Client instance for audit", zap.String("sessionID", sessionID), zap.String("cardClientID", cardClientID))
+		}
+	} else {
+		cardClientConcrete = nil // Ensure it's nil if provider is nil
+	}
+	if posClientProvider != nil {
+		if pc, okAssert := posClientProvider.(*Client); okAssert {
+			posClientConcrete = pc // Store concrete client for later use outside lock
+			posClientID = pc.GetID()
+			posClientUserID = pc.GetUserID()
+			posClientRole = string(pc.GetCurrentRole())
+		} else {
+			posClientID = posClientProvider.GetID()
+			posClientUserID = posClientProvider.GetUserID()
+			posClientRole = string(posClientProvider.GetRole())
+			global.GVA_LOG.Warn("terminateSessionByID: POSEndClient from session was not a concrete *Client instance for audit", zap.String("sessionID", sessionID), zap.String("posClientID", posClientID))
+		}
+	} else {
+		posClientConcrete = nil // Ensure it's nil if provider is nil
 	}
 
-	// Increment session termination metric
-	// Use a simplified reason for the metric label to avoid too many unique label values.
-	metricReason := eventType // Default to eventType
-	if strings.Contains(reason, "客户端主动请求结束") {
-		metricReason = "client_request"
-	} else if strings.Contains(reason, "客户端断开连接") {
-		metricReason = "client_disconnect"
-	} else if strings.Contains(reason, "会话因长时间无活动已超时") {
-		metricReason = "timeout"
-	} else if strings.Contains(reason, "APDU转发失败导致会话终止") {
-		metricReason = "apdu_error"
-	} else if actingClientID == "system" {
-		metricReason = "system_generic"
-	} else if actingClientID != "" {
-		metricReason = "client_generic_action"
+	// Log concrete client details after extraction
+	var logConcreteCardClientID, logConcretePosClientID string
+	if cardClientConcrete != nil {
+		logConcreteCardClientID = cardClientConcrete.GetID()
+	} else {
+		logConcreteCardClientID = "<nil>"
+	}
+	if posClientConcrete != nil {
+		logConcretePosClientID = posClientConcrete.GetID()
+	} else {
+		logConcretePosClientID = "<nil>"
+	}
+	global.GVA_LOG.Debug("terminateSessionByID: Concrete client details after extraction",
+		zap.String("sessionID", sessionID),
+		zap.String("concreteCardClientID", logConcreteCardClientID),
+		zap.String("concretePosClientID", logConcretePosClientID),
+	)
+
+	delete(h.sessions, sessionID)
+	sessionToEnd.Terminate() // Mark session object itself as terminated
+
+	// Clear SessionID for concrete clients under the hub lock
+	if cardClientConcrete != nil {
+		cardClientConcrete.SessionID = ""
+	}
+	if posClientConcrete != nil {
+		posClientConcrete.SessionID = ""
+	}
+
+	h.providerMutex.Unlock() // IMPORTANT: Unlock before sending messages
+
+	// Metrics update
+	h.metricsMutex.Lock()
+	ActiveSessions.Dec()
+	// Determine metricReason (copied from original logic, ensure it's correct)
+	metricReason := "system_generic"
+	if actingClientID != "system" {
+		switch reason {
+		case "客户端主动请求结束":
+			metricReason = "client_request"
+		case "客户端断开连接":
+			metricReason = "client_disconnect"
+		default:
+			metricReason = "client_generic_action"
+		}
+	} else {
+		switch reason {
+		case "会话因长时间无活动已超时":
+			metricReason = "timeout"
+		case "APDU转发失败导致会话终止":
+			metricReason = "apdu_error"
+		}
 	}
 	SessionTerminations.WithLabelValues(metricReason).Inc()
+	h.metricsMutex.Unlock()
 
-	// Determine participants from activeSession
-	var p1ID, p2ID, p1UserID, p2UserID string
-	var p1Role, p2Role string
+	global.GVA_LOG.Info("会话已终止 (post-unlock log)", // Differentiate log timing if necessary
+		zap.String("sessionID", sessionID),
+		zap.String("reason", reason),
+		zap.String("actingClientID", actingClientID),
+		zap.String("actingClientUserID", actingClientUserID),
+	)
 
-	if activeSession.CardEndClient != nil {
-		p1ID = activeSession.CardEndClient.GetID()
-		p1UserID = activeSession.CardEndClient.GetUserID()
-		p1Role = activeSession.CardEndClient.GetRole()
+	// Determine audit event type (copied from original logic)
+	eventType := "session_terminated_by_system"
+	if actingClientID != "system" {
+		switch reason {
+		case "客户端主动请求结束":
+			eventType = "session_terminated_by_client_request"
+		case "客户端断开连接":
+			eventType = "session_terminated_by_client_disconnect"
+		default:
+			eventType = "session_terminated_by_client_action"
+		}
+	} else {
+		switch reason {
+		case "会话因长时间无活动已超时":
+			eventType = "session_terminated_by_timeout"
+		case "APDU转发失败导致会话终止":
+			eventType = "session_terminated_by_apdu_error"
+		}
 	}
-	if activeSession.POSEndClient != nil {
-		p2ID = activeSession.POSEndClient.GetID()
-		p2UserID = activeSession.POSEndClient.GetUserID()
-		p2Role = activeSession.POSEndClient.GetRole()
+
+	auditTerminationDetails := map[string]interface{}{
+		"session_id":       sessionID,
+		"reason":           reason,
+		"acting_client_id": actingClientID,
+		// "acting_user_id":         actingClientUserID, // See conditional logic below
+		"client_id_card_end":          cardClientID,
+		"user_id_card_end":            cardClientUserID,
+		"role_card_end":               cardClientRole,
+		"client_id_pos_end":           posClientID,
+		"user_id_pos_end":             posClientUserID,
+		"role_pos_end":                posClientRole,
+		"acting_client_id_in_details": actingClientID, // 添加这个字段到 details map 中
 	}
 
-	fields := []zap.Field{
+	// Conditionally add acting_user_id to the map only if it's not empty
+	if actingClientUserID != "" {
+		auditTerminationDetails["acting_user_id"] = actingClientUserID
+	}
+
+	// 检查 auditTerminationDetails 的类型
+	checkDetailsMapType := func(details map[string]interface{}, key string) {
+		value := details[key]
+		if value == nil {
+			global.GVA_LOG.Debug("【DEBUG-TYPE】auditTerminationDetails 中的键值为 nil", zap.String("key", key))
+			return
+		}
+
+		switch v := value.(type) {
+		case string:
+			global.GVA_LOG.Debug("【DEBUG-TYPE】auditTerminationDetails 中的键值类型为 string",
+				zap.String("key", key),
+				zap.String("value", v),
+				zap.String("type", "string"),
+			)
+		case int:
+			global.GVA_LOG.Debug("【DEBUG-TYPE】auditTerminationDetails 中的键值类型为 int",
+				zap.String("key", key),
+				zap.Int("value", v),
+				zap.String("type", "int"),
+			)
+		case bool:
+			global.GVA_LOG.Debug("【DEBUG-TYPE】auditTerminationDetails 中的键值类型为 bool",
+				zap.String("key", key),
+				zap.Bool("value", v),
+				zap.String("type", "bool"),
+			)
+		case map[string]interface{}:
+			global.GVA_LOG.Debug("【DEBUG-TYPE】auditTerminationDetails 中的键值类型为 map[string]interface{}",
+				zap.String("key", key),
+				zap.Any("value", v),
+				zap.String("type", "map[string]interface{}"),
+			)
+		default:
+			global.GVA_LOG.Debug("【DEBUG-TYPE】auditTerminationDetails 中的键值类型为其他类型",
+				zap.String("key", key),
+				zap.Any("value", v),
+				zap.String("type", fmt.Sprintf("%T", v)),
+			)
+		}
+	}
+
+	// 检查所有关键字段的类型
+	checkDetailsMapType(auditTerminationDetails, "acting_client_id")
+	checkDetailsMapType(auditTerminationDetails, "acting_client_id_in_details")
+	checkDetailsMapType(auditTerminationDetails, "reason")
+	checkDetailsMapType(auditTerminationDetails, "session_id")
+
+	// DEBUG: 详细记录 auditTerminationDetails 的内容
+	global.GVA_LOG.Debug("【DEBUG】terminateSessionByID: auditTerminationDetails 详细内容",
+		zap.String("sessionID", sessionID),
+		zap.String("actingClientID", actingClientID),
+		zap.Any("acting_client_id_in_details_value", auditTerminationDetails["acting_client_id_in_details"]),
+		zap.Any("acting_client_id_value", auditTerminationDetails["acting_client_id"]),
+		zap.Any("full_details_map", auditTerminationDetails),
+	)
+
+	// DEBUG: Print the acting_client_id from the auditTerminationDetails map before logging
+	debugActingClientID, debugOk := auditTerminationDetails["acting_client_id"].(string)
+	if !debugOk {
+		global.GVA_LOG.Debug("【DEBUG】terminateSessionByID DEBUG: auditTerminationDetails[\"acting_client_id\"] is not a string or not ok", zap.Any("value", auditTerminationDetails["acting_client_id"]))
+	} else {
+		global.GVA_LOG.Debug("【DEBUG】terminateSessionByID DEBUG: auditTerminationDetails[\"acting_client_id\"]", zap.String("debugActingClientID", debugActingClientID))
+	}
+
+	debugActingClientIDInDetails, debugInDetailsOk := auditTerminationDetails["acting_client_id_in_details"].(string)
+	if !debugInDetailsOk {
+		global.GVA_LOG.Debug("【DEBUG】terminateSessionByID DEBUG: auditTerminationDetails[\"acting_client_id_in_details\"] is not a string or not ok", zap.Any("value", auditTerminationDetails["acting_client_id_in_details"]))
+	} else {
+		global.GVA_LOG.Debug("【DEBUG】terminateSessionByID DEBUG: auditTerminationDetails[\"acting_client_id_in_details\"]", zap.String("debugActingClientIDInDetails", debugActingClientIDInDetails))
+	}
+
+	global.GVA_LOG.Debug("【DEBUG】terminateSessionByID DEBUG: full auditTerminationDetails map", zap.Reflect("auditDetailsMap", auditTerminationDetails))
+
+	// Reconstruct the original zap fields for LogAuditEvent
+	logAuditFields := []zap.Field{
 		zap.String("session_id", sessionID),
 		zap.String("reason", reason),
-		zap.String("participant1_id", p1ID),
-		zap.String("participant1_user_id", p1UserID),
-		zap.String("participant1_role", p1Role),
-		zap.String("participant2_id", p2ID),
-		zap.String("participant2_user_id", p2UserID),
-		zap.String("participant2_role", p2Role),
-	}
-
-	if actingClientID != "" {
-		fields = append(fields, zap.String("acting_client_id", actingClientID))
+		zap.String("acting_client_id", actingClientID),
+		// zap.String("acting_user_id", actingClientUserID), // May be empty, which is fine for Zap
+		zap.String("client_id_card_end", cardClientID),
+		zap.String("user_id_card_end", cardClientUserID),
+		zap.String("client_id_pos_end", posClientID),
+		zap.String("user_id_pos_end", posClientUserID),
 	}
 	if actingClientUserID != "" {
-		fields = append(fields, zap.String("acting_user_id", actingClientUserID))
+		logAuditFields = append(logAuditFields, zap.String("acting_user_id", actingClientUserID))
 	}
 
-	global.LogAuditEvent(eventType, global.SessionDetails{}, fields...)
+	global.GVA_LOG.Debug("【DEBUG】terminateSessionByID: 准备调用 LogAuditEvent",
+		zap.String("eventType", eventType),
+		zap.String("sessionID", sessionID),
+		zap.String("actingClientID", actingClientID),
+		zap.Int("logAuditFields_length", len(logAuditFields)),
+	)
 
-	var participantsToNotify []session.ClientInfoProvider
-	if activeSession.CardEndClient != nil {
-		participantsToNotify = append(participantsToNotify, activeSession.CardEndClient)
+	// 调用 LogAuditEvent 前再次检查 auditTerminationDetails
+	actingClientIDValue, hasActingClientID := auditTerminationDetails["acting_client_id"]
+	actingClientIDInDetailsValue, hasActingClientIDInDetails := auditTerminationDetails["acting_client_id_in_details"]
+	global.GVA_LOG.Debug("【DEBUG】调用 LogAuditEvent 前的 auditTerminationDetails 检查",
+		zap.Bool("hasActingClientID", hasActingClientID),
+		zap.Any("actingClientIDValue", actingClientIDValue),
+		zap.Bool("hasActingClientIDInDetails", hasActingClientIDInDetails),
+		zap.Any("actingClientIDInDetailsValue", actingClientIDInDetailsValue),
+	)
+
+	global.LogAuditEvent(
+		eventType,
+		auditTerminationDetails,
+		logAuditFields..., // 移除单独的 acting_client_id_in_details 字段
+	)
+
+	global.GVA_LOG.Debug("【DEBUG】terminateSessionByID: LogAuditEvent 调用完成",
+		zap.String("eventType", eventType),
+		zap.String("sessionID", sessionID),
+		zap.String("actingClientID", actingClientID),
+	)
+
+	terminationMsg := protocol.SessionTerminatedMessage{
+		Type:      protocol.MessageTypeSessionTerminated,
+		SessionID: sessionID, // Use the original sessionID for the message
+		Reason:    reason,
 	}
-	if activeSession.POSEndClient != nil && activeSession.POSEndClient != activeSession.CardEndClient {
-		participantsToNotify = append(participantsToNotify, activeSession.POSEndClient)
+
+	var providerBecameFreeUserID string // For notifying subscribers
+
+	// Send messages to clients (now outside the hub lock)
+	if cardClientConcrete != nil {
+		global.GVA_LOG.Debug("terminateSessionByID: Attempting to send SessionTerminatedMessage to cardClientConcrete",
+			zap.String("sessionID", sessionID),
+			zap.String("cardClientID", cardClientConcrete.GetID()),
+			zap.String("reasonForMsg", terminationMsg.Reason),
+		)
+		if err := sendProtoMessage(cardClientConcrete, terminationMsg); err != nil {
+			global.GVA_LOG.Warn("Hub (terminateSessionByID): 发送会话终止消息给 CardEndClient 失败",
+				zap.Error(err), zap.String("sessionID", sessionID), zap.String("cardClientID", cardClientConcrete.GetID()))
+		}
+		if cardClientConcrete.CurrentRole == protocol.RoleProvider {
+			providerBecameFreeUserID = cardClientConcrete.GetUserID()
+		}
+	} else if cardClientProvider != nil { // Fallback if not concrete, but existed
+		global.GVA_LOG.Debug("terminateSessionByID: Attempting to send SessionTerminatedMessage to cardClientProvider (interface)",
+			zap.String("sessionID", sessionID),
+			zap.String("cardClientID", cardClientProvider.GetID()),
+			zap.String("reasonForMsg", terminationMsg.Reason),
+		)
+		if err := sendProtoMessage(cardClientProvider, terminationMsg); err != nil { // Assumes ClientInfoProvider has Send
+			global.GVA_LOG.Warn("Hub (terminateSessionByID): 发送会话终止消息给 CardEndClient (interface) 失败", zap.Error(err), zap.String("sessionID", sessionID), zap.String("clientID", cardClientProvider.GetID()))
+		}
 	}
 
-	var providerBecameFreeUserID string
-
-	for _, clientProvider := range participantsToNotify {
-		if client, ok := clientProvider.(*Client); ok {
-			client.SessionID = "" // 清理客户端的会话ID
-			// 如果此客户端是 Provider 并且之前在会话中，现在它变为空闲
-			if client.CurrentRole == protocol.RoleProvider {
-				providerBecameFreeUserID = client.UserID
+	if posClientConcrete != nil {
+		global.GVA_LOG.Debug("terminateSessionByID: Attempting to send SessionTerminatedMessage to posClientConcrete",
+			zap.String("sessionID", sessionID),
+			zap.String("posClientID", posClientConcrete.GetID()),
+			zap.String("reasonForMsg", terminationMsg.Reason),
+		)
+		if err := sendProtoMessage(posClientConcrete, terminationMsg); err != nil {
+			global.GVA_LOG.Warn("Hub (terminateSessionByID): 发送会话终止消息给 POSEndClient 失败",
+				zap.Error(err), zap.String("sessionID", sessionID), zap.String("posClientID", posClientConcrete.GetID()))
+		}
+		if posClientConcrete.CurrentRole == protocol.RoleProvider {
+			if providerBecameFreeUserID == "" {
+				providerBecameFreeUserID = posClientConcrete.GetUserID()
+			} else if providerBecameFreeUserID != posClientConcrete.GetUserID() {
+				// This case means both card and pos ends were providers (unlikely for typical NFC relay but possible if roles are flexible)
+				// and they belong to different users. Notify subscribers for the second provider user too.
+				global.GVA_LOG.Info("Hub (terminateSessionByID): Both session ends were Providers of different users. Notifying for second provider.",
+					zap.String("sessionID", sessionID),
+					zap.String("secondProviderClientID", posClientConcrete.GetID()),
+					zap.String("secondProviderUserID", posClientConcrete.GetUserID()))
+				go h.notifyProviderListSubscribers(posClientConcrete.GetUserID())
 			}
 		}
-		// 发送会话终止通知给客户端
-		// 注意: 使用 protocol.MessageTypeSessionTerminated
-		// 这里的 SessionTerminatedMessage 定义与 nfc-api.md 一致，包含 sessionId 和 reason
-		// 新文档中也推荐了一个类似的 session_terminated 消息。
-		termMsg := protocol.SessionTerminatedMessage{
-			Type:      protocol.MessageTypeSessionTerminated,
-			SessionID: sessionID, // 使用原始的会话ID
-			Reason:    reason,
+	} else if posClientProvider != nil { // Fallback
+		global.GVA_LOG.Debug("terminateSessionByID: Attempting to send SessionTerminatedMessage to posClientProvider (interface)",
+			zap.String("sessionID", sessionID),
+			zap.String("posClientID", posClientProvider.GetID()),
+			zap.String("reasonForMsg", terminationMsg.Reason),
+		)
+		if err := sendProtoMessage(posClientProvider, terminationMsg); err != nil {
+			global.GVA_LOG.Warn("Hub (terminateSessionByID): 发送会话终止消息给 POSEndClient (interface) 失败", zap.Error(err), zap.String("sessionID", sessionID), zap.String("clientID", posClientProvider.GetID()))
 		}
-		_ = sendProtoMessage(clientProvider, termMsg) // 尝试通知，忽略错误
 	}
 
+	// Notify subscribers if a provider became free
 	if providerBecameFreeUserID != "" {
-		// 异步通知，避免锁竞争和阻塞Hub主循环
+		global.GVA_LOG.Info("Hub (terminateSessionByID): Session terminated, a provider may have become free. Preparing to notify subscribers.",
+			zap.String("sessionID", sessionID),
+			zap.String("providerFreedForUserID", providerBecameFreeUserID), // Log the actual UserID
+		)
 		go h.notifyProviderListSubscribers(providerBecameFreeUserID)
+	} else {
+		global.GVA_LOG.Debug("Hub (terminateSessionByID): No provider became free or providerBecameFreeUserID is empty, skipping subscriber notification.",
+			zap.String("sessionID", sessionID),
+			zap.String("evaluatedProviderBecameFreeUserID", providerBecameFreeUserID), // Log the (empty) UserID
+		)
 	}
 }
 

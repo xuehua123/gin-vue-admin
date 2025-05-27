@@ -2,6 +2,7 @@ package global
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -55,11 +56,50 @@ func LogAuditEvent(eventType string, details interface{}, fields ...zap.Field) {
 		GVA_LOG.Info("AuditLogger 为 nil，并在首次使用时已初始化。")
 	}
 
+	// 【DEBUG】记录传入的参数
+	GVA_LOG.Debug("【DEBUG-AUDIT】LogAuditEvent 被调用",
+		zap.String("eventType", eventType),
+		zap.Any("details", details),
+		zap.Int("fields_count", len(fields)),
+	)
+
+	// 【DEBUG】检查 details 参数的类型
+	switch d := details.(type) {
+	case map[string]interface{}:
+		GVA_LOG.Debug("【DEBUG-AUDIT】details 参数类型为 map[string]interface{}",
+			zap.Int("map_size", len(d)),
+		)
+		// 检查关键字段
+		for key, value := range d {
+			GVA_LOG.Debug("【DEBUG-AUDIT】details map 中的键值对",
+				zap.String("key", key),
+				zap.Any("value", value),
+				zap.String("value_type", fmt.Sprintf("%T", value)),
+			)
+		}
+	case string:
+		GVA_LOG.Debug("【DEBUG-AUDIT】details 参数类型为 string", zap.String("value", d))
+	case nil:
+		GVA_LOG.Debug("【DEBUG-AUDIT】details 参数为 nil")
+	default:
+		GVA_LOG.Debug("【DEBUG-AUDIT】details 参数类型为其他类型",
+			zap.String("type", fmt.Sprintf("%T", details)),
+		)
+	}
+
 	event := AuditEvent{
 		Timestamp: time.Now().Format(time.RFC3339Nano),
 		EventType: eventType,
 		Details:   details,
 	}
+
+	// 【DEBUG】记录创建的 AuditEvent 结构体
+	detailsBytes, _ := json.Marshal(details)
+	GVA_LOG.Debug("【DEBUG-AUDIT】创建的 AuditEvent 结构体",
+		zap.String("event.EventType", event.EventType),
+		zap.Any("event.Details", event.Details),
+		zap.String("details_json", string(detailsBytes)),
+	)
 
 	// 将 AuditEvent 转换为 zap.Field 切片
 	// 这允许对事件对象本身进行结构化日志记录。
@@ -68,9 +108,78 @@ func LogAuditEvent(eventType string, details interface{}, fields ...zap.Field) {
 	eventMap := make(map[string]interface{})
 	eventBytes, err := json.Marshal(event)
 	if err == nil {
+		// 【DEBUG】记录序列化后的 JSON 字符串
+		GVA_LOG.Debug("【DEBUG-AUDIT】序列化后的 AuditEvent JSON 字符串", zap.String("json", string(eventBytes)))
+
+		// 【DEBUG】检查序列化后的 JSON 是否包含 details 字段
+		var rawMap map[string]json.RawMessage
+		if err := json.Unmarshal(eventBytes, &rawMap); err == nil {
+			if detailsRaw, ok := rawMap["details"]; ok {
+				GVA_LOG.Debug("【DEBUG-AUDIT】序列化后的 JSON 包含 details 字段",
+					zap.String("details_raw", string(detailsRaw)),
+				)
+
+				// 尝试解析 details 字段
+				var detailsMap map[string]interface{}
+				if err := json.Unmarshal(detailsRaw, &detailsMap); err == nil {
+					GVA_LOG.Debug("【DEBUG-AUDIT】details 字段成功解析为 map",
+						zap.Any("detailsMap", detailsMap),
+					)
+
+					// 检查关键字段
+					if actingClientID, ok := detailsMap["acting_client_id_in_details"]; ok {
+						GVA_LOG.Debug("【DEBUG-AUDIT】details 字段中包含 acting_client_id_in_details",
+							zap.Any("value", actingClientID),
+						)
+					} else {
+						GVA_LOG.Debug("【DEBUG-AUDIT】details 字段中不包含 acting_client_id_in_details")
+					}
+				} else {
+					GVA_LOG.Debug("【DEBUG-AUDIT】details 字段无法解析为 map",
+						zap.Error(err),
+					)
+				}
+			} else {
+				GVA_LOG.Debug("【DEBUG-AUDIT】序列化后的 JSON 不包含 details 字段")
+			}
+		}
+
 		_ = json.Unmarshal(eventBytes, &eventMap) //暂时忽略反序列化错误
+
+		// 【DEBUG】记录 eventMap 的内容
+		GVA_LOG.Debug("【DEBUG-AUDIT】eventMap 的内容", zap.Any("eventMap", eventMap))
+
+		// 【DEBUG】检查 eventMap 中的 details 字段
+		if detailsFromMap, ok := eventMap["details"]; ok {
+			GVA_LOG.Debug("【DEBUG-AUDIT】eventMap 中包含 details 字段",
+				zap.Any("detailsFromMap", detailsFromMap),
+				zap.String("detailsFromMap_type", fmt.Sprintf("%T", detailsFromMap)),
+			)
+
+			// 如果 details 是 map[string]interface{} 类型，检查其中的字段
+			if detailsMap, ok := detailsFromMap.(map[string]interface{}); ok {
+				GVA_LOG.Debug("【DEBUG-AUDIT】eventMap 中的 details 字段是 map[string]interface{} 类型")
+
+				// 检查关键字段
+				if actingClientID, ok := detailsMap["acting_client_id_in_details"]; ok {
+					GVA_LOG.Debug("【DEBUG-AUDIT】eventMap 中的 details 字段包含 acting_client_id_in_details",
+						zap.Any("value", actingClientID),
+					)
+				} else {
+					GVA_LOG.Debug("【DEBUG-AUDIT】eventMap 中的 details 字段不包含 acting_client_id_in_details")
+				}
+			} else {
+				GVA_LOG.Debug("【DEBUG-AUDIT】eventMap 中的 details 字段不是 map[string]interface{} 类型")
+			}
+		} else {
+			GVA_LOG.Debug("【DEBUG-AUDIT】eventMap 中不包含 details 字段")
+		}
+
 		for k, v := range eventMap {
 			eventFields = append(eventFields, zap.Any(k, v))
+
+			// 【DEBUG】记录每个添加的字段
+			GVA_LOG.Debug("【DEBUG-AUDIT】添加字段到 eventFields", zap.String("key", k), zap.Any("value", v))
 		}
 	} else {
 		GVA_LOG.Error("序列化 AuditEvent 以进行结构化日志记录失败", zap.Error(err))
@@ -79,9 +188,21 @@ func LogAuditEvent(eventType string, details interface{}, fields ...zap.Field) {
 	}
 
 	// 添加任何额外传入的字段
+	for _, field := range fields {
+		// 【DEBUG】记录每个额外的字段
+		GVA_LOG.Debug("【DEBUG-AUDIT】添加额外字段到 eventFields", zap.String("field_key", field.Key), zap.Any("field_type", field.Type))
+	}
 	eventFields = append(eventFields, fields...)
 
+	// 【DEBUG】记录最终的 eventFields
+	GVA_LOG.Debug("【DEBUG-AUDIT】最终的 eventFields",
+		zap.Int("eventFields_count", len(eventFields)),
+	)
+
 	AuditLogger.Info("AuditEvent", eventFields...)
+
+	// 【DEBUG】记录日志记录完成
+	GVA_LOG.Debug("【DEBUG-AUDIT】AuditEvent 日志记录完成", zap.String("eventType", eventType))
 }
 
 // ExampleDetail 结构体用于常见事件（可以扩展）
