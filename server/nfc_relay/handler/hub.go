@@ -90,6 +90,91 @@ func (h *Hub) GetActiveSessionsCount() int {
 	return len(h.sessions)
 }
 
+// GetAllClients 返回当前所有已连接的客户端。
+// 此方法是并发安全的，返回客户端的浅拷贝。
+func (h *Hub) GetAllClients() []*Client {
+	h.providerMutex.RLock()
+	defer h.providerMutex.RUnlock()
+
+	clients := make([]*Client, 0, len(h.clients))
+	for client := range h.clients {
+		clients = append(clients, client)
+	}
+	return clients
+}
+
+// FindClientByID 根据客户端ID查找客户端。
+// 此方法是并发安全的。
+func (h *Hub) FindClientByID(clientID string) *Client {
+	h.providerMutex.RLock()
+	defer h.providerMutex.RUnlock()
+
+	for client := range h.clients {
+		if client.ID == clientID {
+			return client
+		}
+	}
+	return nil
+}
+
+// DisconnectClientByID 根据客户端ID断开客户端连接。
+// 此方法是并发安全的。
+func (h *Hub) DisconnectClientByID(clientID string, reason string) error {
+	h.providerMutex.Lock()
+	defer h.providerMutex.Unlock()
+
+	// 查找指定的客户端
+	var targetClient *Client
+	for client := range h.clients {
+		if client.ID == clientID {
+			targetClient = client
+			break
+		}
+	}
+
+	// 如果未找到客户端
+	if targetClient == nil {
+		return errors.New("未找到指定的客户端")
+	}
+
+	// 如果客户端在某个会话中，需要处理会话相关逻辑
+	if targetClient.SessionID != "" {
+		// 查找会话
+		if session, exists := h.sessions[targetClient.SessionID]; exists {
+			// 记录终止原因（仅日志记录，不传递给Terminate方法）
+			global.GVA_LOG.Info("管理员操作导致会话终止",
+				zap.String("reason", reason),
+				zap.String("sessionID", targetClient.SessionID),
+				zap.String("clientRole", string(targetClient.CurrentRole)),
+				zap.String("clientID", targetClient.ID),
+			)
+			// 终止会话
+			session.Terminate()
+		}
+	}
+
+	// 取消客户端的 provider 角色注册（如果有）
+	if targetClient.CurrentRole == protocol.RoleProvider {
+		delete(h.cardProviders, targetClient.ID)
+
+		// 通知所有订阅了该用户发卡方列表的客户端
+		if len(targetClient.UserID) > 0 {
+			h.notifyProviderListSubscribers(targetClient.UserID)
+		}
+	}
+
+	// 从客户端列表中删除
+	delete(h.clients, targetClient)
+
+	// 关闭客户端的发送通道
+	close(targetClient.send)
+
+	// 关闭 WebSocket 连接
+	targetClient.conn.Close()
+
+	return nil
+}
+
 // Run 启动 Hub 的事件处理循环。
 // 它应该以 goroutine 方式运行。
 func (h *Hub) Run() {

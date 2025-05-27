@@ -101,6 +101,14 @@ func (c *Client) GetCurrentRole() protocol.RoleType {
 	return c.CurrentRole
 }
 
+// GetRemoteAddr 返回客户端的远程地址
+func (c *Client) GetRemoteAddr() string {
+	if c.conn == nil {
+		return ""
+	}
+	return c.conn.RemoteAddr().String()
+}
+
 // Send 将消息发送到客户端的出站通道。
 // 这是 ClientInfoProvider 接口的一部分。
 func (c *Client) Send(message []byte) (err error) {
