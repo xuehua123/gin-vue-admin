@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -542,11 +543,40 @@ func sendProtoMessage(client session.ClientInfoProvider, message interface{}) er
 	if client == nil {
 		return errors.New("client is nil")
 	}
+
+	// Log the message content before serialization, especially if it's an ErrorMessage
+	if errMsg, ok := message.(protocol.ErrorMessage); ok {
+		global.GVA_LOG.Debug("sendProtoMessage: Preparing to serialize ErrorMessage",
+			zap.String("targetClientID", client.GetID()),
+			zap.Int("messageCode", errMsg.Code),
+			zap.String("messageType", string(errMsg.Type)),
+			zap.String("messageContent", errMsg.Message),
+		)
+	} else if genericMsg, ok := message.(protocol.GenericMessage); ok { // Log other common types if needed
+		global.GVA_LOG.Debug("sendProtoMessage: Preparing to serialize GenericMessage",
+			zap.String("targetClientID", client.GetID()),
+			zap.String("messageType", string(genericMsg.Type)),
+		)
+	} else {
+		// For other types, just log a generic message or the type
+		global.GVA_LOG.Debug("sendProtoMessage: Preparing to serialize message",
+			zap.String("targetClientID", client.GetID()),
+			zap.String("messageGoType", fmt.Sprintf("%T", message)),
+		)
+	}
+
 	bytes, err := json.Marshal(message)
 	if err != nil {
 		global.GVA_LOG.Error("序列化消息失败", zap.Error(err), zap.String("targetClientID", client.GetID()))
 		return err
 	}
+
+	// Log the serialized bytes
+	global.GVA_LOG.Debug("sendProtoMessage: Serialized message bytes",
+		zap.String("targetClientID", client.GetID()),
+		zap.String("jsonBytes", string(bytes)),
+	)
+
 	// 使用接口提供的 Send 方法
 	if err := client.Send(bytes); err != nil {
 		global.GVA_LOG.Warn("通过接口发送消息给客户端失败", zap.Error(err), zap.String("targetClientID", client.GetID()))
@@ -564,6 +594,19 @@ func sendErrorMessage(client session.ClientInfoProvider, code int, message strin
 		Message: message,
 		// SessionID can be added if available/needed from client.GetSessionID()
 	}
+
+	// 新增日志：在调用 sendProtoMessage 之前记录 errMsg 结构体的内容
+	clientID := "unknown"
+	if c, ok := client.(interface{ GetID() string }); ok {
+		clientID = c.GetID()
+	}
+	global.GVA_LOG.Info("sendErrorMessage: Constructed ErrorMessage before calling sendProtoMessage",
+		zap.String("targetClientID", clientID),
+		zap.Int("structCodeField", errMsg.Code), // 明确记录结构体中的 Code 字段
+		zap.String("structMessageField", errMsg.Message),
+		zap.String("structTypeField", string(errMsg.Type)),
+		zap.Any("fullErrMsgStruct", errMsg), // 记录完整的结构体以便检查
+	)
 
 	// Audit Log for sending an error message to the client
 	details := global.ErrorDetails{
@@ -606,7 +649,6 @@ func sendErrorMessage(client session.ClientInfoProvider, code int, message strin
 
 // handleListCardProviders 处理收卡方请求可用发卡方列表的请求
 func (h *Hub) handleListCardProviders(requestingClient *Client, messageBytes []byte) {
-	// 认证已在 handleIncomingMessage 中检查
 	// 确保请求者是收卡方 (或者根据业务逻辑允许其他角色查看)
 	if requestingClient.CurrentRole != "receiver" && requestingClient.CurrentRole != "" { // 允许未指定角色的客户端查看
 		// 如果严格要求必须是 receiver 才能查看，可以取消注释下面的代码
@@ -614,14 +656,14 @@ func (h *Hub) handleListCardProviders(requestingClient *Client, messageBytes []b
 			zap.String("clientID", requestingClient.GetID()),
 			zap.String("currentRole", string(requestingClient.CurrentRole)),
 		)
-		sendErrorMessage(requestingClient, 0, "只有收卡方角色才能获取发卡方列表")
+		sendErrorMessage(requestingClient, protocol.ErrorCodePermissionDenied, "只有收卡方角色才能获取发卡方列表")
 		return
 	}
 
 	var listMsg protocol.ListCardProvidersMessage
 	if err := json.Unmarshal(messageBytes, &listMsg); err != nil {
 		global.GVA_LOG.Error("Hub 处理列表请求：反序列化 ListCardProvidersMessage 失败", zap.Error(err), zap.String("clientID", requestingClient.GetID()))
-		sendErrorMessage(requestingClient, 0, "无效的列表请求消息格式")
+		sendErrorMessage(requestingClient, protocol.ErrorCodeBadRequest, "无效的列表请求消息格式")
 		return
 	}
 
