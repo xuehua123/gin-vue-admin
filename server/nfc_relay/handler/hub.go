@@ -1026,6 +1026,7 @@ func (h *Hub) handleAPDUExchange(sourceClient *Client, messageBytes []byte, dire
 			zap.String("source_client_id", sourceClient.GetID()),
 			zap.String("target_client_id", peerClient.GetID()),
 			zap.String("user_id_source", sourceClient.UserID),
+			zap.String("direction", direction),
 		)
 
 		// Terminate the session. The acting client is the sourceClient, as it initiated the APDU that failed to be relayed.
