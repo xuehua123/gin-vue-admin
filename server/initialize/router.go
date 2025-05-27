@@ -93,6 +93,9 @@ func Routers() *gin.Engine {
 	// 或者为其创建一个不经过主要鉴权中间件的特定 Group
 	NFCRelayRouter.InitNFCRelayRouter(PublicGroup)
 
+	// 初始化 NFC Relay 管理后台 API 路由 (需要认证和授权)
+	NFCRelayRouter.InitNFCRelayAdminApiRouter(PrivateGroup)
+
 	{
 		systemRouter.InitBaseRouter(PublicGroup) // 注册基础功能路由 不做鉴权
 		systemRouter.InitInitRouter(PublicGroup) // 自动初始化相关

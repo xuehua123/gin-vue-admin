@@ -74,6 +74,22 @@ func NewHub() *Hub {
 	}
 }
 
+// GetActiveConnectionsCount 返回当前活动的 WebSocket 连接总数。
+// 此方法是并发安全的。
+func (h *Hub) GetActiveConnectionsCount() int {
+	h.providerMutex.RLock() // 虽然 clients map 本身的并发由 Hub 的主循环保证，但为了与其他 getter 一致性，这里也加锁
+	defer h.providerMutex.RUnlock()
+	return len(h.clients)
+}
+
+// GetActiveSessionsCount 返回当前活动的 NFC 中继会话总数。
+// 此方法是并发安全的。
+func (h *Hub) GetActiveSessionsCount() int {
+	h.providerMutex.RLock()
+	defer h.providerMutex.RUnlock()
+	return len(h.sessions)
+}
+
 // Run 启动 Hub 的事件处理循环。
 // 它应该以 goroutine 方式运行。
 func (h *Hub) Run() {
