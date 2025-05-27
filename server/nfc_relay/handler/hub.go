@@ -750,7 +750,7 @@ func (h *Hub) handleSelectCardProvider(requestingClient *Client, messageBytes []
 	}
 
 	h.providerMutex.RLock() // RLock for reading cardProviders and sessions
-	targetProviderInterface, providerExists := h.cardProviders[providerIDToSelect]
+	targetProviderEntry, providerExists := h.cardProviders[providerIDToSelect]
 	if !providerExists {
 		h.providerMutex.RUnlock()
 		global.GVA_LOG.Warn("Hub: 目标发卡方不存在或未上线", zap.String("targetProviderID", providerIDToSelect), zap.String("requestingClientID", requestingClient.GetID()))
@@ -760,39 +760,32 @@ func (h *Hub) handleSelectCardProvider(requestingClient *Client, messageBytes []
 		return
 	}
 
-	var targetProviderConcrete *Client
-	var ok bool
-	if targetProviderInterface != nil {
-		targetProviderConcrete, ok = targetProviderInterface.(*Client)
-	} else {
-		ok = false
-	}
-
-	if !ok {
-		h.providerMutex.RUnlock()
-		global.GVA_LOG.Error("Hub: cardProviders map 中的条目不是 *Client 类型或接口为nil", zap.String("providerID", providerIDToSelect))
+	// 尝试将会话的客户端转换为具体的 *Client 类型，以便访问更多信息
+	targetProviderConcrete, ok := targetProviderEntry.(*Client)
+	if !ok || targetProviderConcrete == nil { // 添加 targetProviderConcrete == nil 检查
+		global.GVA_LOG.Error("Hub: (handleSelectCardProvider) cardProviders 中的条目不是 *Client 类型或为nil",
+			zap.String("requestingClientID", requestingClient.GetID()),
+			zap.String("targetProviderID", selectMsg.ProviderID), // Use selectMsg.ProviderID as targetProviderConcrete might be nil
+		)
 		sendErrorMessage(requestingClient, protocol.ErrorCodeInternalError, "选择发卡方失败：服务器内部错误。")
 		return
 	}
 
-	// 将 *Client 重新转换为 ClientInfoProvider 接口类型进行后续操作
-	var providerAsInterface session.ClientInfoProvider = targetProviderConcrete
-
-	// 检查1: 请求者和提供者是否属于同一个 UserID
-	if requestingClient.GetUserID() != providerAsInterface.GetUserID() {
+	// 检查 UserID 是否匹配
+	if requestingClient.GetUserID() != targetProviderConcrete.GetUserID() {
 		h.providerMutex.RUnlock()
 		global.GVA_LOG.Warn("Hub: 请求者和提供者 UserID 不匹配",
 			zap.String("requestingUserID", requestingClient.GetUserID()),
-			zap.String("providerUserID", providerAsInterface.GetUserID()),
+			zap.String("providerUserID", targetProviderConcrete.GetUserID()),
 			zap.String("requestingClientID", requestingClient.GetID()),
-			zap.String("providerClientID", providerAsInterface.GetID()),
+			zap.String("providerClientID", targetProviderConcrete.GetID()),
 		)
 		sendErrorMessage(requestingClient, protocol.ErrorCodePermissionDenied, "选择发卡方失败：不能选择其他账户下的发卡方。")
 		return
 	}
 
 	// 检查2: 不能选择自己作为发卡方
-	if requestingClient.GetID() == providerAsInterface.GetID() {
+	if requestingClient.GetID() == targetProviderConcrete.GetID() {
 		h.providerMutex.RUnlock()
 		global.GVA_LOG.Warn("Hub: 客户端尝试选择自己作为发卡方", zap.String("clientID", requestingClient.GetID()))
 		sendErrorMessage(requestingClient, protocol.ErrorCodeSelectSelf, "选择发卡方失败：不能选择自己。")
@@ -810,16 +803,14 @@ func (h *Hub) handleSelectCardProvider(requestingClient *Client, messageBytes []
 	}
 
 	// 检查4: 目标提供者 (Provider) 当前是否已在会话中 (IsBusy)
-	if providerAsInterface.GetSessionID() != "" { // 使用 providerAsInterface
-		if _, sessionExists := h.sessions[providerAsInterface.GetSessionID()]; sessionExists { // 使用 providerAsInterface
-			h.providerMutex.RUnlock()
-			global.GVA_LOG.Warn("Hub: 目标发卡方已在会话中",
-				zap.String("targetProviderID", providerAsInterface.GetID()), // 使用 providerAsInterface
-				zap.String("sessionID", providerAsInterface.GetSessionID()), // 使用 providerAsInterface
-			)
-			sendErrorMessage(requestingClient, protocol.ErrorCodeProviderBusy, "选择发卡方失败：目标发卡方当前正忙。")
-			return
-		}
+	if targetProviderConcrete.GetSessionID() != "" { // 使用 targetProviderConcrete
+		h.providerMutex.RUnlock()
+		global.GVA_LOG.Warn("Hub: 目标发卡方已在会话中",
+			zap.String("targetProviderID", targetProviderConcrete.GetID()), // 使用 targetProviderConcrete
+			zap.String("sessionID", targetProviderConcrete.GetSessionID()), // 使用 targetProviderConcrete
+		)
+		sendErrorMessage(requestingClient, protocol.ErrorCodeProviderBusy, "选择发卡方失败：目标发卡方当前正忙。")
+		return
 	}
 	h.providerMutex.RUnlock() // 读取完成，释放读锁
 
@@ -827,28 +818,38 @@ func (h *Hub) handleSelectCardProvider(requestingClient *Client, messageBytes []
 	h.providerMutex.Lock() // 获取写锁以创建会话和更新客户端状态
 	defer h.providerMutex.Unlock()
 
-	// 再次检查条件（因为在释放读锁和获取写锁之间状态可能改变）
-	// 检查 Provider 是否仍然存在且在线
-	// currentTargetProvider 仍然是接口类型 session.ClientInfoProvider
-	currentTargetProviderInterface, stillExists := h.cardProviders[providerIDToSelect]
-	if !stillExists {
-		sendErrorMessage(requestingClient, protocol.ErrorCodeProviderUnavailable, "选择发卡方失败：目标发卡方状态已改变(不存在)，请重试。")
-		return
-	}
-	// 需要再次断言，或者确保 currentTargetProviderInterface 就是我们想要的 *Client
-	currentTargetProviderConcrete, castOk := currentTargetProviderInterface.(*Client)
-	if !castOk {
-		sendErrorMessage(requestingClient, protocol.ErrorCodeInternalError, "选择发卡方失败：目标发卡方类型错误。")
+	// 双重检查：再次确认 provider 仍然是同一个并且在线，并且双方都空闲
+	// （在释放读锁和获取写锁之间，状态可能已改变）
+	doubleCheckProviderEntry, stillExists := h.cardProviders[targetProviderConcrete.GetID()]
+	if !stillExists || doubleCheckProviderEntry != targetProviderEntry { // 确保还是原来的那个 entry
+		global.GVA_LOG.Warn("Hub: (handleSelectCardProvider) 双重检查失败 - Provider 实例已改变或不再存在",
+			zap.String("requestingClientID", requestingClient.GetID()),
+			zap.String("targetProviderID", targetProviderConcrete.GetID()),
+		)
+		sendErrorMessage(requestingClient, protocol.ErrorCodeSessionConflict, "选择发卡方失败：发卡方状态已改变，请重试。") // 更具体的错误消息
 		return
 	}
 
-	if currentTargetProviderConcrete.GetUserID() != requestingClient.GetUserID() || currentTargetProviderConcrete.GetID() == requestingClient.GetID() {
-		sendErrorMessage(requestingClient, protocol.ErrorCodeProviderUnavailable, "选择发卡方失败：目标发卡方状态已改变(UID或ID不匹配)，请重试。")
+	doubleCheckProviderConcrete, ok := doubleCheckProviderEntry.(*Client)
+	if !ok || doubleCheckProviderConcrete == nil { // 再次检查类型和nil
+		global.GVA_LOG.Error("Hub: (handleSelectCardProvider) 双重检查失败 - Provider 类型断言失败或为nil",
+			zap.String("requestingClientID", requestingClient.GetID()),
+			zap.String("targetProviderID", targetProviderConcrete.GetID()), // If nil, this was caught by the previous check on targetProviderConcrete
+		)
+		sendErrorMessage(requestingClient, protocol.ErrorCodeInternalError, "选择发卡方失败：服务器内部错误。")
 		return
 	}
 
-	// 检查双方是否仍然空闲
-	if requestingClient.GetSessionID() != "" || currentTargetProviderConcrete.GetSessionID() != "" { // 使用 concrete 类型进行检查
+	if !doubleCheckProviderConcrete.IsOnline || // 确保仍然在线
+		doubleCheckProviderConcrete.GetSessionID() != "" || // 确保 Provider 仍然空闲
+		requestingClient.GetSessionID() != "" { // 确保 Receiver 仍然空闲
+		global.GVA_LOG.Warn("Hub: (handleSelectCardProvider) 双重检查失败 - 一方或双方状态已改变（不再空闲/在线）",
+			zap.String("requestingClientID", requestingClient.GetID()),
+			zap.String("targetProviderID", doubleCheckProviderConcrete.GetID()),
+			zap.Bool("providerOnline", doubleCheckProviderConcrete.IsOnline),
+			zap.String("providerSessionID", doubleCheckProviderConcrete.GetSessionID()),
+			zap.String("receiverSessionID", requestingClient.GetSessionID()),
+		)
 		sendErrorMessage(requestingClient, protocol.ErrorCodeSessionConflict, "选择发卡方失败：一方或双方状态已改变（不再空闲），请重试。")
 		return
 	}
@@ -857,17 +858,17 @@ func (h *Hub) handleSelectCardProvider(requestingClient *Client, messageBytes []
 	formalSessionID := uuid.NewString()
 	newSession := session.NewSession(formalSessionID)
 	newSession.SetClient(requestingClient, string(protocol.RoleReceiver))
-	newSession.SetClient(currentTargetProviderConcrete, string(protocol.RoleProvider)) // 传递 concrete type
+	newSession.SetClient(doubleCheckProviderConcrete, string(protocol.RoleProvider)) // 传递 concrete type
 	h.sessions[formalSessionID] = newSession
 
 	// 更新客户端的 SessionID
 	requestingClient.SessionID = formalSessionID
-	currentTargetProviderConcrete.SessionID = formalSessionID
+	doubleCheckProviderConcrete.SessionID = formalSessionID
 
 	global.GVA_LOG.Info("Hub: Receiver selected provider, new session created and clients paired.",
 		zap.String("sessionID", formalSessionID),
 		zap.String("receiverClientID", requestingClient.GetID()),
-		zap.String("providerClientID", currentTargetProviderConcrete.GetID()),
+		zap.String("providerClientID", doubleCheckProviderConcrete.GetID()),
 	)
 
 	// Audit Log for session establishment
@@ -875,15 +876,15 @@ func (h *Hub) handleSelectCardProvider(requestingClient *Client, messageBytes []
 		"session_established",
 		global.SessionDetails{
 			InitiatorRole: string(requestingClient.CurrentRole),
-			ResponderRole: string(currentTargetProviderConcrete.CurrentRole),
+			ResponderRole: string(doubleCheckProviderConcrete.CurrentRole),
 		},
 		zap.String("session_id", formalSessionID),
 		zap.String("client_id_initiator", requestingClient.GetID()),
 		zap.String("user_id_initiator", requestingClient.UserID),
-		zap.String("client_id_responder", currentTargetProviderConcrete.GetID()),
-		zap.String("user_id_responder", currentTargetProviderConcrete.GetUserID()),
+		zap.String("client_id_responder", doubleCheckProviderConcrete.GetID()),
+		zap.String("user_id_responder", doubleCheckProviderConcrete.GetUserID()),
 		zap.String("source_ip_initiator", requestingClient.conn.RemoteAddr().String()),
-		zap.String("source_ip_responder", currentTargetProviderConcrete.conn.RemoteAddr().String()),
+		zap.String("source_ip_responder", doubleCheckProviderConcrete.conn.RemoteAddr().String()),
 	)
 
 	ActiveSessions.Inc() // Increment active sessions metric
@@ -893,7 +894,7 @@ func (h *Hub) handleSelectCardProvider(requestingClient *Client, messageBytes []
 	errReceiver := sendProtoMessage(requestingClient, protocol.SessionEstablishedMessage{
 		Type:      protocol.MessageTypeSessionEstablished,
 		SessionID: formalSessionID,
-		PeerID:    currentTargetProviderConcrete.GetID(),
+		PeerID:    doubleCheckProviderConcrete.GetID(),
 		PeerRole:  protocol.RoleProvider,
 	})
 	if errReceiver != nil {
@@ -902,19 +903,19 @@ func (h *Hub) handleSelectCardProvider(requestingClient *Client, messageBytes []
 	}
 
 	// 向 provider 发送
-	errProvider := sendProtoMessage(currentTargetProviderConcrete, protocol.SessionEstablishedMessage{ // 使用 concrete type
+	errProvider := sendProtoMessage(doubleCheckProviderConcrete, protocol.SessionEstablishedMessage{ // 使用 concrete type
 		Type:      protocol.MessageTypeSessionEstablished,
 		SessionID: formalSessionID,
 		PeerID:    requestingClient.GetID(),
 		PeerRole:  protocol.RoleReceiver,
 	})
 	if errProvider != nil {
-		global.GVA_LOG.Error("发送会话建立成功的消息给发卡方失败", zap.Error(errProvider), zap.String("providerClientID", currentTargetProviderConcrete.GetID()))
+		global.GVA_LOG.Error("发送会话建立成功的消息给发卡方失败", zap.Error(errProvider), zap.String("providerClientID", doubleCheckProviderConcrete.GetID()))
 		// TODO: 考虑回滚会话创建或通知另一方
 	}
 
 	// 提供者进入会话后状态变为繁忙，通知其 UserID 下的订阅者列表更新
-	go h.notifyProviderListSubscribers(currentTargetProviderConcrete.GetUserID())
+	go h.notifyProviderListSubscribers(doubleCheckProviderConcrete.GetUserID())
 
 }
 
