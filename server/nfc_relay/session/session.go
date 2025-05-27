@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -19,6 +20,12 @@ type ClientInfoProvider interface {
 
 // SessionStatus 定义了会话的可能状态
 type SessionStatus string
+
+// 定义客户端角色常量
+const (
+	RoleCardEnd = "card"
+	RolePOSEnd  = "pos"
+)
 
 const (
 	StatusWaitingForPairing SessionStatus = "waiting_for_pairing" // 等待配对
@@ -90,15 +97,19 @@ func (s *Session) SetClient(client ClientInfoProvider, role string) (paired bool
 		return false, &SessionError{Message: "会话已终止，无法加入"}
 	}
 
+	if client == nil {
+		return false, &SessionError{Message: "客户端实例不能为nil"}
+	}
+
 	switch role {
-	case "card":
+	case RoleCardEnd:
 		if s.CardEndClient != nil && s.CardEndClient != client {
-			return false, &SessionError{Message: "传卡端角色已被占用"}
+			return false, &SessionError{Message: fmt.Sprintf("角色 '%s' 已被占用", RoleCardEnd)}
 		}
 		s.CardEndClient = client
-	case "pos":
+	case RolePOSEnd:
 		if s.POSEndClient != nil && s.POSEndClient != client {
-			return false, &SessionError{Message: "收卡端角色已被占用"}
+			return false, &SessionError{Message: fmt.Sprintf("角色 '%s' 已被占用", RolePOSEnd)}
 		}
 		s.POSEndClient = client
 	default:
