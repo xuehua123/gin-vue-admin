@@ -44,7 +44,14 @@ type Session struct {
 
 	Status SessionStatus // 会话当前状态
 
-	LastActivityTime time.Time // Tracks the time of the last APDU exchange or significant activity
+	CreatedAt         time.Time // 会话创建时间
+	LastActivityTime  time.Time // 跟踪最后一次APDU交换或重要活动的时间
+	TerminatedAt      time.Time // 会话终止时间
+	TerminationReason string    // 会话终止的原因
+
+	// APDU交换计数
+	upstreamAPDUCount   int64 // 从POS到卡的APDU数量
+	downstreamAPDUCount int64 // 从卡到POS的APDU数量
 
 	// Mutex 用于保护会话内部数据的并发访问，特别是客户端的分配和状态更新。
 	mu sync.RWMutex
@@ -52,10 +59,12 @@ type Session struct {
 
 // NewSession 创建一个新的会话实例。
 func NewSession(sessionID string) *Session {
+	now := time.Now()
 	return &Session{
 		SessionID:        sessionID,
 		Status:           StatusWaitingForPairing,
-		LastActivityTime: time.Now(), // Initialize with current time
+		CreatedAt:        now,
+		LastActivityTime: now, // 初始化为当前时间
 	}
 }
 
@@ -79,12 +88,26 @@ func (s *Session) IsInactive(timeout time.Duration) bool {
 
 // Terminate 标记会话为已终止。可以添加其他清理逻辑。
 func (s *Session) Terminate() {
+	s.TerminateWithReason("会话终止，无指定原因")
+}
+
+// TerminateWithReason 标记会话为已终止，并记录终止原因。
+func (s *Session) TerminateWithReason(reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Status = StatusTerminated
-	// Optionally, clear client references if they are not needed anymore
+	s.TerminatedAt = time.Now()
+	s.TerminationReason = reason
+	// 可选，如果不再需要，清除客户端引用
 	// s.CardEndClient = nil
 	// s.POSEndClient = nil
+}
+
+// IsTerminated 检查会话是否已终止
+func (s *Session) IsTerminated() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Status == StatusTerminated
 }
 
 // SetClient 将客户端根据其角色分配到会话中。
@@ -170,6 +193,36 @@ func (s *Session) GetPeer(client ClientInfoProvider) ClientInfoProvider {
 		return s.CardEndClient
 	}
 	return nil // 给定客户端不在此会话中
+}
+
+// RecordUpstreamAPDU 记录一次从POS到卡的APDU交换
+func (s *Session) RecordUpstreamAPDU() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.upstreamAPDUCount++
+	s.LastActivityTime = time.Now()
+}
+
+// RecordDownstreamAPDU 记录一次从卡到POS的APDU交换
+func (s *Session) RecordDownstreamAPDU() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.downstreamAPDUCount++
+	s.LastActivityTime = time.Now()
+}
+
+// GetUpstreamAPDUCount 获取从POS到卡的APDU交换计数
+func (s *Session) GetUpstreamAPDUCount() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.upstreamAPDUCount
+}
+
+// GetDownstreamAPDUCount 获取从卡到POS的APDU交换计数
+func (s *Session) GetDownstreamAPDUCount() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.downstreamAPDUCount
 }
 
 // SessionError 定义了会话相关的错误类型

@@ -41,6 +41,7 @@ func InitNFCRelayAdminApiRouter(Router *gin.RouterGroup) {
 
 	var adminDashboardApi = api.AdminDashboardApi{} // 实例化API处理器
 	var adminClientApi = api.AdminClientApi{}       // 实例化客户端管理API处理器
+	var adminSessionApi = api.AdminSessionApi{}     // 实例化会话管理API处理器
 	{
 		// 仪表盘相关路由
 		adminApiRouter.GET("dashboard-stats", adminDashboardApi.GetDashboardStats)
@@ -49,6 +50,11 @@ func InitNFCRelayAdminApiRouter(Router *gin.RouterGroup) {
 		adminApiRouter.GET("clients", adminClientApi.GetClientList)                          // 获取客户端列表
 		adminApiRouter.GET("clients/:clientID", adminClientApi.GetClientDetail)              // 获取客户端详情
 		adminApiRouter.POST("clients/:clientID/disconnect", adminClientApi.DisconnectClient) // 断开客户端连接
+
+		// 会话管理相关路由
+		adminApiRouter.GET("sessions", adminSessionApi.GetSessionList)                         // 获取会话列表
+		adminApiRouter.GET("sessions/:sessionID/details", adminSessionApi.GetSessionDetail)    // 获取会话详情
+		adminApiRouter.POST("sessions/:sessionID/terminate", adminSessionApi.TerminateSession) // 终止会话
 
 		// 后续其他NFC Relay管理API也在此处注册
 	}

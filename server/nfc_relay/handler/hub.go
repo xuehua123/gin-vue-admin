@@ -1064,6 +1064,9 @@ func (h *Hub) handleAPDUExchange(sourceClient *Client, messageBytes []byte, dire
 		// targetMessageType = protocol.MessageTypeAPDUToCard //发给卡端的消息类型 (Handled by direct send now)
 		global.GVA_LOG.Info("APDU upstream", zap.String("from", sourceClient.GetID()), zap.String("to", peerClient.GetID()), zap.String("sessionID", activeSession.SessionID), zap.Int("apdu_len", len(apduData)))
 
+		// 记录上行APDU计数
+		activeSession.RecordUpstreamAPDU()
+
 	} else if direction == "downstream" { // 来自传卡端 (Card/Provider)，发往收卡端 (POS/Receiver)
 		var msg protocol.APDUDownstreamMessage
 		if err := json.Unmarshal(messageBytes, &msg); err != nil {
@@ -1074,6 +1077,10 @@ func (h *Hub) handleAPDUExchange(sourceClient *Client, messageBytes []byte, dire
 		apduData = msg.APDU
 		// targetMessageType = protocol.MessageTypeAPDUFromCard //发给POS的消息类型 (来自卡端的响应) (Handled by direct send now)
 		global.GVA_LOG.Info("APDU downstream", zap.String("from", sourceClient.GetID()), zap.String("to", peerClient.GetID()), zap.String("sessionID", activeSession.SessionID), zap.Int("apdu_len", len(apduData)))
+
+		// 记录下行APDU计数
+		activeSession.RecordDownstreamAPDU()
+
 	} else {
 		global.GVA_LOG.Error("APDU交换：未知的APDU方向", zap.String("direction", direction), zap.String("clientID", sourceClient.GetID()))
 		return // 不应该发生
@@ -1428,7 +1435,7 @@ func (h *Hub) terminateSessionByID(sessionID string, reason string, actingClient
 	)
 
 	delete(h.sessions, sessionID)
-	sessionToEnd.Terminate() // Mark session object itself as terminated
+	sessionToEnd.TerminateWithReason(reason) // 使用新方法终止会话并记录原因
 
 	// Clear SessionID for concrete clients under the hub lock
 	if cardClientConcrete != nil {
@@ -1714,3 +1721,56 @@ func (h *Hub) terminateSessionByID(sessionID string, reason string, actingClient
 // GlobalRelayHub 是 Hub 的一个全局实例。
 // 这是一个常见的模式，但对于大型应用程序，请考虑使用依赖注入。
 var GlobalRelayHub = NewHub()
+
+// GetAllSessions 返回当前所有活动会话的安全副本
+// 此方法是并发安全的，适用于会话管理API
+func (h *Hub) GetAllSessions() map[string]*session.Session {
+	h.providerMutex.RLock()
+	defer h.providerMutex.RUnlock()
+
+	// 创建会话映射的浅拷贝
+	sessions := make(map[string]*session.Session, len(h.sessions))
+	for sessionID, session := range h.sessions {
+		sessions[sessionID] = session
+	}
+	return sessions
+}
+
+// GetSessionByID 根据会话ID获取特定会话
+// 此方法是并发安全的
+func (h *Hub) GetSessionByID(sessionID string) (*session.Session, bool) {
+	h.providerMutex.RLock()
+	defer h.providerMutex.RUnlock()
+
+	session, exists := h.sessions[sessionID]
+	return session, exists
+}
+
+// TerminateSessionByAdmin 允许管理员终止会话，这是一个公开方法
+func (h *Hub) TerminateSessionByAdmin(sessionID string, reason string, adminUserID string) error {
+	if sessionID == "" {
+		return errors.New("会话ID不能为空")
+	}
+
+	// 先检查会话是否存在
+	h.providerMutex.RLock()
+	_, exists := h.sessions[sessionID]
+	h.providerMutex.RUnlock()
+
+	if !exists {
+		return errors.New("指定的会话不存在")
+	}
+
+	// 记录管理员操作
+	global.GVA_LOG.Info("管理员请求终止会话",
+		zap.String("sessionID", sessionID),
+		zap.String("adminUserID", adminUserID),
+		zap.String("reason", reason),
+	)
+
+	// 调用内部终止方法，使用"system:admin"前缀标识管理员操作
+	actingClientID := "system:admin:" + adminUserID
+	go h.terminateSessionByID(sessionID, reason, actingClientID, adminUserID)
+
+	return nil
+}
