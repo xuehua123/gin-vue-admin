@@ -104,8 +104,7 @@
         await nextTick()
         reloadFlag.value = true
       } else {
-        const title = route.meta.title
-        router.push({ name: 'Reload', params: { title } })
+        router.push({ name: 'Reload' })
       }
     }, 400)
   }

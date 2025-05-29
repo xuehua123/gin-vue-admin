@@ -5,6 +5,7 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/initialize"
 	"github.com/flipped-aurora/gin-vue-admin/server/nfc_relay/handler" // 导入 nfc_relay/handler 包
+	"github.com/flipped-aurora/gin-vue-admin/server/nfc_relay/service"
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 )
@@ -28,6 +29,10 @@ import (
 // @in                          header
 // @name                        x-token
 // @BasePath                    /
+
+// 全局WebSocket服务实例
+var realtimeService *service.RealtimeDataService
+
 func main() {
 	// 初始化系统
 	initializeSystem()
@@ -38,11 +43,12 @@ func main() {
 // initializeSystem 初始化系统所有组件
 // 提取为单独函数以便于系统重载时调用
 func initializeSystem() {
-	global.GVA_VP = core.Viper() // 初始化Viper
-	initialize.OtherInit()
-	global.GVA_LOG = core.Zap()    // 初始化zap日志库
+	global.GVA_VP = core.Viper()   // 初始化Viper
+	global.GVA_LOG = core.Zap()    // 初始化zap日志库 (必须在其他使用logger的初始化之前)
 	global.InitializeAuditLogger() // 初始化审计日志记录器
 	zap.ReplaceGlobals(global.GVA_LOG)
+
+	initialize.OtherInit()            // 移到logger初始化之后
 	global.GVA_DB = initialize.Gorm() // gorm连接数据库
 	initialize.Timer()
 	initialize.DBList()
@@ -51,7 +57,19 @@ func initializeSystem() {
 		initialize.RegisterTables() // 初始化表
 	}
 
+	// 设置全局NFC中继Hub变量
+	global.GVA_NFC_RELAY_HUB = handler.GlobalRelayHub
+
 	// 启动 NFC Relay Hub
 	go handler.GlobalRelayHub.Run()
 	global.GVA_LOG.Info("NFC中继服务已启动")
+
+	// 🔥 关键修复：在路由初始化之前初始化WebSocket服务
+	initialize.InitWebSocketService()
+	global.GVA_LOG.Info("WebSocket实时数据服务初始化完成，准备注册路由")
+}
+
+// GetRealtimeService 获取全局WebSocket服务实例
+func GetRealtimeService() *service.RealtimeDataService {
+	return initialize.GetRealtimeService()
 }

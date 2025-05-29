@@ -14,6 +14,9 @@ import auth from '@/directive/auth'
 import { store } from '@/pinia'
 import App from './App.vue'
 
+// 引入事件监听器优化工具，减少第三方库的passive event listener警告
+import '@/view/nfcRelayAdmin/utils/eventOptimizer'
+
 const app = createApp(App)
 app.config.productionTip = false
 

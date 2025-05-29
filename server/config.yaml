@@ -10,7 +10,7 @@ autocode:
     root: D:\work\IdeaProjects\gin-vue-admin
     server: server
     module: github.com/flipped-aurora/gin-vue-admin/server
-    ai-path: ""
+    ai-path: "https://ai.gin-vue-admin.com/{FUNC}/jsxuehua/7b8442f9-bca9-4bfd-8808-7b4f1b83fbeb"
 aws-s3:
     bucket: xxxxx-10005608
     region: ap-shanghai
@@ -249,3 +249,27 @@ nfc-relay:
     websocket-write-wait-sec: 10
     websocket-pong-wait-sec: 60
     websocket-max-message-bytes: 2048
+    security:
+        # TLS/WSS 配置
+        enable-tls: false
+        cert-file: "./certs/server.crt"
+        key-file: "./certs/server.key"
+        force-tls: false
+        
+        # 端到端加密配置
+        enable-e2e-encryption: true
+        encryption-algorithm: "AES-256-GCM"
+        key-exchange-method: "ECDH"
+        
+        # 防重放攻击配置
+        enable-anti-replay: true
+        replay-window-ms: 30000  # 30秒窗口
+        max-nonce-cache: 10000
+        
+        # 输入验证配置
+        max-message-size: 4096
+        enable-input-sanitize: true
+        
+        # 客户端认证配置
+        require-client-cert: false
+        client-ca-file: "./certs/ca.crt"

@@ -144,3 +144,24 @@ export const CreateUUID = () => {
     return (c === '0' ? r : (r & 0x3) | 0x8).toString(16)
   })
 }
+
+// 格式化时间函数，用于NFC中继管理模块
+export const formatTime = (timeStr) => {
+  if (!timeStr) return '-'
+  
+  try {
+    const date = new Date(timeStr)
+    if (isNaN(date.getTime())) return '-'
+    
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  } catch (error) {
+    return '-'
+  }
+}

@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	//"github.com/flipped-aurora/gin-vue-admin/server/model/system/request" // JWT claims 结构定义，必须保留
 	"github.com/flipped-aurora/gin-vue-admin/server/nfc_relay/protocol"
+	"github.com/flipped-aurora/gin-vue-admin/server/nfc_relay/security" // 添加安全模块导入
 	"github.com/flipped-aurora/gin-vue-admin/server/nfc_relay/session"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils" // 导入JWT工具包
 	"github.com/google/uuid"
@@ -57,6 +59,9 @@ type Hub struct {
 
 	// metricsMutex 保护对 Prometheus 指标的并发访问
 	metricsMutex sync.Mutex
+
+	// securityManager 审计级安全管理器
+	securityManager *security.HybridEncryptionManager
 }
 
 // NewHub 创建一个新的 Hub 实例。
@@ -70,6 +75,7 @@ func NewHub() *Hub {
 		sessions:                make(map[string]*session.Session),
 		cardProviders:           make(map[string]session.ClientInfoProvider),
 		providerListSubscribers: make(map[string]map[*Client]bool),
+		securityManager:         security.NewHybridEncryptionManager(), // 初始化安全管理器
 		// pendingConnections: make(map[string]*Client), // 已移除
 	}
 }
@@ -254,8 +260,8 @@ func (h *Hub) handleIncomingMessage(procMsg ProcessableMessage) {
 		return
 	}
 
-	// 消息类型检查：除了认证消息，其他都需要认证
-	if genericMsg.Type != protocol.MessageTypeClientAuth && !client.Authenticated {
+	// 消息类型检查：除了认证消息和心跳消息，其他都需要认证
+	if genericMsg.Type != protocol.MessageTypeClientAuth && genericMsg.Type != protocol.MessageTypeHeartbeat && !client.Authenticated {
 		global.GVA_LOG.Warn("未认证的客户端尝试发送非认证消息",
 			zap.String("clientID", client.GetID()),
 			zap.String("messageType", string(genericMsg.Type)),
@@ -290,6 +296,8 @@ func (h *Hub) handleIncomingMessage(procMsg ProcessableMessage) {
 		h.handleClientAuth(client, messageBytes)
 	// case protocol.MessageTypeClientRegister: // 已废弃
 	// 	global.GVA_LOG.Info("收到 ClientRegister 消息 (已废弃)", zap.String("clientID", client.GetID()))
+	case protocol.MessageTypeHeartbeat:
+		h.handleHeartbeat(client, messageBytes)
 	case protocol.MessageTypeDeclareRole:
 		h.handleDeclareRole(client, messageBytes)
 	case protocol.MessageTypeListCardProviders:
@@ -401,6 +409,26 @@ func (h *Hub) handleClientAuth(client *Client, rawMsg json.RawMessage) {
 	}
 	if err := sendProtoMessage(client, response); err != nil {
 		global.GVA_LOG.Error("Hub: Failed to send auth response to client", zap.Error(err), zap.String("clientID", client.GetID()))
+	}
+}
+
+// handleHeartbeat 处理心跳消息 (不需要认证)
+func (h *Hub) handleHeartbeat(client *Client, rawMsg json.RawMessage) {
+	var heartbeatMsg protocol.HeartbeatMessage
+	if err := json.Unmarshal(rawMsg, &heartbeatMsg); err != nil {
+		global.GVA_LOG.Warn("Hub: Error unmarshalling heartbeat message", zap.Error(err), zap.String("clientID", client.GetID()))
+		// 心跳消息格式错误，忽略即可，不需要发送错误响应
+		return
+	}
+
+	// 发送心跳响应
+	response := protocol.HeartbeatResponseMessage{
+		Type:      protocol.MessageTypeHeartbeatResponse,
+		Timestamp: time.Now().Unix(),
+	}
+
+	if err := sendProtoMessage(client, response); err != nil {
+		global.GVA_LOG.Warn("Hub: Failed to send heartbeat response to client", zap.Error(err), zap.String("clientID", client.GetID()))
 	}
 }
 
@@ -1046,12 +1074,12 @@ func (h *Hub) handleAPDUExchange(sourceClient *Client, messageBytes []byte, dire
 			zap.String("sessionID", sourceClient.SessionID),
 		)
 		sendErrorMessage(sourceClient, protocol.ErrorCodeProviderNotFound, "APDU发送失败：未能找到您的通信对端")
-		// 可以在这里考虑将会话标记为终止或清理
 		return
 	}
 
 	var apduData string
-	// var targetMessageType protocol.MessageType // Removed: declared and not used
+	var isEncrypted bool
+	var encryptedPayload map[string]interface{}
 
 	if direction == "upstream" { // 来自收卡端 (POS/Receiver)，发往传卡端 (Card/Provider)
 		var msg protocol.APDUUpstreamMessage
@@ -1060,10 +1088,20 @@ func (h *Hub) handleAPDUExchange(sourceClient *Client, messageBytes []byte, dire
 			sendErrorMessage(sourceClient, protocol.ErrorCodeBadRequest, "无效的APDU消息格式 (upstream)")
 			return
 		}
-		apduData = msg.APDU
-		// targetMessageType = protocol.MessageTypeAPDUToCard //发给卡端的消息类型 (Handled by direct send now)
-		global.GVA_LOG.Info("APDU upstream", zap.String("from", sourceClient.GetID()), zap.String("to", peerClient.GetID()), zap.String("sessionID", activeSession.SessionID), zap.Int("apdu_len", len(apduData)))
 
+		// 检查是否为加密的APDU数据
+		if strings.HasPrefix(msg.APDU, "encrypted:") {
+			isEncrypted = true
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(msg.APDU, "encrypted:")), &encryptedPayload); err != nil {
+				global.GVA_LOG.Error("解析加密APDU载荷失败", zap.Error(err))
+				sendErrorMessage(sourceClient, protocol.ErrorCodeBadRequest, "无效的加密APDU格式")
+				return
+			}
+		} else {
+			apduData = msg.APDU
+		}
+
+		global.GVA_LOG.Info("APDU upstream", zap.String("from", sourceClient.GetID()), zap.String("to", peerClient.GetID()), zap.String("sessionID", activeSession.SessionID), zap.Bool("encrypted", isEncrypted))
 		// 记录上行APDU计数
 		activeSession.RecordUpstreamAPDU()
 
@@ -1074,50 +1112,161 @@ func (h *Hub) handleAPDUExchange(sourceClient *Client, messageBytes []byte, dire
 			sendErrorMessage(sourceClient, protocol.ErrorCodeBadRequest, "无效的APDU消息格式 (downstream)")
 			return
 		}
-		apduData = msg.APDU
-		// targetMessageType = protocol.MessageTypeAPDUFromCard //发给POS的消息类型 (来自卡端的响应) (Handled by direct send now)
-		global.GVA_LOG.Info("APDU downstream", zap.String("from", sourceClient.GetID()), zap.String("to", peerClient.GetID()), zap.String("sessionID", activeSession.SessionID), zap.Int("apdu_len", len(apduData)))
 
+		// 检查是否为加密的APDU数据
+		if strings.HasPrefix(msg.APDU, "encrypted:") {
+			isEncrypted = true
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(msg.APDU, "encrypted:")), &encryptedPayload); err != nil {
+				global.GVA_LOG.Error("解析加密APDU载荷失败", zap.Error(err))
+				sendErrorMessage(sourceClient, protocol.ErrorCodeBadRequest, "无效的加密APDU格式")
+				return
+			}
+		} else {
+			apduData = msg.APDU
+		}
+
+		global.GVA_LOG.Info("APDU downstream", zap.String("from", sourceClient.GetID()), zap.String("to", peerClient.GetID()), zap.String("sessionID", activeSession.SessionID), zap.Bool("encrypted", isEncrypted))
 		// 记录下行APDU计数
 		activeSession.RecordDownstreamAPDU()
 
 	} else {
 		global.GVA_LOG.Error("APDU交换：未知的APDU方向", zap.String("direction", direction), zap.String("clientID", sourceClient.GetID()))
-		return // 不应该发生
+		return
 	}
 
-	// Audit Log for APDU relay attempt
+	// 🔐 处理加密的APDU数据
+	var finalAPDUBytes []byte
+	var auditData security.AuditableData
+
+	if isEncrypted {
+		// 解密并验证加密的APDU
+		apduClass := &security.APDUDataClass{}
+		if err := h.mapEncryptedPayloadToAPDUClass(encryptedPayload, apduClass); err != nil {
+			global.GVA_LOG.Error("映射加密载荷失败", zap.Error(err))
+			sendErrorMessage(sourceClient, protocol.ErrorCodeBadRequest, "无效的加密APDU结构")
+			return
+		}
+
+		// 执行接收端解密验证
+		decryptedAPDU, err := h.securityManager.DecryptAPDUFromTransmission(
+			sourceClient.SessionID,
+			apduClass,
+			sourceClient.GetUserID(),
+		)
+		if err != nil {
+			global.GVA_LOG.Error("APDU解密验证失败", zap.Error(err),
+				zap.String("clientID", sourceClient.GetID()),
+				zap.String("sessionID", sourceClient.SessionID))
+
+			// 记录安全违规事件
+			global.LogAuditEvent(
+				"apdu_decryption_failure",
+				global.ErrorDetails{
+					ErrorCode:    "SECURITY_DECRYPTION_FAILED",
+					ErrorMessage: err.Error(),
+					Component:    "nfc_relay_hub.handleAPDUExchange",
+				},
+				zap.String("session_id", sourceClient.SessionID),
+				zap.String("source_client_id", sourceClient.GetID()),
+				zap.String("user_id_source", sourceClient.UserID),
+				zap.String("direction", direction),
+			)
+
+			sendErrorMessage(sourceClient, protocol.ErrorCodeBadRequest, "APDU数据解密失败或不符合安全要求")
+			return
+		}
+
+		finalAPDUBytes = decryptedAPDU
+		auditData = apduClass.AuditData
+
+		global.GVA_LOG.Info("加密APDU解密验证通过",
+			zap.String("sessionID", sourceClient.SessionID),
+			zap.String("commandClass", auditData.CommandClass),
+			zap.Int("riskScore", auditData.RiskScore))
+	} else {
+		// 处理明文APDU - 进行安全检查和加密
+		apduBytes, err := h.parseAPDUData(apduData)
+		if err != nil {
+			global.GVA_LOG.Error("APDU数据解析失败", zap.Error(err), zap.String("clientID", sourceClient.GetID()))
+			sendErrorMessage(sourceClient, protocol.ErrorCodeBadRequest, "无效的APDU数据格式")
+			return
+		}
+
+		// 构造安全审计元数据
+		metadata := security.APDUMetadata{
+			SessionID:   sourceClient.SessionID,
+			SequenceNum: time.Now().UnixNano(),
+			Direction:   direction,
+			Timestamp:   time.Now(),
+			ClientID:    sourceClient.GetID(),
+			UserID:      sourceClient.GetUserID(),
+			DeviceInfo:  sourceClient.conn.RemoteAddr().String(),
+			ChecksumCRC: fmt.Sprintf("CRC_%d", len(apduBytes)),
+		}
+
+		// 🛡️ 执行审计级加密和合规检查
+		encryptedAPDU, err := h.securityManager.EncryptAPDUForTransmission(
+			sourceClient.SessionID,
+			apduBytes,
+			metadata,
+			sourceClient.GetUserID(),
+		)
+		if err != nil {
+			global.GVA_LOG.Error("APDU安全加密失败", zap.Error(err),
+				zap.String("clientID", sourceClient.GetID()),
+				zap.String("sessionID", sourceClient.SessionID))
+
+			// 记录安全违规事件
+			global.LogAuditEvent(
+				"apdu_security_failure",
+				global.ErrorDetails{
+					ErrorCode:    "SECURITY_ENCRYPTION_FAILED",
+					ErrorMessage: err.Error(),
+					Component:    "nfc_relay_hub.handleAPDUExchange",
+				},
+				zap.String("session_id", sourceClient.SessionID),
+				zap.String("source_client_id", sourceClient.GetID()),
+				zap.String("user_id_source", sourceClient.UserID),
+				zap.String("direction", direction),
+			)
+
+			sendErrorMessage(sourceClient, protocol.ErrorCodeBadRequest, "APDU数据不符合安全要求，传输被阻止")
+			return
+		}
+
+		finalAPDUBytes = apduBytes
+		auditData = encryptedAPDU.AuditData
+
+		global.GVA_LOG.Info("明文APDU安全检查通过",
+			zap.String("sessionID", sourceClient.SessionID),
+			zap.String("commandClass", encryptedAPDU.AuditData.CommandClass),
+			zap.Int("riskScore", encryptedAPDU.AuditData.RiskScore))
+	}
+
+	// 审计日志记录
 	global.LogAuditEvent(
-		"apdu_relayed_attempt", // Or "apdu_exchange_started" if we want start/end events
+		"apdu_relayed_attempt",
 		global.APDUDetails{
 			Direction: direction,
-			Length:    len(apduData), // Or len(messageBytes) if it's just the APDU
+			Length:    len(finalAPDUBytes),
 		},
 		zap.String("session_id", sourceClient.SessionID),
 		zap.String("source_client_id", sourceClient.GetID()),
 		zap.String("target_client_id", peerClient.GetID()),
 		zap.String("user_id_source", sourceClient.UserID),
+		zap.String("command_class", auditData.CommandClass),
+		zap.Int("risk_score", auditData.RiskScore),
 	)
 
 	// 将 APDU 消息转发给对端客户端
-	// The original messageBytes (which is the full protocol message) should be forwarded,
-	// not just apduData. The peer expects a full protocol message.
 	if err := peerClient.Send(messageBytes); err != nil {
 		global.GVA_LOG.Error("Hub: 转发 APDU 消息失败", zap.Error(err), zap.String("targetClientID", peerClient.GetID()))
-		sendErrorMessage(sourceClient, protocol.ErrorCodeInternalError, "Failed to forward APDU to peer: "+err.Error()) // Corrected ErrorCodeMessageSendFailed
-		ApduRelayErrors.WithLabelValues(direction, sourceClient.SessionID).Inc()
-		// Audit log for APDU relay failure is already here
+		sendErrorMessage(sourceClient, protocol.ErrorCodeInternalError, "Failed to forward APDU to peer: "+err.Error())
 
-		// Terminate the session as APDU exchange is critical
-		// We need RUnlock before calling terminateSessionByID which will Lock
-		// However, we are already outside the RLock for session reading in the current structure.
-		// Let's verify the lock scope. The RLock was for `h.sessions[sourceClient.SessionID]`
-		// which is done before this point.
-		// So, we can call terminateSessionByID directly.
 		global.LogAuditEvent(
 			"apdu_relayed_failure",
 			global.ErrorDetails{
-				ErrorCode:    strconv.Itoa(protocol.ErrorCodeInternalError), // Corrected ErrorCodeMessageSendFailed
+				ErrorCode:    strconv.Itoa(protocol.ErrorCodeInternalError),
 				ErrorMessage: "Failed to forward APDU to peer, terminating session: " + err.Error(),
 				Component:    "nfc_relay_hub.handleAPDUExchange",
 			},
@@ -1128,33 +1277,33 @@ func (h *Hub) handleAPDUExchange(sourceClient *Client, messageBytes []byte, dire
 			zap.String("direction", direction),
 		)
 
-		// Terminate the session. The acting client is the sourceClient, as it initiated the APDU that failed to be relayed.
+		// 终止会话
 		h.terminateSessionByID(sourceClient.SessionID, "APDU转发失败导致会话终止", sourceClient.GetID(), sourceClient.GetUserID())
 		return
 	}
 
-	ApduMessagesRelayed.WithLabelValues(direction, sourceClient.SessionID).Inc()
 	global.GVA_LOG.Info("Hub: APDU 消息已成功转发",
 		zap.String("sessionID", sourceClient.SessionID),
 		zap.String("fromClientID", sourceClient.GetID()),
 		zap.String("toClientID", peerClient.GetID()),
 		zap.String("direction", direction),
-		zap.Int("apduLength", len(apduData)),
+		zap.Int("apduLength", len(finalAPDUBytes)),
+		zap.Bool("encrypted", isEncrypted),
 	)
 
-	// Audit Log for APDU relay success
-	// This could be redundant if apdu_relayed_attempt is sufficient
-	// Or change apdu_relayed_attempt to just "apdu_relayed" and log it here after successful send.
+	// 成功转发的审计日志
 	global.LogAuditEvent(
 		"apdu_relayed_success",
 		global.APDUDetails{
 			Direction: direction,
-			Length:    len(apduData),
+			Length:    len(finalAPDUBytes),
 		},
 		zap.String("session_id", sourceClient.SessionID),
 		zap.String("source_client_id", sourceClient.GetID()),
 		zap.String("target_client_id", peerClient.GetID()),
 		zap.String("user_id_source", sourceClient.UserID),
+		zap.String("command_class", auditData.CommandClass),
+		zap.Int("risk_score", auditData.RiskScore),
 	)
 }
 
@@ -1746,31 +1895,105 @@ func (h *Hub) GetSessionByID(sessionID string) (*session.Session, bool) {
 	return session, exists
 }
 
-// TerminateSessionByAdmin 允许管理员终止会话，这是一个公开方法
+// TerminateSessionByAdmin 允许管理员终止指定的会话
 func (h *Hub) TerminateSessionByAdmin(sessionID string, reason string, adminUserID string) error {
-	if sessionID == "" {
-		return errors.New("会话ID不能为空")
-	}
+	h.providerMutex.Lock()
+	defer h.providerMutex.Unlock()
 
-	// 先检查会话是否存在
-	h.providerMutex.RLock()
-	_, exists := h.sessions[sessionID]
-	h.providerMutex.RUnlock()
-
+	session, exists := h.sessions[sessionID]
 	if !exists {
-		return errors.New("指定的会话不存在")
+		return errors.New("会话不存在")
 	}
 
 	// 记录管理员操作
-	global.GVA_LOG.Info("管理员请求终止会话",
+	global.GVA_LOG.Info("管理员终止会话",
 		zap.String("sessionID", sessionID),
-		zap.String("adminUserID", adminUserID),
 		zap.String("reason", reason),
+		zap.String("adminUserID", adminUserID),
 	)
 
-	// 调用内部终止方法，使用"system:admin"前缀标识管理员操作
-	actingClientID := "system:admin:" + adminUserID
-	go h.terminateSessionByID(sessionID, reason, actingClientID, adminUserID)
+	// 调用内部的终止方法，但不加锁（因为已经在锁内）
+	// 这里直接调用 session.Terminate() 并手动清理
+	session.Terminate()
+
+	// 清理会话
+	delete(h.sessions, sessionID)
+
+	// 更新指标
+	h.metricsMutex.Lock()
+	ActiveSessions.Dec()
+	h.metricsMutex.Unlock()
+
+	return nil
+}
+
+// parseAPDUData 解析APDU十六进制字符串为字节数组
+func (h *Hub) parseAPDUData(apduHex string) ([]byte, error) {
+	// 移除空格和其他非十六进制字符
+	apduHex = strings.ReplaceAll(apduHex, " ", "")
+	apduHex = strings.ReplaceAll(apduHex, "\n", "")
+	apduHex = strings.ReplaceAll(apduHex, "\t", "")
+
+	// 检查空字符串
+	if len(apduHex) == 0 {
+		return nil, fmt.Errorf("APDU十六进制字符串不能为空")
+	}
+
+	// 检查长度是否为偶数
+	if len(apduHex)%2 != 0 {
+		return nil, fmt.Errorf("APDU十六进制字符串长度必须为偶数")
+	}
+
+	// 解码十六进制字符串
+	apduBytes := make([]byte, len(apduHex)/2)
+	for i := 0; i < len(apduHex); i += 2 {
+		byteValue, err := strconv.ParseUint(apduHex[i:i+2], 16, 8)
+		if err != nil {
+			return nil, fmt.Errorf("无效的十六进制字符: %s", apduHex[i:i+2])
+		}
+		apduBytes[i/2] = byte(byteValue)
+	}
+
+	return apduBytes, nil
+}
+
+// mapEncryptedPayloadToAPDUClass 将加密载荷映射到APDU数据类
+func (h *Hub) mapEncryptedPayloadToAPDUClass(payload map[string]interface{}, apduClass *security.APDUDataClass) error {
+	// 验证必需字段
+	auditDataInterface, hasAuditData := payload["auditData"]
+	businessDataInterface, hasBusinessData := payload["businessData"]
+	metadataInterface, hasMetadata := payload["metadata"]
+
+	if !hasAuditData || !hasBusinessData || !hasMetadata {
+		return fmt.Errorf("加密载荷缺少必需字段: auditData, businessData, metadata")
+	}
+
+	// 解析审计数据
+	auditDataBytes, err := json.Marshal(auditDataInterface)
+	if err != nil {
+		return fmt.Errorf("序列化审计数据失败: %w", err)
+	}
+	if err := json.Unmarshal(auditDataBytes, &apduClass.AuditData); err != nil {
+		return fmt.Errorf("反序列化审计数据失败: %w", err)
+	}
+
+	// 解析业务数据
+	businessDataBytes, err := json.Marshal(businessDataInterface)
+	if err != nil {
+		return fmt.Errorf("序列化业务数据失败: %w", err)
+	}
+	if err := json.Unmarshal(businessDataBytes, &apduClass.BusinessData); err != nil {
+		return fmt.Errorf("反序列化业务数据失败: %w", err)
+	}
+
+	// 解析元数据
+	metadataBytes, err := json.Marshal(metadataInterface)
+	if err != nil {
+		return fmt.Errorf("序列化元数据失败: %w", err)
+	}
+	if err := json.Unmarshal(metadataBytes, &apduClass.Metadata); err != nil {
+		return fmt.Errorf("反序列化元数据失败: %w", err)
+	}
 
 	return nil
 }

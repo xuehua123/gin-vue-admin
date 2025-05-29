@@ -2,8 +2,9 @@ package global
 
 import (
 	"fmt"
-	"github.com/mark3labs/mcp-go/server"
 	"sync"
+
+	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/gin-gonic/gin"
 	"github.com/qiniu/qmgo"
@@ -37,8 +38,10 @@ var (
 	GVA_ROUTERS             gin.RoutesInfo
 	GVA_ACTIVE_DBNAME       *string
 	GVA_MCP_SERVER          *server.MCPServer
-	BlackCache              local_cache.Cache
-	lock                    sync.RWMutex
+	// NFC中继相关全局变量
+	GVA_NFC_RELAY_HUB interface{} // NFC中继Hub实例，使用interface{}避免循环导入
+	BlackCache        local_cache.Cache
+	lock              sync.RWMutex
 )
 
 // GetGlobalDBByDBName 通过名称获取db list中的db

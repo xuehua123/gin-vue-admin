@@ -60,7 +60,14 @@
       width="60%"
       :before-close="handleCloseDialog"
     >
-      <el-form v-if="currentTestingTool" :model="testParamsForm" ref="testParamsFormRef" label-width="120px" label-position="top" class="max-h-[calc(60vh-120px)] overflow-y-auto">
+      <el-form 
+        v-show="currentTestingTool && testDialogVisible" 
+        :model="testParamsForm" 
+        ref="testParamsFormRef" 
+        label-width="120px" 
+        label-position="top" 
+        class="max-h-[calc(60vh-120px)] overflow-y-auto"
+      >
         <el-form-item
           v-for="(propDetails, propName) in currentTestingTool.inputSchema.properties"
           :key="propName"
@@ -134,7 +141,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { VideoPlay, DocumentCopy } from '@element-plus/icons-vue' // Added DocumentCopy
 import { mcpList, mcpTest } from '@/api/autoCode'
@@ -203,14 +210,25 @@ const openTestDialog = (tool) => {
     })
   }
   testDialogVisible.value = true
-  // 清除表单校验状态
-  if (testParamsFormRef.value) {
-    testParamsFormRef.value.clearValidate()
-  }
+  
+  // 使用 nextTick 确保对话框完全渲染后再清除表单校验状态
+  nextTick(() => {
+    if (testParamsFormRef.value) {
+      testParamsFormRef.value.clearValidate()
+    }
+  })
 }
 
 const handleCloseDialog = (done) => {
   apiDialogResponse.value = null
+  // 延迟清理以避免表单在销毁过程中的宽度计算错误
+  nextTick(() => {
+    currentTestingTool.value = null
+    // 重置表单数据
+    for (const key in testParamsForm) {
+      delete testParamsForm[key]
+    }
+  })
   done()
 }
 

@@ -33,7 +33,7 @@
         *   过去一段时间内活动连接数和活动会话数的变化趋势图（例如：折线图）。
         *   APDU消息类型分布饼图（Upstream vs Downstream）。
 *   **后端API需求：**
-    *   一个API接口 (`/api/nfc-relay/admin/dashboard-stats`)，用于聚合上述统计数据。此接口会从 `GlobalRelayHub` 内部状态（需要加锁读取）和/或已有的Prometheus指标中获取信息。
+    *   一个API接口 (`/admin/nfc-relay/v1/dashboard-stats`)，用于聚合上述统计数据。此接口会从 `GlobalRelayHub` 内部状态（需要加锁读取）和/或已有的Prometheus指标中获取信息。
 
 ---
 
@@ -48,8 +48,8 @@
     *   **管理员操作 (需严格权限控制)：**
         *   对特定客户端执行“**强制断开连接**”操作（“踢下线”）。
 *   **后端API需求：**
-    *   `GET /api/nfc-relay/admin/clients`: 获取客户端列表，支持分页和筛选参数。此API将从 `GlobalRelayHub.clients` 读取数据。
-    *   `POST /api/nfc-relay/admin/clients/:clientID/disconnect`: (Admin操作) 强制断开指定客户端的WebSocket连接。后端将调用Hub的注销逻辑并关闭其连接。
+    *   `GET /admin/nfc-relay/v1/clients`: 获取客户端列表，支持分页和筛选参数。此API将从 `GlobalRelayHub.clients` 读取数据。
+    *   `POST /admin/nfc-relay/v1/clients/:clientID/disconnect`: (Admin操作) 强制断开指定客户端的WebSocket连接。后端将调用Hub的注销逻辑并关闭其连接。
 
 ---
 
@@ -64,8 +64,8 @@
     *   **管理员操作 (需严格权限控制)：**
         *   对特定会话执行“**强制终止会话**”操作。
 *   **后端API需求：**
-    *   `GET /api/nfc-relay/admin/sessions`: 获取活动会话列表，支持分页和筛选参数。此API将从 `GlobalRelayHub.sessions` 读取数据。
-    *   `POST /api/nfc-relay/admin/sessions/:sessionID/terminate`: (Admin操作) 强制终止指定的NFC中继会话。后端将调用 `GlobalRelayHub.terminateSessionByID`。
+    *   `GET /admin/nfc-relay/v1/sessions`: 获取活动会话列表，支持分页和筛选参数。此API将从 `GlobalRelayHub.sessions` 读取数据。
+    *   `POST /admin/nfc-relay/v1/sessions:sessionID/terminate`: (Admin操作) 强制终止指定的NFC中继会话。后端将调用 `GlobalRelayHub.terminateSessionByID`。
 
 ---
 
@@ -82,7 +82,7 @@
             *   按时间范围筛选。
     *   **日志详情查看 (可选)：** 点击某条日志可以展开或弹窗显示完整的JSON详情。
 *   **后端API需求：**
-    *   `GET /api/nfc-relay/admin/audit-logs`: 查询审计日志。
+    *   `GET /admin/nfc-relay/v1/audit-logs`: 查询审计日志。
         *   **参数：** 支持分页参数 (`page`, `pageSize`)，以及上述筛选条件作为查询参数。
         *   **后端实现：** 由于审计日志目前是通过 `zap.Logger` 写入，后端API需要有策略地读取和筛选这些日志。如果日志量巨大，直接读文件性能可能不高。初期可以实现读取最近N条或按日期读取；长期考虑，如果对审计日志有复杂查询和分析需求，可能需要将审计日志输出到专门的日志管理系统（如ELK Stack、Loki等），然后API从这些系统查询。但对于起步阶段，直接从Hub的日志文件或内存中（如果量不大且有缓存）读取并提供基本筛选是可行的。
 
@@ -97,7 +97,7 @@
         *   例如：`HubCheckIntervalSec`, `SessionInactiveTimeoutSec`, `WebsocketWriteWaitSec`, `WebsocketPongWaitSec`, `WebsocketMaxMessageBytes` 等。
     *   **只读展示：** 强调这是只读信息，不提供在线修改功能（修改配置通常需要重启服务，且直接在线修改风险较高，建议通过修改配置文件并重启服务的方式进行）。
 *   **后端API需求：**
-    *   `GET /api/nfc-relay/admin/config`: 返回当前加载的 `global.GVA_CONFIG.NfcRelay` 配置结构体数据。
+    *   `GET /admin/nfc-relay/v1/config`: 返回当前加载的 `global.GVA_CONFIG.NfcRelay` 配置结构体数据。
 
 ---
 
@@ -339,11 +339,6 @@ RelatedAuditLogsSummary: 这部分比较复杂。
         *   第三个参数是操作者客户端ID（这里用一个系统标识），第四个是操作者用户ID。
     2.  记录管理员操作日志。
     3.  如果 `terminateSessionByID` 返回错误或未找到会话，返回错误响应。否则返回成功。
-会话管理 (Active Sessions Management) API
-GET /api/admin/nfc-relay/v1/sessions (获取会话列表)
-(内容同前)
-POST /api/admin/nfc-relay/v1/sessions/:sessionID/terminate (终止会话)
-(内容同前)
 新增 API: GET /api/admin/nfc-relay/v1/sessions/:sessionID/details
 功能： 获取指定NFC中继会话的更详细信息。
 请求参数 (Path Param)：

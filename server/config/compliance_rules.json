@@ -1,0 +1,134 @@
+{
+  "version": "1.0.0",
+  "last_modified": "2025-01-01T00:00:00Z",
+  "global_settings": {
+    "enable_audit_logging": true,
+    "max_transaction_amount": 500000,
+    "require_deep_inspection": true,
+    "block_suspicious_activity": true,
+    "retention_days": 90
+  },
+  "rules": {
+    "rule_001": {
+      "id": "rule_001",
+      "name": "交易金额限制",
+      "description": "检查单笔交易金额是否超过限制",
+      "category": "transaction",
+      "severity": "high",
+      "enabled": true,
+      "conditions": [
+        {
+          "field": "amount",
+          "operator": "greater_than",
+          "value": 100000,
+          "logic_op": "AND"
+        }
+      ],
+      "actions": [
+        {
+          "type": "block",
+          "parameters": {
+            "reason": "交易金额超过限制"
+          }
+        },
+        {
+          "type": "audit_log",
+          "parameters": {
+            "level": "high"
+          }
+        }
+      ],
+      "created_time": "2025-01-01T00:00:00Z",
+      "last_modified": "2025-01-01T00:00:00Z",
+      "metadata": {
+        "created_by": "system",
+        "version": "1.0"
+      }
+    },
+    "rule_002": {
+      "id": "rule_002", 
+      "name": "频繁交易检测",
+      "description": "检测用户在短时间内的频繁交易行为",
+      "category": "behavior",
+      "severity": "medium",
+      "enabled": true,
+      "conditions": [
+        {
+          "field": "transaction_count_5min",
+          "operator": "greater_than",
+          "value": 10,
+          "logic_op": "AND"
+        }
+      ],
+      "actions": [
+        {
+          "type": "warning",
+          "parameters": {
+            "message": "检测到频繁交易行为"
+          }
+        },
+        {
+          "type": "audit_log",
+          "parameters": {
+            "level": "medium"
+          }
+        }
+      ],
+      "created_time": "2025-01-01T00:00:00Z",
+      "last_modified": "2025-01-01T00:00:00Z",
+      "metadata": {
+        "created_by": "system",
+        "version": "1.0"
+      }
+    },
+    "rule_003": {
+      "id": "rule_003",
+      "name": "异常IP检测",
+      "description": "检测来自异常IP地址的交易",
+      "category": "security",
+      "severity": "high",
+      "enabled": true,
+      "conditions": [
+        {
+          "field": "ip_reputation",
+          "operator": "equals",
+          "value": "suspicious",
+          "logic_op": "OR"
+        },
+        {
+          "field": "geo_location",
+          "operator": "not_in",
+          "value": ["CN", "HK", "TW", "MO"],
+          "logic_op": "AND"
+        }
+      ],
+      "actions": [
+        {
+          "type": "block",
+          "parameters": {
+            "reason": "来源IP异常"
+          }
+        },
+        {
+          "type": "audit_log",
+          "parameters": {
+            "level": "high"
+          }
+        }
+      ],
+      "created_time": "2025-01-01T00:00:00Z",
+      "last_modified": "2025-01-01T00:00:00Z",
+      "metadata": {
+        "created_by": "system",
+        "version": "1.0"
+      }
+    }
+  },
+  "rule_validation": {
+    "required_fields": ["id", "name", "category", "severity", "enabled", "conditions", "actions"],
+    "valid_severities": ["low", "medium", "high", "critical"],
+    "valid_categories": ["transaction", "behavior", "security", "compliance"],
+    "valid_operators": ["equals", "not_equals", "greater_than", "less_than", "greater_equal", "less_equal", "in", "not_in", "contains", "not_contains"],
+    "valid_actions": ["block", "warning", "audit_log", "notify", "quarantine"]
+  }
+} 

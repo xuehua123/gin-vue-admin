@@ -232,3 +232,14 @@ type ErrorDetails struct {
 	Component    string `json:"component,omitempty"`     // 组件，例如 "nfc_relay_hub", "auth_service"
 	AffectedData string `json:"affected_data,omitempty"` // 受影响的数据，例如 APDU 十六进制, 消息内容，可选
 }
+
+// ComplianceViolation 包含合规违规的详细信息
+type ComplianceViolation struct {
+	UserID       string    `json:"user_id"`
+	SessionID    string    `json:"session_id"`
+	CommandClass string    `json:"command_class"`
+	Reason       string    `json:"reason"`
+	RiskLevel    string    `json:"risk_level"`
+	Actions      string    `json:"actions"`
+	Timestamp    time.Time `json:"timestamp"`
+}

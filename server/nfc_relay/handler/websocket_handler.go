@@ -9,6 +9,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// 全局WebSocket实时数据服务实例
+var GlobalRealtimeDataService interface {
+	HandleWebSocket(*gin.Context)
+}
+
 var upgrader = websocket.Upgrader{
 	// ReadBufferSize 和 WriteBufferSize 指定I/O缓冲区的大小。
 	// 默认值通常足够，但可以根据需要调整。
@@ -26,7 +31,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// WSConnectionHandler 处理 WebSocket 连接请求
+// WSConnectionHandler 处理 NFC Relay 客户端 WebSocket 连接请求
 func WSConnectionHandler(c *gin.Context) {
 	// 尝试将 HTTP 连接升级到 WebSocket 连接
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -50,4 +55,24 @@ func WSConnectionHandler(c *gin.Context) {
 
 	// 当 readPump 退出时 (连接关闭或错误)，此处的 WSConnectionHandler 协程也会结束。
 	// client 的 unregister 和 conn.Close() 由 readPump 的 defer 语句处理。
+}
+
+// AdminWSConnectionHandler 处理管理界面专用的 WebSocket 连接请求
+func AdminWSConnectionHandler(c *gin.Context) {
+	// 使用全局实时数据服务实例
+	if GlobalRealtimeDataService == nil {
+		global.GVA_LOG.Error("RealtimeDataService not initialized")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务未初始化"})
+		return
+	}
+
+	// 使用实时数据服务的WebSocket处理器
+	GlobalRealtimeDataService.HandleWebSocket(c)
+}
+
+// SetRealtimeDataService 设置全局实时数据服务实例
+func SetRealtimeDataService(service interface {
+	HandleWebSocket(*gin.Context)
+}) {
+	GlobalRealtimeDataService = service
 }

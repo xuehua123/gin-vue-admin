@@ -76,6 +76,12 @@ export default ({ mode }) => {
           changeOrigin: true,
           rewrite: (path) =>
             path.replace(new RegExp('^' + process.env.VITE_BASE_API), '')
+        },
+        // WebSocket代理配置
+        '/ws': {
+          target: `ws://localhost:${process.env.VITE_SERVER_PORT}`, // WebSocket目标地址
+          ws: true, // 启用WebSocket代理
+          changeOrigin: true
         }
       }
     },

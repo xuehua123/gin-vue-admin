@@ -13,6 +13,7 @@ const (
 	MessageTypeAPDUDownstream     MessageType = "apdu_downstream"         // 传卡端发送给服务器的APDU
 	MessageTypeStatusUpdate       MessageType = "status_update_to_server" // 客户端状态更新
 	MessageTypeEndSession         MessageType = "end_session"             // 客户端主动请求结束当前会话
+	MessageTypeHeartbeat          MessageType = "heartbeat"               // 心跳消息 (不需要认证)
 
 	// Server to Client
 	MessageTypeServerAuthResponse   MessageType = "server_auth_response"   // 服务器认证响应
@@ -26,6 +27,7 @@ const (
 	MessageTypeAPDUFromCard         MessageType = "apdu_from_card"         // 服务器转发给收卡端的APDU (来自传卡端的响应)
 	MessageTypeError                MessageType = "error"                  // 通用错误消息
 	MessageTypePeerStatusUpdate     MessageType = "peer_status_update"     // 对端状态更新
+	MessageTypeHeartbeatResponse    MessageType = "heartbeat_response"     // 心跳响应消息
 )
 
 // RoleType 定义了客户端的角色类型
@@ -247,6 +249,20 @@ type SessionFailedMessage struct {
 type EndSessionMessage struct {
 	Type      MessageType `json:"type"`      // 应为 "end_session"
 	SessionID string      `json:"sessionId"` // 要结束的会话ID
+}
+
+// HeartbeatMessage 心跳消息 (不需要认证)
+// 方向: Client -> Server
+type HeartbeatMessage struct {
+	Type      MessageType `json:"type"`      // 应为 "heartbeat"
+	Timestamp int64       `json:"timestamp"` // 可选的时间戳
+}
+
+// HeartbeatResponseMessage 心跳响应消息
+// 方向: Server -> Client
+type HeartbeatResponseMessage struct {
+	Type      MessageType `json:"type"`      // 应为 "heartbeat_response"
+	Timestamp int64       `json:"timestamp"` // 服务器当前时间戳
 }
 
 // TODO: 根据《NFC中继支付系统技术开发手册》3.5节，补充和完善所有消息类型和字段。

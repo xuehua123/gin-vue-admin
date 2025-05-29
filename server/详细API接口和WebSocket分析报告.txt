@@ -1,0 +1,450 @@
+====================================================================================================
+🔍 详细API和WebSocket接口分析报告
+====================================================================================================
+
+📋 项目概述
+--------------------------------------------------------------------------------
+项目名称: Gin-Vue-Admin NFC中继系统
+技术栈: Go + Gin + Vue.js + WebSocket
+接口协议: RESTful API + WebSocket
+
+🌐 API接口详细列表
+--------------------------------------------------------------------------------
+
+📂 NFC中继管理 (共31个接口)
+  ======================================================================
+
+  🔹 GET 请求 (18个)
+    ------------------------------------------------------------
+    ▪ /admin/nfc-relay/v1/alerts
+      📝 描述: 获取告警信息
+      🎯 处理器: DashboardEnhancedApi.GetAlerts
+
+    ▪ /admin/nfc-relay/v1/audit-logs
+      📝 描述: 获取审计日志
+      🎯 处理器: AuditLogsApi.GetAuditLogs
+
+    ▪ /admin/nfc-relay/v1/audit-logs-db
+      📝 描述: 获取审计日志列表
+      🎯 处理器: DatabaseAuditLogsApi.GetAuditLogList
+
+    ▪ /admin/nfc-relay/v1/audit-logs-db/stats
+      📝 描述: 获取审计日志统计
+      🎯 处理器: DatabaseAuditLogsApi.GetAuditLogStats
+
+    ▪ /admin/nfc-relay/v1/clients
+      📝 描述: 获取客户端列表
+      🎯 处理器: ClientsApi.GetClients
+
+    ▪ /admin/nfc-relay/v1/clients/:clientID/details
+      📝 描述: 获取客户端详情
+      🎯 处理器: ClientsApi.GetClientDetails
+
+    ▪ /admin/nfc-relay/v1/comparison
+      📝 描述: 获取对比数据
+      🎯 处理器: DashboardEnhancedApi.GetComparisonData
+
+    ▪ /admin/nfc-relay/v1/config
+      📝 描述: 获取系统配置
+      🎯 处理器: ConfigApi.GetConfig
+
+    ▪ /admin/nfc-relay/v1/dashboard-stats-enhanced
+      📝 描述: 获取增强版仪表盘数据
+      🎯 处理器: DashboardEnhancedApi.GetDashboardStatsEnhanced
+
+    ▪ /admin/nfc-relay/v1/geographic-distribution
+      📝 描述: 获取地理分布
+      🎯 处理器: DashboardEnhancedApi.GetGeographicDistribution
+
+    ▪ /admin/nfc-relay/v1/performance-metrics
+      📝 描述: 获取性能指标
+      🎯 处理器: DashboardEnhancedApi.GetPerformanceMetrics
+
+    ▪ /admin/nfc-relay/v1/security/client-ban-status/:clientID
+      📝 描述: 检查客户端封禁状态
+      🎯 处理器: SecurityManagementApi.IsClientBanned
+
+    ▪ /admin/nfc-relay/v1/security/client-bans
+      📝 描述: 获取客户端封禁列表
+      🎯 处理器: SecurityManagementApi.GetClientBanList
+
+    ▪ /admin/nfc-relay/v1/security/summary
+      📝 描述: 获取安全摘要
+      🎯 处理器: SecurityManagementApi.GetSecuritySummary
+
+    ▪ /admin/nfc-relay/v1/security/user-security
+      📝 描述: 获取用户安全档案列表
+      🎯 处理器: SecurityManagementApi.GetUserSecurityProfileList
+
+    ▪ /admin/nfc-relay/v1/security/user-security/:userID
+      📝 描述: 获取用户安全档案
+      🎯 处理器: SecurityManagementApi.GetUserSecurityProfile
+
+    ▪ /admin/nfc-relay/v1/sessions
+      📝 描述: 获取会话列表
+      🎯 处理器: SessionsApi.GetSessions
+
+    ▪ /admin/nfc-relay/v1/sessions/:sessionID/details
+      📝 描述: 获取会话详情
+      🎯 处理器: SessionsApi.GetSessionDetails
+
+
+  🔹 POST 请求 (11个)
+    ------------------------------------------------------------
+    ▪ /admin/nfc-relay/v1/alerts/:alert_id/acknowledge
+      📝 描述: 确认告警
+      🎯 处理器: DashboardEnhancedApi.AcknowledgeAlert
+
+    ▪ /admin/nfc-relay/v1/audit-logs-db
+      📝 描述: 创建审计日志
+      🎯 处理器: DatabaseAuditLogsApi.CreateAuditLog
+
+    ▪ /admin/nfc-relay/v1/audit-logs-db/batch
+      📝 描述: 批量创建审计日志
+      🎯 处理器: DatabaseAuditLogsApi.BatchCreateAuditLogs
+
+    ▪ /admin/nfc-relay/v1/clients/:clientID/disconnect
+      📝 描述: 强制断开客户端
+      🎯 处理器: ClientsApi.DisconnectClient
+
+    ▪ /admin/nfc-relay/v1/export
+      📝 描述: 导出数据
+      🎯 处理器: DashboardEnhancedApi.ExportDashboardData
+
+    ▪ /admin/nfc-relay/v1/security/ban-client
+      📝 描述: 封禁客户端
+      🎯 处理器: SecurityManagementApi.BanClient
+
+    ▪ /admin/nfc-relay/v1/security/cleanup
+      📝 描述: 清理过期数据
+      🎯 处理器: SecurityManagementApi.CleanupExpiredData
+
+    ▪ /admin/nfc-relay/v1/security/lock-user
+      📝 描述: 锁定用户账户
+      🎯 处理器: SecurityManagementApi.LockUserAccount
+
+    ▪ /admin/nfc-relay/v1/security/unban-client
+      📝 描述: 解封客户端
+      🎯 处理器: SecurityManagementApi.UnbanClient
+
+    ▪ /admin/nfc-relay/v1/security/unlock-user
+      📝 描述: 解锁用户账户
+      🎯 处理器: SecurityManagementApi.UnlockUserAccount
+
+    ▪ /admin/nfc-relay/v1/sessions/:sessionID/terminate
+      📝 描述: 强制终止会话
+      🎯 处理器: SessionsApi.TerminateSession
+
+
+  🔹 PUT 请求 (1个)
+    ------------------------------------------------------------
+    ▪ /admin/nfc-relay/v1/security/user-security
+      📝 描述: 更新用户安全档案
+      🎯 处理器: SecurityManagementApi.UpdateUserSecurityProfile
+
+
+  🔹 DELETE 请求 (1个)
+    ------------------------------------------------------------
+    ▪ /admin/nfc-relay/v1/audit-logs-db/cleanup
+      📝 描述: 删除过期审计日志
+      🎯 处理器: DatabaseAuditLogsApi.DeleteOldAuditLogs
+
+
+📂 系统管理 (共51个接口)
+  ======================================================================
+
+  🔹 GET 请求 (7个)
+    ------------------------------------------------------------
+    ▪ /api/freshCasbin
+      📝 描述: 刷新casbin
+      🎯 处理器: apiRouterApi.FreshCasbin
+
+    ▪ /health
+      📝 描述: 检查数据库状态
+      🎯 处理器: baseApi.CheckDB
+
+    ▪ /sysDictionary/findSysDictionary
+      📝 描述: 用id查询字典
+      🎯 处理器: dictionaryApi.FindSysDictionary
+
+    ▪ /sysDictionary/getSysDictionaryList
+      📝 描述: 获取字典列表
+      🎯 处理器: dictionaryApi.GetSysDictionaryList
+
+    ▪ /sysOperationRecord/findSysOperationRecord
+      📝 描述: 用id查询操作记录
+      🎯 处理器: operationRecordApi.FindSysOperationRecord
+
+    ▪ /sysOperationRecord/getSysOperationRecordList
+      📝 描述: 获取操作记录列表
+      🎯 处理器: operationRecordApi.GetSysOperationRecordList
+
+    ▪ /user/getUserInfo
+      📝 描述: 获取自身信息
+      🎯 处理器: baseApi.GetUserInfo
+
+
+  🔹 POST 请求 (35个)
+    ------------------------------------------------------------
+    ▪ /api
+      📝 描述: 初始化数据库
+      🎯 处理器: dbApi.InitDB
+
+    ▪ /api/createApi
+      📝 描述: 创建API
+      🎯 处理器: apiRouterApi.CreateApi
+
+    ▪ /api/deleteApi
+      📝 描述: 删除API
+      🎯 处理器: apiRouterApi.DeleteApi
+
+    ▪ /api/deleteApisByIds
+      📝 描述: 批量删除API
+      🎯 处理器: apiRouterApi.DeleteApisByIds
+
+    ▪ /api/getAllApis
+      📝 描述: 获取所有API
+      🎯 处理器: apiRouterApi.GetAllApis
+
+    ▪ /api/getApiById
+      📝 描述: 根据id获取API
+      🎯 处理器: apiRouterApi.GetApiById
+
+    ▪ /api/getApiList
+      📝 描述: 获取API列表
+      🎯 处理器: apiRouterApi.GetApiList
+
+    ▪ /api/updateApi
+      📝 描述: 修改API
+      🎯 处理器: apiRouterApi.UpdateApi
+
+    ▪ /authority/copyAuthority
+      📝 描述: 拷贝角色
+      🎯 处理器: authorityApi.CopyAuthority
+
+    ▪ /authority/createAuthority
+      📝 描述: 创建角色
+      🎯 处理器: authorityApi.CreateAuthority
+
+    ▪ /authority/deleteAuthority
+      📝 描述: 删除角色
+      🎯 处理器: authorityApi.DeleteAuthority
+
+    ▪ /authority/getAuthorityList
+      📝 描述: 获取角色列表
+      🎯 处理器: authorityApi.GetAuthorityList
+
+    ▪ /authority/setDataAuthority
+      📝 描述: 设置角色资源权限
+      🎯 处理器: authorityApi.SetDataAuthority
+
+    ▪ /base/captcha
+      📝 描述: 获取验证码
+      🎯 处理器: baseApi.Captcha
+
+    ▪ /base/login
+      📝 描述: 用户登录
+      🎯 处理器: baseApi.Login
+
+    ▪ /jwt/jsonInBlacklist
+      📝 描述: JWT加入黑名单
+      🎯 处理器: jwtApi.JsonInBlacklist
+
+    ▪ /menu/addBaseMenu
+      📝 描述: 新增菜单
+      🎯 处理器: authorityMenuApi.AddBaseMenu
+
+    ▪ /menu/addMenuAuthority
+      📝 描述: 增加menu和角色关联关系
+      🎯 处理器: authorityMenuApi.AddMenuAuthority
+
+    ▪ /menu/deleteBaseMenu
+      📝 描述: 删除菜单
+      🎯 处理器: authorityMenuApi.DeleteBaseMenu
+
+    ▪ /menu/getBaseMenuById
+      📝 描述: 根据id获取菜单
+      🎯 处理器: authorityMenuApi.GetBaseMenuById
+
+    ▪ /menu/getBaseMenuTree
+      📝 描述: 获取用户动态路由
+      🎯 处理器: authorityMenuApi.GetBaseMenuTree
+
+    ▪ /menu/getMenu
+      📝 描述: 获取菜单树
+      🎯 处理器: authorityMenuApi.GetMenu
+
+    ▪ /menu/getMenuAuthority
+      📝 描述: 获取指定角色menu
+      🎯 处理器: authorityMenuApi.GetMenuAuthority
+
+    ▪ /menu/getMenuList
+      📝 描述: 分页获取基础menu列表
+      🎯 处理器: authorityMenuApi.GetMenuList
+
+    ▪ /menu/updateBaseMenu
+      📝 描述: 更新菜单
+      🎯 处理器: authorityMenuApi.UpdateBaseMenu
+
+    ▪ /sysDictionary/createSysDictionary
+      📝 描述: 新增字典
+      🎯 处理器: dictionaryApi.CreateSysDictionary
+
+    ▪ /system/getServerInfo
+      📝 描述: 获取服务器信息
+      🎯 处理器: systemApi.GetServerInfo
+
+    ▪ /system/getSystemConfig
+      📝 描述: 获取配置文件内容
+      🎯 处理器: systemApi.GetSystemConfig
+
+    ▪ /system/setSystemConfig
+      📝 描述: 设置配置文件内容
+      🎯 处理器: systemApi.SetSystemConfig
+
+    ▪ /user/admin_register
+      📝 描述: 管理员注册账号
+      🎯 处理器: baseApi.Register
+
+    ▪ /user/changePassword
+      📝 描述: 用户修改密码
+      🎯 处理器: baseApi.ChangePassword
+
+    ▪ /user/getUserList
+      📝 描述: 分页获取用户列表
+      🎯 处理器: baseApi.GetUserList
+
+    ▪ /user/resetPassword
+      📝 描述: 重置密码
+      🎯 处理器: baseApi.ResetPassword
+
+    ▪ /user/setUserAuthorities
+      📝 描述: 设置用户权限组
+      🎯 处理器: baseApi.SetUserAuthorities
+
+    ▪ /user/setUserAuthority
+      📝 描述: 设置用户权限
+      🎯 处理器: baseApi.SetUserAuthority
+
+
+  🔹 PUT 请求 (5个)
+    ------------------------------------------------------------
+    ▪ /authority/updateAuthority
+      📝 描述: 更新角色信息
+      🎯 处理器: authorityApi.UpdateAuthority
+
+    ▪ /sysDictionary/updateSysDictionary
+      📝 描述: 更新字典
+      🎯 处理器: dictionaryApi.UpdateSysDictionary
+
+    ▪ /user/setSelfInfo
+      📝 描述: 设置自身信息
+      🎯 处理器: baseApi.SetSelfInfo
+
+    ▪ /user/setSelfSetting
+      📝 描述: 用户界面配置
+      🎯 处理器: baseApi.SetSelfSetting
+
+    ▪ /user/setUserInfo
+      📝 描述: 设置用户信息
+      🎯 处理器: baseApi.SetUserInfo
+
+
+  🔹 DELETE 请求 (4个)
+    ------------------------------------------------------------
+    ▪ /sysDictionary/deleteSysDictionary
+      📝 描述: 删除字典
+      🎯 处理器: dictionaryApi.DeleteSysDictionary
+
+    ▪ /sysOperationRecord/deleteSysOperationRecord
+      📝 描述: 删除操作记录
+      🎯 处理器: operationRecordApi.DeleteSysOperationRecord
+
+    ▪ /sysOperationRecord/deleteSysOperationRecordByIds
+      📝 描述: 批量删除操作记录
+      🎯 处理器: operationRecordApi.DeleteSysOperationRecordByIds
+
+    ▪ /user/deleteUser
+      📝 描述: 删除用户
+      🎯 处理器: baseApi.DeleteUser
+
+
+🔌 WebSocket接口详细列表
+--------------------------------------------------------------------------------
+
+📂 NFC客户端连接 (共1个接口)
+  ======================================================================
+  🔌 /ws/nfc-relay/client
+    📝 描述: NFC客户端连接端点
+    🎯 处理器: handler.WSConnectionHandler
+    🎨 用途: 用于真实的NFC设备和应用程序连接
+    📁 位置: websocket_router.go:82
+
+
+📂 NFC管理实时数据 (共3个接口)
+  ======================================================================
+  🔌 /admin/nfc-relay/v1/realtime
+    📝 描述: WebSocket实时数据
+    🎯 处理器: nfcRelayAdminApi.RealtimeApi.HandleWebSocket
+    🎨 用途: 管理后台实时数据推送
+    📁 位置: nfc_relay_admin.go:65
+
+  🔌 /nfc-relay/realtime
+    📝 描述: 实时数据传输
+    🎯 处理器: handler.WSConnectionHandler
+    🎨 用途: WebSocket路由，用于实时数据传输
+    📁 位置: websocket_router.go:115
+
+  🔌 /ws/nfc-relay/realtime
+    📝 描述: 管理界面实时数据端点
+    🎯 处理器: handler.AdminWSConnectionHandler
+    🎨 用途: 支持多种数据类型订阅: dashboard、clients、sessions、metrics
+    📁 位置: websocket_router.go:89
+
+
+📖 接口使用说明
+--------------------------------------------------------------------------------
+
+🔸 API接口规范:
+  • 基础路径: /api/
+  • 系统管理: /api/ + 具体路径
+  • NFC管理: /api/admin/nfc-relay/v1/ + 具体路径
+  • 认证方式: JWT Token (请求头: Authorization: Bearer <token>)
+  • 数据格式: JSON
+  • 字符编码: UTF-8
+
+🔸 WebSocket连接规范:
+  • 客户端连接: ws://host:port/ws/nfc-relay/client
+  • 管理端连接: ws://host:port/ws/nfc-relay/realtime
+  • 协议: WebSocket
+  • 数据格式: JSON
+  • 心跳机制: 支持ping/pong
+
+🔸 安全特性:
+  • TLS/SSL支持: 强制HTTPS/WSS
+  • 权限控制: 基于角色的访问控制(RBAC)
+  • 审计日志: 完整的操作审计跟踪
+  • 客户端管理: 支持客户端封禁/解封
+  • 会话管理: 支持会话监控和强制终止
+
+📊 接口统计信息
+--------------------------------------------------------------------------------
+
+🔹 HTTP方法分布:
+  DELETE  :   5个 (  6.1%)
+  GET     :  25个 ( 30.5%)
+  POST    :  46个 ( 56.1%)
+  PUT     :   6个 (  7.3%)
+
+🔹 API分类统计:
+  NFC中继管理        :  31个 ( 37.8%)
+  系统管理           :  51个 ( 62.2%)
+
+🔹 WebSocket分类统计:
+  NFC客户端连接       :   1个
+  NFC管理实时数据      :   3个
+
+🔹 总体统计:
+  📡 API接口总数:       82个
+  🔌 WebSocket接口总数:   4个
+  🌐 接口总数:          86个

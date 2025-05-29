@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket连接测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .connecting { background-color: #d1ecf1; color: #0c5460; }
+        button { padding: 10px 20px; margin: 5px; }
+        #log { background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; height: 300px; overflow-y: auto; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>NFC Relay WebSocket连接测试</h1>
+    
+    <div id="status" class="status disconnected">状态：未连接</div>
+    
+    <button onclick="connectWS()">连接</button>
+    <button onclick="disconnectWS()">断开</button>
+    <button onclick="clearLog()">清空日志</button>
+    
+    <h3>连接日志：</h3>
+    <div id="log"></div>
+
+    <script>
+        let ws = null;
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            logEl.textContent += `[${timestamp}] ${message}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function updateStatus(status, message) {
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = `状态：${message}`;
+        }
+
+        function connectWS() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('⚠️ WebSocket已经连接');
+                return;
+            }
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const hostname = window.location.hostname || 'localhost';
+            const wsUrl = `${protocol}//${hostname}:8888/nfc-relay/realtime`;
+            
+            log(`🔄 尝试连接到: ${wsUrl}`);
+            updateStatus('connecting', '连接中...');
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {
+                log('✅ WebSocket连接成功');
+                updateStatus('connected', '已连接');
+            };
+
+            ws.onmessage = function(event) {
+                log(`📨 收到消息: ${event.data}`);
+            };
+
+            ws.onclose = function() {
+                log('❌ WebSocket连接关闭');
+                updateStatus('disconnected', '未连接');
+            };
+
+            ws.onerror = function(error) {
+                log(`🚨 WebSocket错误: ${error}`);
+                updateStatus('disconnected', '连接错误');
+            };
+        }
+
+        function disconnectWS() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                log('🔌 手动断开连接');
+            }
+        }
+
+        function clearLog() {
+            logEl.textContent = '';
+        }
+
+        // 页面加载时自动尝试连接
+        window.onload = function() {
+            log('📄 页面加载完成');
+            connectWS();
+        };
+    </script>
+</body>
+</html> 

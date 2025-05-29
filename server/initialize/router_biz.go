@@ -15,5 +15,9 @@ func initBizRouter(routers ...*gin.RouterGroup) {
 	privateGroup := routers[0]
 	publicGroup := routers[1]
 
+	// 注册NFC中继管理路由
+	nfcRelayAdminRouter := router.RouterGroupApp.NfcRelayAdmin
+	nfcRelayAdminRouter.InitNfcRelayAdminRouter(privateGroup) // 需要认证的管理功能
+
 	holder(publicGroup, privateGroup)
 }
