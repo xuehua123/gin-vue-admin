@@ -29,7 +29,7 @@ type SysUser struct {
 	Authorities   []SysAuthority `json:"authorities" gorm:"many2many:sys_user_authority;"`                                                           // 多用户角色
 	Phone         string         `json:"phone"  gorm:"comment:用户手机号"`                                                                           // 用户手机号
 	Email         string         `json:"email"  gorm:"comment;comment:用户邮箱"`                                                                     // 用户邮箱, uniqueIndex
-	Enable        int            `json:"enable" gorm:"default:1;comment:用户是否被冻结 1正常 2冻结"`                                                 //用户是否被冻结 1正常 2冻结
+	Enable        int            `json:"enable" gorm:"default:1;comment:用户是否被冻结  1正常 2冻结"`                                                //用户是否被冻结 1正常 2冻结
 	Status        string         `json:"status" gorm:"type:varchar(50);default:'active';comment:用户状态 (active, suspended, pending_verification)"` // 新增用户状态
 	OriginSetting common.JSONMap `json:"originSetting" form:"originSetting" gorm:"type:text;default:null;column:origin_setting;comment:配置;"`       //配置
 }
