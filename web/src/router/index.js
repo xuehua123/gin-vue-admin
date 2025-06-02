@@ -25,6 +25,30 @@ const routes = [
     component: () => import('@/view/example/upload/scanUpload.vue')
   },
   {
+    path: '/test-device-log',
+    name: 'DeviceLogTest',
+    meta: {
+      title: '设备日志测试'
+    },
+    component: () => import('@/view/test/deviceLogTest.vue')
+  },
+  {
+    path: '/user-enhanced',
+    name: 'UserEnhanced',
+    meta: {
+      title: '用户管理增强版'
+    },
+    component: () => import('@/view/superAdmin/user/userEnhanced.vue')
+  },
+  {
+    path: '/device-log',
+    name: 'DeviceLogManagement',
+    meta: {
+      title: '设备日志管理'
+    },
+    component: () => import('@/view/superAdmin/deviceLog/deviceLogManagement.vue')
+  },
+  {
     path: '/:catchAll(.*)',
     meta: {
       closeTab: true
