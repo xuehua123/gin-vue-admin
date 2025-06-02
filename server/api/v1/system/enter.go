@@ -22,6 +22,7 @@ type ApiGroup struct {
 	AutoCodeHistoryApi
 	AutoCodeTemplateApi
 	SysParamsApi
+	DeviceLogApi
 }
 
 var (
@@ -44,4 +45,6 @@ var (
 	autoCodePackageService  = service.ServiceGroupApp.SystemServiceGroup.AutoCodePackage
 	autoCodeHistoryService  = service.ServiceGroupApp.SystemServiceGroup.AutoCodeHistory
 	autoCodeTemplateService = service.ServiceGroupApp.SystemServiceGroup.AutoCodeTemplate
+	userOnlineService       = service.ServiceGroupApp.SystemServiceGroup.UserOnlineService
+	deviceLogService        = service.ServiceGroupApp.SystemServiceGroup.DeviceLogService
 )

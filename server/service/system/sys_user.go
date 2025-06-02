@@ -3,9 +3,11 @@ package system
 import (
 	"errors"
 	"fmt"
+	systemRes "github.com/flipped-aurora/gin-vue-admin/server/model/system/response"
+	"time"
+
 	"github.com/flipped-aurora/gin-vue-admin/server/model/common"
 	systemReq "github.com/flipped-aurora/gin-vue-admin/server/model/system/request"
-	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/system"
@@ -110,6 +112,58 @@ func (userService *UserService) GetUserInfoList(info systemReq.GetUserList) (lis
 	}
 	err = db.Limit(limit).Offset(offset).Preload("Authorities").Preload("Authority").Find(&userList).Error
 	return userList, total, err
+}
+
+// GetUserInfoListWithOnlineStatus 获取带在线状态的用户列表
+func (userService *UserService) GetUserInfoListWithOnlineStatus(info systemReq.GetUserList) (list interface{}, total int64, err error) {
+	// 先获取基础用户列表
+	userList, total, err := userService.GetUserInfoList(info)
+	if err != nil {
+		return nil, total, err
+	}
+
+	users, ok := userList.([]system.SysUser)
+	if !ok {
+		return userList, total, nil
+	}
+
+	// 创建在线状态服务实例
+	onlineService := &UserOnlineService{}
+
+	// 转换为带在线状态的用户列表
+	var userListWithStatus []systemRes.UserWithOnlineStatus
+	for _, user := range users {
+		userWithStatus := systemRes.UserWithOnlineStatus{
+			SysUser: user,
+		}
+
+		// 获取在线状态
+		if onlineStatus, err := onlineService.GetUserOnlineStatus(user.UUID.String()); err == nil && onlineStatus != nil {
+			userWithStatus.OnlineStatus = onlineStatus
+		} else {
+			// 默认离线状态
+			userWithStatus.OnlineStatus = &systemRes.OnlineStatusInfo{
+				IsOnline:    false,
+				OnlineCount: 0,
+			}
+		}
+
+		// 获取设备信息（仅在线用户）
+		if userWithStatus.OnlineStatus.IsOnline {
+			if devices, err := onlineService.GetUserDevices(user.UUID.String()); err == nil {
+				userWithStatus.DeviceInfo = devices
+			}
+
+			// 获取角色信息
+			if roleInfo, err := onlineService.GetUserRoleInfo(user.UUID.String()); err == nil {
+				userWithStatus.RoleInfo = roleInfo
+			}
+		}
+
+		userListWithStatus = append(userListWithStatus, userWithStatus)
+	}
+
+	return userListWithStatus, total, nil
 }
 
 //@author: [piexlmax](https://github.com/piexlmax)

@@ -41,7 +41,7 @@ func RegisterTables() {
 		system.SysApi{},
 		system.SysIgnoreApi{},
 		system.SysUser{},
-		system.UserDeviceLog{},
+		system.SysUserDeviceLog{},
 		system.SysBaseMenu{},
 		system.JwtBlacklist{},
 		system.SysAuthority{},

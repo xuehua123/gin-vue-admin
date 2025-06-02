@@ -19,6 +19,7 @@ type RouterGroup struct {
 	AuthorityBtnRouter
 	SysExportTemplateRouter
 	SysParamsRouter
+	DeviceLogRouter
 }
 
 var (

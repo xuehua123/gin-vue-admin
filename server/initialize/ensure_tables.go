@@ -2,6 +2,7 @@ package initialize
 
 import (
 	"context"
+
 	adapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/example"
 	sysModel "github.com/flipped-aurora/gin-vue-admin/server/model/system"
@@ -38,7 +39,7 @@ func (e *ensureTables) MigrateTable(ctx context.Context) (context.Context, error
 	tables := []interface{}{
 		sysModel.SysApi{},
 		sysModel.SysUser{},
-		sysModel.UserDeviceLog{},
+		sysModel.SysUserDeviceLog{},
 		sysModel.SysBaseMenu{},
 		sysModel.SysAuthority{},
 		sysModel.JwtBlacklist{},
@@ -81,7 +82,7 @@ func (e *ensureTables) TableCreated(ctx context.Context) bool {
 	tables := []interface{}{
 		sysModel.SysApi{},
 		sysModel.SysUser{},
-		sysModel.UserDeviceLog{},
+		sysModel.SysUserDeviceLog{},
 		sysModel.SysBaseMenu{},
 		sysModel.SysAuthority{},
 		sysModel.JwtBlacklist{},
