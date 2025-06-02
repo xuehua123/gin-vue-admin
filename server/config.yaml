@@ -127,7 +127,7 @@ mysql:
   prefix: ""
   port: "23306"
   config: charset=utf8mb4&parseTime=True&loc=Local
-  db-name: gva2
+  db-name: gva
   username: root
   password: xuehua123
   path: 49.235.40.39

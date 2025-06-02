@@ -38,6 +38,7 @@ func (e *ensureTables) MigrateTable(ctx context.Context) (context.Context, error
 	tables := []interface{}{
 		sysModel.SysApi{},
 		sysModel.SysUser{},
+		sysModel.UserDeviceLog{},
 		sysModel.SysBaseMenu{},
 		sysModel.SysAuthority{},
 		sysModel.JwtBlacklist{},
@@ -80,6 +81,7 @@ func (e *ensureTables) TableCreated(ctx context.Context) bool {
 	tables := []interface{}{
 		sysModel.SysApi{},
 		sysModel.SysUser{},
+		sysModel.UserDeviceLog{},
 		sysModel.SysBaseMenu{},
 		sysModel.SysAuthority{},
 		sysModel.JwtBlacklist{},
