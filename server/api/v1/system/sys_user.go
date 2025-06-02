@@ -1,8 +1,6 @@
 package system
 
 import (
-	"context"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -92,17 +90,14 @@ func (b *BaseApi) TokenNext(c *gin.Context, user system.SysUser) {
 		ClientID:    clientID, // 填充 ClientID
 	})
 
-	// 使用 RegisteredClaims 中的 ID 作为 JTI
-	// 如果 RegisteredClaims.ID 为空，则需要确保为其生成一个唯一值，或者调整 CreateClaims 逻辑
-	// 通常 jwt "github.com/golang-jwt/jwt/v5" 会在 NewWithClaims 时内部处理或允许设置 jti
-	// 我们需要确保 claims.RegisteredClaims.ID (作为 JTI) 是有效的。
-	// 默认情况下，jwt.RegisteredClaims 的 ID 字段是空的，需要显式设置或者 CreateClaims 应该负责。
-	// 假设 CreateClaims 能够处理或 jwt 库有默认机制，如果不行，这里需要手动生成JTI:
+	// CreateClaims 已经自动生成了JTI，但为了保险起见进行检查
 	if claims.RegisteredClaims.ID == "" {
-		claims.RegisteredClaims.ID = uuid.New().String() // 确保 JTI 存在
+		global.GVA_LOG.Error("JWT Claims中JTI为空，这是一个严重错误")
+		response.FailWithMessage("生成JWT失败", c)
+		return
 	}
-	jti := claims.RegisteredClaims.ID
 
+	// 创建token（新的CreateToken方法会自动处理Redis存储）
 	token, err := j.CreateToken(claims)
 	if err != nil {
 		global.GVA_LOG.Error("获取token失败!", zap.Error(err))
@@ -110,28 +105,25 @@ func (b *BaseApi) TokenNext(c *gin.Context, user system.SysUser) {
 		return
 	}
 
-	// 根据开发手册V2.0，实现 jwt:active 机制
-	userID := user.UUID.String()
-	redisKey := fmt.Sprintf("jwt:active:%s:%s", userID, jti)
+	// 计算token有效期用于设置cookie
 	expiration := time.Unix(claims.RegisteredClaims.ExpiresAt.Unix(), 0).Sub(time.Now())
 
-	err = global.GVA_REDIS.Set(context.Background(), redisKey, clientID, expiration).Err()
-	if err != nil {
-		global.GVA_LOG.Error("存储JWT到Redis失败!", zap.Error(err), zap.String("redisKey", redisKey))
-		// 注意：这里不应立即失败登录，但需要记录严重错误。根据策略，或者可以返回错误。
-		// 为了保持与原逻辑相似的登录成功响应，暂时只记录错误。
-	}
+	// 设置token到cookie
+	utils.SetToken(c, token, int(expiration.Seconds()))
 
-	// 清理旧的 SetRedisJWT 和 UseMultipoint 相关逻辑
-	// 此处不再需要 utils.SetRedisJWT(token, user.Username)
-	// 也不再需要 jwtService.GetRedisJWT 和 JsonInBlacklist 的旧逻辑
-
-	utils.SetToken(c, token, int(expiration.Seconds())) // 使用计算出的实际剩余秒数
+	// 返回登录成功响应
 	response.OkWithDetailed(systemRes.LoginResponse{
 		User:      user,
 		Token:     token,
 		ExpiresAt: claims.RegisteredClaims.ExpiresAt.Unix() * 1000,
 	}, "登录成功", c)
+
+	// 记录登录成功日志
+	global.GVA_LOG.Info("用户登录成功",
+		zap.String("userID", user.UUID.String()),
+		zap.String("username", user.Username),
+		zap.String("clientID", clientID),
+		zap.String("jti", claims.GetJTI()))
 }
 
 // Register
