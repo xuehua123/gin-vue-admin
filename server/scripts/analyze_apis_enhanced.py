@@ -349,7 +349,7 @@ class EnhancedAPIAnalyzer:
         report.append("\n🔸 API接口规范:")
         report.append("  • 基础路径: /api/")
         report.append("  • 系统管理: /api/ + 具体路径")
-        report.append("  • NFC管理: /api/admin/nfc-relay/v1/ + 具体路径")
+        report.append("  • NFC管理: /admin/nfc-relay/v1/ + 具体路径")
         report.append("  • 认证方式: JWT Token (请求头: Authorization: Bearer <token>)")
         report.append("  • 数据格式: JSON")
         report.append("  • 字符编码: UTF-8")

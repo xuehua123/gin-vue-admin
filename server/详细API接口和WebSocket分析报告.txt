@@ -408,7 +408,7 @@
 🔸 API接口规范:
   • 基础路径: /api/
   • 系统管理: /api/ + 具体路径
-  • NFC管理: /api/admin/nfc-relay/v1/ + 具体路径
+  • NFC管理: /admin/nfc-relay/v1/ + 具体路径
   • 认证方式: JWT Token (请求头: Authorization: Bearer <token>)
   • 数据格式: JSON
   • 字符编码: UTF-8

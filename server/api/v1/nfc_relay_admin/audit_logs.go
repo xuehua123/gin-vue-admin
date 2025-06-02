@@ -33,7 +33,7 @@ type AuditLogsApi struct{}
 // @Param startTime query string false "开始时间(ISO8601格式)"
 // @Param endTime query string false "结束时间(ISO8601格式)"
 // @Success 200 {object} response.Response{data=nfcResponse.PaginatedAuditLogResponse}
-// @Router /api/admin/nfc-relay/v1/audit-logs [get]
+// @Router /admin/nfc-relay/v1/audit-logs [get]
 func (a *AuditLogsApi) GetAuditLogs(ctx *gin.Context) {
 	// 获取查询参数
 	pageStr := ctx.DefaultQuery("page", "1")

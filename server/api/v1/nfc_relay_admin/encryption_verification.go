@@ -65,7 +65,7 @@ func init() {
 // @Produce json
 // @Param data body DecryptAndVerifyRequest true "解密验证请求"
 // @Success 200 {object} response.Response{data=DecryptAndVerifyResponse}
-// @Router /api/admin/nfc-relay/v1/encryption/decrypt-verify [post]
+// @Router /admin/nfc-relay/v1/encryption/decrypt-verify [post]
 func (e *EncryptionVerificationApi) DecryptAndVerify(c *gin.Context) {
 	var req DecryptAndVerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -158,7 +158,7 @@ func (e *EncryptionVerificationApi) DecryptAndVerify(c *gin.Context) {
 // @Produce json
 // @Param data body BatchDecryptRequest true "批量解密请求"
 // @Success 200 {object} response.Response{data=BatchDecryptResponse}
-// @Router /api/admin/nfc-relay/v1/encryption/batch-decrypt-verify [post]
+// @Router /admin/nfc-relay/v1/encryption/batch-decrypt-verify [post]
 func (e *EncryptionVerificationApi) BatchDecryptAndVerify(c *gin.Context) {
 	var req BatchDecryptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -293,7 +293,7 @@ func (e *EncryptionVerificationApi) BatchDecryptAndVerify(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=map[string]interface{}}
-// @Router /api/admin/nfc-relay/v1/encryption/status [get]
+// @Router /admin/nfc-relay/v1/encryption/status [get]
 func (e *EncryptionVerificationApi) GetEncryptionStatus(c *gin.Context) {
 	status := map[string]interface{}{
 		"encryptionEnabled":     true,

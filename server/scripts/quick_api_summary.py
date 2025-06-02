@@ -31,17 +31,17 @@ def print_api_summary():
         ],
         
         "🔌 NFC中继管理API (61个)": [
-            "仪表盘数据: GET /api/admin/nfc-relay/v1/dashboard-stats-enhanced",
-            "性能指标: GET /api/admin/nfc-relay/v1/performance-metrics",
-            "地理分布: GET /api/admin/nfc-relay/v1/geographic-distribution",
-            "告警管理: GET|POST /api/admin/nfc-relay/v1/alerts/*",
-            "客户端管理: GET|POST /api/admin/nfc-relay/v1/clients/*",
-            "会话管理: GET|POST /api/admin/nfc-relay/v1/sessions/*",
-            "审计日志: GET|POST|DELETE /api/admin/nfc-relay/v1/audit-logs*",
-            "安全管理: GET|POST|PUT /api/admin/nfc-relay/v1/security/*",
-            "安全配置: GET|PUT|POST /api/admin/nfc-relay/v1/security/config*",
-            "系统配置: GET /api/admin/nfc-relay/v1/config",
-            "数据导出: POST /api/admin/nfc-relay/v1/export",
+            "仪表盘数据: GET /admin/nfc-relay/v1/dashboard-stats-enhanced",
+            "性能指标: GET /admin/nfc-relay/v1/performance-metrics",
+            "地理分布: GET /admin/nfc-relay/v1/geographic-distribution",
+            "告警管理: GET|POST /admin/nfc-relay/v1/alerts/*",
+            "客户端管理: GET|POST /admin/nfc-relay/v1/clients/*",
+            "会话管理: GET|POST /admin/nfc-relay/v1/sessions/*",
+            "审计日志: GET|POST|DELETE /admin/nfc-relay/v1/audit-logs*",
+            "安全管理: GET|POST|PUT /admin/nfc-relay/v1/security/*",
+            "安全配置: GET|PUT|POST /admin/nfc-relay/v1/security/config*",
+            "系统配置: GET /admin/nfc-relay/v1/config",
+            "数据导出: POST /admin/nfc-relay/v1/export",
             "",
             "🆕 新增功能 (30个新接口):",
             "加密验证API (3个): 解密验证、批量处理、状态查询",
@@ -57,7 +57,7 @@ def print_api_summary():
         "🌐 WebSocket接口 (4个)": [
             "NFC客户端连接: ws://host:port/ws/nfc-relay/client",
             "管理端实时数据: ws://host:port/ws/nfc-relay/realtime", 
-            "管理后台实时推送: ws://host:port/api/admin/nfc-relay/v1/realtime",
+            "管理后台实时推送: ws://host:port/admin/nfc-relay/v1/realtime",
             "实时数据传输: ws://host:port/nfc-relay/realtime"
         ]
     }

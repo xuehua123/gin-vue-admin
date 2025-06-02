@@ -17,7 +17,7 @@ type RealtimeApi struct{}
 // @Accept json
 // @Produce json
 // @Success 101 {string} string "Switching Protocols"
-// @Router /api/admin/nfc-relay/v1/realtime [get]
+// @Router /admin/nfc-relay/v1/realtime [get]
 func (r *RealtimeApi) HandleWebSocket(ctx *gin.Context) {
 	// 记录WebSocket连接请求
 	global.GVA_LOG.Info("WebSocket connection request",

@@ -20,7 +20,7 @@ var adminConfigService = service.AdminConfigService{}
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/config [get]
+// @Router /admin/nfc-relay/v1/config [get]
 func (c *ConfigApi) GetConfig(ctx *gin.Context) {
 	// 调用旧版服务获取配置
 	global.GVA_LOG.Info("开始获取NFC Relay配置")

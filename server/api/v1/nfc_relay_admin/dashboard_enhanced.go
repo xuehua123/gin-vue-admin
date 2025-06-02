@@ -21,7 +21,7 @@ type DashboardEnhancedApi struct{}
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=nfcResponse.DashboardStatsResponse}
-// @Router /api/admin/nfc-relay/v1/dashboard/enhanced [get]
+// @Router /admin/nfc-relay/v1/dashboard/enhanced [get]
 func (d *DashboardEnhancedApi) GetDashboardStatsEnhanced(ctx *gin.Context) {
 	if global.GVA_NFC_RELAY_HUB == nil {
 		response.FailWithMessage("NFC中继服务未初始化", ctx)
@@ -59,7 +59,7 @@ func (d *DashboardEnhancedApi) GetDashboardStatsEnhanced(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=nfcResponse.PerformanceMetricsResponse}
-// @Router /api/admin/nfc-relay/v1/dashboard/performance [get]
+// @Router /admin/nfc-relay/v1/dashboard/performance [get]
 func (d *DashboardEnhancedApi) GetPerformanceMetrics(ctx *gin.Context) {
 	// 构建性能指标数据
 	metrics := nfcResponse.PerformanceMetricsResponse{
@@ -80,7 +80,7 @@ func (d *DashboardEnhancedApi) GetPerformanceMetrics(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=nfcResponse.GeographicDistributionResponse}
-// @Router /api/admin/nfc-relay/v1/dashboard/geographic [get]
+// @Router /admin/nfc-relay/v1/dashboard/geographic [get]
 func (d *DashboardEnhancedApi) GetGeographicDistribution(ctx *gin.Context) {
 	if global.GVA_NFC_RELAY_HUB == nil {
 		response.FailWithMessage("NFC中继服务未初始化", ctx)
@@ -127,7 +127,7 @@ func (d *DashboardEnhancedApi) GetGeographicDistribution(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=nfcResponse.AlertsResponse}
-// @Router /api/admin/nfc-relay/v1/dashboard/alerts [get]
+// @Router /admin/nfc-relay/v1/dashboard/alerts [get]
 func (d *DashboardEnhancedApi) GetAlerts(ctx *gin.Context) {
 	// 构建告警数据（可以根据实际监控系统实现）
 	alerts := nfcResponse.AlertsResponse{
@@ -145,7 +145,7 @@ func (d *DashboardEnhancedApi) GetAlerts(ctx *gin.Context) {
 // @Produce json
 // @Param alert_id path string true "告警ID"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/dashboard/alerts/{alert_id}/acknowledge [post]
+// @Router /admin/nfc-relay/v1/dashboard/alerts/{alert_id}/acknowledge [post]
 func (d *DashboardEnhancedApi) AcknowledgeAlert(ctx *gin.Context) {
 	alertID := ctx.Param("alert_id")
 	if alertID == "" {
@@ -175,7 +175,7 @@ func (d *DashboardEnhancedApi) AcknowledgeAlert(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=nfcResponse.ExportResponse}
-// @Router /api/admin/nfc-relay/v1/dashboard/export [post]
+// @Router /admin/nfc-relay/v1/dashboard/export [post]
 func (d *DashboardEnhancedApi) ExportDashboardData(ctx *gin.Context) {
 	// 生成导出数据
 	exportData := nfcResponse.ExportResponse{
@@ -193,7 +193,7 @@ func (d *DashboardEnhancedApi) ExportDashboardData(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=nfcResponse.ComparisonDataResponse}
-// @Router /api/admin/nfc-relay/v1/dashboard/comparison [get]
+// @Router /admin/nfc-relay/v1/dashboard/comparison [get]
 func (d *DashboardEnhancedApi) GetComparisonData(ctx *gin.Context) {
 	// 构建对比数据（可以根据历史数据实现）
 	comparison := nfcResponse.ComparisonDataResponse{

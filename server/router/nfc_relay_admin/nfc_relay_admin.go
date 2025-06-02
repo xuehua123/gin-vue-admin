@@ -12,7 +12,7 @@ type NfcRelayAdminRouter struct{}
 // 路径统一为 /admin/nfc-relay/v1/ 以匹配前端API调用
 func (r *NfcRelayAdminRouter) InitNfcRelayAdminRouter(Router *gin.RouterGroup) {
 	// 创建 NFC 中继管理 API 路由组，路径为 admin/nfc-relay/v1
-	// 这将匹配前端的 API_PREFIX = '/api/admin/nfc-relay/v1'
+	// 这将匹配前端的 API_PREFIX = '/admin/nfc-relay/v1'
 	nfcRelayAdminRouter := Router.Group("admin/nfc-relay/v1").Use(middleware.OperationRecord())
 	nfcRelayAdminApi := v1.ApiGroupApp.NfcRelayAdminApiGroup
 

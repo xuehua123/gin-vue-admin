@@ -20,7 +20,7 @@ type SecurityManagementApi struct{}
 // @Produce json
 // @Param data body request.ClientBanRequest true "封禁请求"
 // @Success 200 {object} response.Response{} "封禁成功"
-// @Router /api/admin/nfc-relay/v1/security/ban-client [post]
+// @Router /admin/nfc-relay/v1/security/ban-client [post]
 func (s *SecurityManagementApi) BanClient(c *gin.Context) {
 	var req request.ClientBanRequest
 	err := c.ShouldBindJSON(&req)
@@ -50,7 +50,7 @@ func (s *SecurityManagementApi) BanClient(c *gin.Context) {
 // @Produce json
 // @Param data body request.ClientUnbanRequest true "解封请求"
 // @Success 200 {object} response.Response{} "解封成功"
-// @Router /api/admin/nfc-relay/v1/security/unban-client [post]
+// @Router /admin/nfc-relay/v1/security/unban-client [post]
 func (s *SecurityManagementApi) UnbanClient(c *gin.Context) {
 	var req request.ClientUnbanRequest
 	err := c.ShouldBindJSON(&req)
@@ -80,7 +80,7 @@ func (s *SecurityManagementApi) UnbanClient(c *gin.Context) {
 // @Produce json
 // @Param data query request.ClientBanListRequest true "查询参数"
 // @Success 200 {object} response.Response{data=response.PaginatedClientBanResponse} "获取成功"
-// @Router /api/admin/nfc-relay/v1/security/client-bans [get]
+// @Router /admin/nfc-relay/v1/security/client-bans [get]
 func (s *SecurityManagementApi) GetClientBanList(c *gin.Context) {
 	var req request.ClientBanListRequest
 	err := c.ShouldBindQuery(&req)
@@ -107,7 +107,7 @@ func (s *SecurityManagementApi) GetClientBanList(c *gin.Context) {
 // @Produce json
 // @Param clientID path string true "客户端ID"
 // @Success 200 {object} response.Response{data=map[string]interface{}} "检查成功"
-// @Router /api/admin/nfc-relay/v1/security/client-ban-status/{clientID} [get]
+// @Router /admin/nfc-relay/v1/security/client-ban-status/{clientID} [get]
 func (s *SecurityManagementApi) IsClientBanned(c *gin.Context) {
 	clientID := c.Param("clientID")
 	if clientID == "" {
@@ -148,7 +148,7 @@ func (s *SecurityManagementApi) IsClientBanned(c *gin.Context) {
 // @Produce json
 // @Param userID path string true "用户ID"
 // @Success 200 {object} response.Response{data=response.UserSecurityProfileEntry} "获取成功"
-// @Router /api/admin/nfc-relay/v1/security/user-security/{userID} [get]
+// @Router /admin/nfc-relay/v1/security/user-security/{userID} [get]
 func (s *SecurityManagementApi) GetUserSecurityProfile(c *gin.Context) {
 	userID := c.Param("userID")
 	if userID == "" {
@@ -174,7 +174,7 @@ func (s *SecurityManagementApi) GetUserSecurityProfile(c *gin.Context) {
 // @Produce json
 // @Param data query request.UserSecurityProfileListRequest true "查询参数"
 // @Success 200 {object} response.Response{data=response.PaginatedUserSecurityProfileResponse} "获取成功"
-// @Router /api/admin/nfc-relay/v1/security/user-security [get]
+// @Router /admin/nfc-relay/v1/security/user-security [get]
 func (s *SecurityManagementApi) GetUserSecurityProfileList(c *gin.Context) {
 	var req request.UserSecurityProfileListRequest
 	err := c.ShouldBindQuery(&req)
@@ -201,7 +201,7 @@ func (s *SecurityManagementApi) GetUserSecurityProfileList(c *gin.Context) {
 // @Produce json
 // @Param data body request.UpdateUserSecurityRequest true "更新请求"
 // @Success 200 {object} response.Response{} "更新成功"
-// @Router /api/admin/nfc-relay/v1/security/user-security [put]
+// @Router /admin/nfc-relay/v1/security/user-security [put]
 func (s *SecurityManagementApi) UpdateUserSecurityProfile(c *gin.Context) {
 	var req request.UpdateUserSecurityRequest
 	err := c.ShouldBindJSON(&req)
@@ -228,7 +228,7 @@ func (s *SecurityManagementApi) UpdateUserSecurityProfile(c *gin.Context) {
 // @Produce json
 // @Param data body request.LockUserAccountRequest true "锁定请求"
 // @Success 200 {object} response.Response{} "锁定成功"
-// @Router /api/admin/nfc-relay/v1/security/lock-user [post]
+// @Router /admin/nfc-relay/v1/security/lock-user [post]
 func (s *SecurityManagementApi) LockUserAccount(c *gin.Context) {
 	var req request.LockUserAccountRequest
 	err := c.ShouldBindJSON(&req)
@@ -255,7 +255,7 @@ func (s *SecurityManagementApi) LockUserAccount(c *gin.Context) {
 // @Produce json
 // @Param data body request.UnlockUserAccountRequest true "解锁请求"
 // @Success 200 {object} response.Response{} "解锁成功"
-// @Router /api/admin/nfc-relay/v1/security/unlock-user [post]
+// @Router /admin/nfc-relay/v1/security/unlock-user [post]
 func (s *SecurityManagementApi) UnlockUserAccount(c *gin.Context) {
 	var req request.UnlockUserAccountRequest
 	err := c.ShouldBindJSON(&req)
@@ -281,7 +281,7 @@ func (s *SecurityManagementApi) UnlockUserAccount(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=response.SecuritySummaryResponse} "获取成功"
-// @Router /api/admin/nfc-relay/v1/security/summary [get]
+// @Router /admin/nfc-relay/v1/security/summary [get]
 func (s *SecurityManagementApi) GetSecuritySummary(c *gin.Context) {
 	summary, err := service.ServiceGroupApp.NfcRelayAdminServiceGroup.SecurityService.GetSecuritySummary()
 	if err != nil {
@@ -300,7 +300,7 @@ func (s *SecurityManagementApi) GetSecuritySummary(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{} "清理成功"
-// @Router /api/admin/nfc-relay/v1/security/cleanup [post]
+// @Router /admin/nfc-relay/v1/security/cleanup [post]
 func (s *SecurityManagementApi) CleanupExpiredData(c *gin.Context) {
 	// 清理过期封禁
 	err := service.ServiceGroupApp.NfcRelayAdminServiceGroup.SecurityService.CleanupExpiredBans()

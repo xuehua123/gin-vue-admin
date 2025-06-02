@@ -23,12 +23,12 @@
 
 | API文件 | 主要功能 | 路径前缀 |
 |---------|----------|----------|
-| `dashboard_enhanced.go` | 增强仪表盘、性能指标、地理分布、告警 | `/api/admin/nfc-relay/v1/` |
-| `clients.go` | 客户端管理（列表、详情、断开连接） | `/api/admin/nfc-relay/v1/` |
-| `sessions.go` | 会话管理（列表、详情、终止） | `/api/admin/nfc-relay/v1/` |
-| `audit_logs.go` | 审计日志（查询、过滤、分页） | `/api/admin/nfc-relay/v1/` |
-| `config.go` | 系统配置（已增强，调用旧版服务层） | `/api/admin/nfc-relay/v1/` |
-| `realtime.go` | WebSocket实时数据 | `/api/admin/nfc-relay/v1/` |
+| `dashboard_enhanced.go` | 增强仪表盘、性能指标、地理分布、告警 | `/admin/nfc-relay/v1/` |
+| `clients.go` | 客户端管理（列表、详情、断开连接） | `/admin/nfc-relay/v1/` |
+| `sessions.go` | 会话管理（列表、详情、终止） | `/admin/nfc-relay/v1/` |
+| `audit_logs.go` | 审计日志（查询、过滤、分页） | `/admin/nfc-relay/v1/` |
+| `config.go` | 系统配置（已增强，调用旧版服务层） | `/admin/nfc-relay/v1/` |
+| `realtime.go` | WebSocket实时数据 | `/admin/nfc-relay/v1/` |
 
 ### 保留的服务层
 位置：`nfc_relay/service/`
@@ -56,32 +56,32 @@
 
 ```
 ✅ 仪表盘相关
-GET    /api/admin/nfc-relay/v1/dashboard-stats-enhanced
-GET    /api/admin/nfc-relay/v1/performance-metrics
-GET    /api/admin/nfc-relay/v1/geographic-distribution
-GET    /api/admin/nfc-relay/v1/alerts
-POST   /api/admin/nfc-relay/v1/alerts/:alert_id/acknowledge
-POST   /api/admin/nfc-relay/v1/export
-GET    /api/admin/nfc-relay/v1/comparison
+GET    /admin/nfc-relay/v1/dashboard-stats-enhanced
+GET    /admin/nfc-relay/v1/performance-metrics
+GET    /admin/nfc-relay/v1/geographic-distribution
+GET    /admin/nfc-relay/v1/alerts
+POST   /admin/nfc-relay/v1/alerts/:alert_id/acknowledge
+POST   /admin/nfc-relay/v1/export
+GET    /admin/nfc-relay/v1/comparison
 
 ✅ 客户端管理
-GET    /api/admin/nfc-relay/v1/clients
-GET    /api/admin/nfc-relay/v1/clients/:clientID/details
-POST   /api/admin/nfc-relay/v1/clients/:clientID/disconnect
+GET    /admin/nfc-relay/v1/clients
+GET    /admin/nfc-relay/v1/clients/:clientID/details
+POST   /admin/nfc-relay/v1/clients/:clientID/disconnect
 
 ✅ 会话管理
-GET    /api/admin/nfc-relay/v1/sessions
-GET    /api/admin/nfc-relay/v1/sessions/:sessionID/details
-POST   /api/admin/nfc-relay/v1/sessions/:sessionID/terminate
+GET    /admin/nfc-relay/v1/sessions
+GET    /admin/nfc-relay/v1/sessions/:sessionID/details
+POST   /admin/nfc-relay/v1/sessions/:sessionID/terminate
 
 ✅ 审计日志
-GET    /api/admin/nfc-relay/v1/audit-logs
+GET    /admin/nfc-relay/v1/audit-logs
 
 ✅ 系统配置
-GET    /api/admin/nfc-relay/v1/config
+GET    /admin/nfc-relay/v1/config
 
 ✅ 实时数据
-GET    /api/admin/nfc-relay/v1/realtime
+GET    /admin/nfc-relay/v1/realtime
 ```
 
 ### WebSocket
@@ -113,7 +113,7 @@ WS     /ws/nfc-relay/realtime
 
 ### API配置正确
 - **文件**: `frontend/src/api/nfcRelayAdmin.js`
-- **基础路径**: `/api/admin/nfc-relay/v1` ✅ 正确
+- **基础路径**: `/admin/nfc-relay/v1` ✅ 正确
 - **WebSocket配置**: `frontend/src/view/nfcRelayAdmin/constants.js` ✅ 正确
 
 ### WebSocket连接统一

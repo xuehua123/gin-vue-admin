@@ -21,7 +21,7 @@ type DatabaseAuditLogsApi struct{}
 // @Produce json
 // @Param data body request.CreateAuditLogRequest true "创建审计日志"
 // @Success 200 {object} response.Response{} "创建成功"
-// @Router /api/admin/nfc-relay/v1/audit-logs [post]
+// @Router /admin/nfc-relay/v1/audit-logs [post]
 func (a *DatabaseAuditLogsApi) CreateAuditLog(c *gin.Context) {
 	var req request.CreateAuditLogRequest
 	err := c.ShouldBindJSON(&req)
@@ -48,7 +48,7 @@ func (a *DatabaseAuditLogsApi) CreateAuditLog(c *gin.Context) {
 // @Produce json
 // @Param data query request.AuditLogListRequest true "查询参数"
 // @Success 200 {object} response.Response{data=response.PaginatedAuditLogResponse} "获取成功"
-// @Router /api/admin/nfc-relay/v1/audit-logs [get]
+// @Router /admin/nfc-relay/v1/audit-logs [get]
 func (a *DatabaseAuditLogsApi) GetAuditLogList(c *gin.Context) {
 	var req request.AuditLogListRequest
 	err := c.ShouldBindQuery(&req)
@@ -74,7 +74,7 @@ func (a *DatabaseAuditLogsApi) GetAuditLogList(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=response.AuditLogStatsResponse} "获取成功"
-// @Router /api/admin/nfc-relay/v1/audit-logs/stats [get]
+// @Router /admin/nfc-relay/v1/audit-logs/stats [get]
 func (a *DatabaseAuditLogsApi) GetAuditLogStats(c *gin.Context) {
 	stats, err := service.ServiceGroupApp.NfcRelayAdminServiceGroup.AuditLogService.GetAuditLogStats()
 	if err != nil {
@@ -94,7 +94,7 @@ func (a *DatabaseAuditLogsApi) GetAuditLogStats(c *gin.Context) {
 // @Produce json
 // @Param retentionDays query int true "保留天数"
 // @Success 200 {object} response.Response{} "删除成功"
-// @Router /api/admin/nfc-relay/v1/audit-logs/cleanup [delete]
+// @Router /admin/nfc-relay/v1/audit-logs/cleanup [delete]
 func (a *DatabaseAuditLogsApi) DeleteOldAuditLogs(c *gin.Context) {
 	retentionDaysStr := c.Query("retentionDays")
 	if retentionDaysStr == "" {
@@ -131,7 +131,7 @@ func (a *DatabaseAuditLogsApi) DeleteOldAuditLogs(c *gin.Context) {
 // @Produce json
 // @Param data body []request.CreateAuditLogRequest true "批量创建审计日志"
 // @Success 200 {object} response.Response{} "创建成功"
-// @Router /api/admin/nfc-relay/v1/audit-logs/batch [post]
+// @Router /admin/nfc-relay/v1/audit-logs/batch [post]
 func (a *DatabaseAuditLogsApi) BatchCreateAuditLogs(c *gin.Context) {
 	var logs []request.CreateAuditLogRequest
 	err := c.ShouldBindJSON(&logs)

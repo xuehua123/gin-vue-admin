@@ -28,7 +28,7 @@ type ClientsApi struct{}
 // @Param role query string false "角色筛选"
 // @Param ipAddress query string false "IP地址筛选"
 // @Success 200 {object} response.Response{data=nfcResponse.PaginatedClientListResponse}
-// @Router /api/admin/nfc-relay/v1/clients [get]
+// @Router /admin/nfc-relay/v1/clients [get]
 func (c *ClientsApi) GetClients(ctx *gin.Context) {
 	// 获取查询参数
 	pageStr := ctx.DefaultQuery("page", "1")
@@ -139,7 +139,7 @@ func (c *ClientsApi) GetClients(ctx *gin.Context) {
 // @Produce json
 // @Param clientID path string true "客户端ID"
 // @Success 200 {object} response.Response{data=nfcResponse.ClientDetailsResponse}
-// @Router /api/admin/nfc-relay/v1/clients/{clientID}/details [get]
+// @Router /admin/nfc-relay/v1/clients/{clientID}/details [get]
 func (c *ClientsApi) GetClientDetails(ctx *gin.Context) {
 	clientID := ctx.Param("clientID")
 	if clientID == "" {
@@ -209,7 +209,7 @@ func (c *ClientsApi) GetClientDetails(ctx *gin.Context) {
 // @Produce json
 // @Param clientID path string true "客户端ID"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/clients/{clientID}/disconnect [post]
+// @Router /admin/nfc-relay/v1/clients/{clientID}/disconnect [post]
 func (c *ClientsApi) DisconnectClient(ctx *gin.Context) {
 	clientID := ctx.Param("clientID")
 	if clientID == "" {

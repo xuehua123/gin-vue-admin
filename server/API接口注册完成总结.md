@@ -75,12 +75,12 @@ python scripts/analyze_unregistered_apis.py
 ## 🎉 成果展示
 
 ### 新增的SecurityConfigAPI接口
-1. `GET /api/admin/nfc-relay/v1/security/config` - 获取安全配置
-2. `PUT /api/admin/nfc-relay/v1/security/config` - 更新安全配置  
-3. `GET /api/admin/nfc-relay/v1/security/compliance-stats` - 获取合规统计
-4. `POST /api/admin/nfc-relay/v1/security/test-features` - 测试安全功能
-5. `POST /api/admin/nfc-relay/v1/security/unblock-user/:userId` - 解除用户封禁
-6. `GET /api/admin/nfc-relay/v1/security/status` - 获取安全状态
+1. `GET /admin/nfc-relay/v1/security/config` - 获取安全配置
+2. `PUT /admin/nfc-relay/v1/security/config` - 更新安全配置  
+3. `GET /admin/nfc-relay/v1/security/compliance-stats` - 获取合规统计
+4. `POST /admin/nfc-relay/v1/security/test-features` - 测试安全功能
+5. `POST /admin/nfc-relay/v1/security/unblock-user/:userId` - 解除用户封禁
+6. `GET /admin/nfc-relay/v1/security/status` - 获取安全状态
 
 ### 功能特性
 - 支持安全配置的动态管理

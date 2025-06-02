@@ -64,7 +64,14 @@ const (
 // GenericMessage 是所有 WebSocket 消息的基础结构，用于解析消息类型
 type GenericMessage struct {
 	Type MessageType `json:"type"`
-	Seq  int64       `json:"seq,omitempty"` // 可选的消息序列号，用于追踪
+	// Seq  int64       `json:"seq,omitempty"` // 可选的消息序列号，用于追踪 (移至 GenericMessageWithSeq)
+}
+
+// GenericMessageWithSeq 是包含可选客户端序列号的通用消息结构，主要用于解析入站消息的seq。
+// 对于出站消息，Seq字段会直接添加到具体的响应结构体中。
+type GenericMessageWithSeq struct {
+	Type MessageType `json:"type"`
+	Seq  int64       `json:"seq,omitempty"`
 }
 
 // ClientInfo 包含客户端的一些基本信息
@@ -113,6 +120,7 @@ type ErrorMessage struct {
 	SessionID string      `json:"sessionId,omitempty"`
 	Code      int         `json:"code"`
 	Message   string      `json:"message"`
+	Seq       int64       `json:"seq,omitempty"` // 回传客户端请求的序列号
 }
 
 // PeerDisconnectedMessage 对端断开连接
@@ -129,6 +137,7 @@ type SessionTerminatedMessage struct {
 	Type      MessageType `json:"type"` // 应为 "session_terminated"
 	SessionID string      `json:"sessionId"`
 	Reason    string      `json:"reason,omitempty"`
+	Seq       int64       `json:"seq,omitempty"` // 可选，如果终止是由某个带seq的请求触发
 }
 
 // StatusUpdateToServerMessage 客户端状态更新消息
@@ -175,6 +184,7 @@ type ServerAuthResponseMessage struct {
 	Success bool        `json:"success"`
 	UserID  string      `json:"userId,omitempty"`  // 认证成功时返回用户ID
 	Message string      `json:"message,omitempty"` // 认证失败时的原因
+	Seq     int64       `json:"seq,omitempty"`     // 回传客户端请求的序列号
 }
 
 // DeclareRoleMessage 客户端声明角色和在线状态
@@ -194,6 +204,7 @@ type RoleDeclaredResponseMessage struct {
 	Role    RoleType    `json:"role,omitempty"`    // 确认的角色
 	Online  bool        `json:"online,omitempty"`  // 确认的在线状态
 	Message string      `json:"message,omitempty"` // 失败时的原因
+	Seq     int64       `json:"seq,omitempty"`     // 回传客户端请求的序列号
 }
 
 // ListCardProvidersMessage 收卡方请求可用发卡方列表
@@ -218,6 +229,7 @@ type CardProviderInfo struct {
 type CardProvidersListMessage struct {
 	Type      MessageType        `json:"type"` // 应为 "card_providers_list"
 	Providers []CardProviderInfo `json:"providers"`
+	Seq       int64              `json:"seq,omitempty"` // 回传客户端请求的序列号
 }
 
 // SelectCardProviderMessage 收卡方选择一个发卡方请求连接
@@ -230,10 +242,11 @@ type SelectCardProviderMessage struct {
 // SessionEstablishedMessage 通知客户端会话已建立
 // 方向: Server -> Client (both parties)
 type SessionEstablishedMessage struct {
-	Type      MessageType `json:"type"`      // 应为 "session_established"
-	SessionID string      `json:"sessionId"` // 正式的会话ID (由服务器生成和管理)
-	PeerID    string      `json:"peerId"`    // 对端客户端的ID
-	PeerRole  RoleType    `json:"peerRole"`  // 对端客户端的角色 ("provider" 或 "receiver")
+	Type      MessageType `json:"type"`          // 应为 "session_established"
+	SessionID string      `json:"sessionId"`     // 正式的会话ID (由服务器生成和管理)
+	PeerID    string      `json:"peerId"`        // 对端客户端的ID
+	PeerRole  RoleType    `json:"peerRole"`      // 对端客户端的角色 ("provider" 或 "receiver")
+	Seq       int64       `json:"seq,omitempty"` // 回传触发此会话建立的请求的序列号 (通常是 receiver 的 select_card_provider 请求)
 }
 
 // SessionFailedMessage 通知客户端会话建立失败
@@ -242,6 +255,7 @@ type SessionFailedMessage struct {
 	Type             MessageType `json:"type"`                       // 应为 "session_failed"
 	TargetProviderID string      `json:"targetProviderId,omitempty"` // 尝试连接的发卡方ID
 	Reason           string      `json:"reason"`
+	Seq              int64       `json:"seq,omitempty"` // 回传客户端请求的序列号
 }
 
 // EndSessionMessage 客户端主动请求结束当前会话
@@ -254,15 +268,17 @@ type EndSessionMessage struct {
 // HeartbeatMessage 心跳消息 (不需要认证)
 // 方向: Client -> Server
 type HeartbeatMessage struct {
-	Type      MessageType `json:"type"`      // 应为 "heartbeat"
-	Timestamp int64       `json:"timestamp"` // 可选的时间戳
+	Type      MessageType `json:"type"`          // 应为 "heartbeat"
+	Timestamp int64       `json:"timestamp"`     // 可选的时间戳
+	Seq       int64       `json:"seq,omitempty"` // 客户端发送请求的序列号
 }
 
 // HeartbeatResponseMessage 心跳响应消息
 // 方向: Server -> Client
 type HeartbeatResponseMessage struct {
-	Type      MessageType `json:"type"`      // 应为 "heartbeat_response"
-	Timestamp int64       `json:"timestamp"` // 服务器当前时间戳
+	Type      MessageType `json:"type"`          // 应为 "heartbeat_response"
+	Timestamp int64       `json:"timestamp"`     // 服务器当前时间戳
+	Seq       int64       `json:"seq,omitempty"` // 回传客户端请求的序列号
 }
 
 // TODO: 根据《NFC中继支付系统技术开发手册》3.5节，补充和完善所有消息类型和字段。

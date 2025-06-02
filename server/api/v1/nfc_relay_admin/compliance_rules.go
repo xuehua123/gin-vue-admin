@@ -92,7 +92,7 @@ func init() {
 // @Param enabled query bool false "是否启用"
 // @Param riskLevel query string false "风险级别"
 // @Success 200 {object} response.Response{data=ComplianceRulesListResponse}
-// @Router /api/admin/nfc-relay/v1/compliance/rules [get]
+// @Router /admin/nfc-relay/v1/compliance/rules [get]
 func (c *ComplianceRulesApi) GetComplianceRules(ctx *gin.Context) {
 	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(ctx.DefaultQuery("size", "20"))
@@ -154,7 +154,7 @@ func (c *ComplianceRulesApi) GetComplianceRules(ctx *gin.Context) {
 // @Produce json
 // @Param rule_id path string true "规则ID"
 // @Success 200 {object} response.Response{data=ComplianceRuleResponse}
-// @Router /api/admin/nfc-relay/v1/compliance/rules/{rule_id} [get]
+// @Router /admin/nfc-relay/v1/compliance/rules/{rule_id} [get]
 func (c *ComplianceRulesApi) GetComplianceRule(ctx *gin.Context) {
 	ruleID := ctx.Param("rule_id")
 	if ruleID == "" {
@@ -197,7 +197,7 @@ func (c *ComplianceRulesApi) GetComplianceRule(ctx *gin.Context) {
 // @Produce json
 // @Param data body ComplianceRuleRequest true "合规规则信息"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/compliance/rules [post]
+// @Router /admin/nfc-relay/v1/compliance/rules [post]
 func (c *ComplianceRulesApi) CreateComplianceRule(ctx *gin.Context) {
 	var req ComplianceRuleRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -266,7 +266,7 @@ func (c *ComplianceRulesApi) CreateComplianceRule(ctx *gin.Context) {
 // @Param rule_id path string true "规则ID"
 // @Param data body ComplianceRuleRequest true "合规规则信息"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/compliance/rules/{rule_id} [put]
+// @Router /admin/nfc-relay/v1/compliance/rules/{rule_id} [put]
 func (c *ComplianceRulesApi) UpdateComplianceRule(ctx *gin.Context) {
 	ruleID := ctx.Param("rule_id")
 	if ruleID == "" {
@@ -350,7 +350,7 @@ func (c *ComplianceRulesApi) UpdateComplianceRule(ctx *gin.Context) {
 // @Produce json
 // @Param rule_id path string true "规则ID"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/compliance/rules/{rule_id} [delete]
+// @Router /admin/nfc-relay/v1/compliance/rules/{rule_id} [delete]
 func (c *ComplianceRulesApi) DeleteComplianceRule(ctx *gin.Context) {
 	ruleID := ctx.Param("rule_id")
 	if ruleID == "" {
@@ -400,7 +400,7 @@ func (c *ComplianceRulesApi) DeleteComplianceRule(ctx *gin.Context) {
 // @Produce json
 // @Param data body RuleTestRequest true "规则测试请求"
 // @Success 200 {object} response.Response{data=RuleTestResponse}
-// @Router /api/admin/nfc-relay/v1/compliance/rules/test [post]
+// @Router /admin/nfc-relay/v1/compliance/rules/test [post]
 func (c *ComplianceRulesApi) TestComplianceRule(ctx *gin.Context) {
 	var req RuleTestRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -448,7 +448,7 @@ func (c *ComplianceRulesApi) TestComplianceRule(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=[]RuleFileInfo}
-// @Router /api/admin/nfc-relay/v1/compliance/rule-files [get]
+// @Router /admin/nfc-relay/v1/compliance/rule-files [get]
 func (c *ComplianceRulesApi) GetRuleFiles(ctx *gin.Context) {
 	operatorUserID := ctx.GetString("userID")
 
@@ -501,7 +501,7 @@ func (c *ComplianceRulesApi) GetRuleFiles(ctx *gin.Context) {
 // @Param file formData file true "规则文件"
 // @Param replace formData bool false "是否替换现有规则"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/compliance/rule-files/import [post]
+// @Router /admin/nfc-relay/v1/compliance/rule-files/import [post]
 func (c *ComplianceRulesApi) ImportRuleFile(ctx *gin.Context) {
 	operatorUserID := ctx.GetString("userID")
 
@@ -554,7 +554,7 @@ func (c *ComplianceRulesApi) ImportRuleFile(ctx *gin.Context) {
 // @Produce application/octet-stream
 // @Param format query string false "导出格式" Enums(json,yaml)
 // @Success 200 {file} file
-// @Router /api/admin/nfc-relay/v1/compliance/rule-files/export [get]
+// @Router /admin/nfc-relay/v1/compliance/rule-files/export [get]
 func (c *ComplianceRulesApi) ExportRuleFile(ctx *gin.Context) {
 	operatorUserID := ctx.GetString("userID")
 	format := ctx.DefaultQuery("format", "json")

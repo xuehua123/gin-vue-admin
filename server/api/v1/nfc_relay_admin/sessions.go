@@ -27,7 +27,7 @@ type SessionsApi struct{}
 // @Param participantClientID query string false "参与方客户端ID筛选"
 // @Param participantUserID query string false "参与方用户ID筛选"
 // @Success 200 {object} response.Response{data=nfcResponse.PaginatedSessionListResponse}
-// @Router /api/admin/nfc-relay/v1/sessions [get]
+// @Router /admin/nfc-relay/v1/sessions [get]
 func (s *SessionsApi) GetSessions(ctx *gin.Context) {
 	// 获取查询参数
 	pageStr := ctx.DefaultQuery("page", "1")
@@ -149,7 +149,7 @@ func (s *SessionsApi) GetSessions(ctx *gin.Context) {
 // @Produce json
 // @Param sessionID path string true "会话ID"
 // @Success 200 {object} response.Response{data=nfcResponse.SessionDetailsResponse}
-// @Router /api/admin/nfc-relay/v1/sessions/{sessionID}/details [get]
+// @Router /admin/nfc-relay/v1/sessions/{sessionID}/details [get]
 func (s *SessionsApi) GetSessionDetails(ctx *gin.Context) {
 	sessionID := ctx.Param("sessionID")
 	if sessionID == "" {
@@ -233,7 +233,7 @@ func (s *SessionsApi) GetSessionDetails(ctx *gin.Context) {
 // @Produce json
 // @Param sessionID path string true "会话ID"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/sessions/{sessionID}/terminate [post]
+// @Router /admin/nfc-relay/v1/sessions/{sessionID}/terminate [post]
 func (s *SessionsApi) TerminateSession(ctx *gin.Context) {
 	sessionID := ctx.Param("sessionID")
 	if sessionID == "" {

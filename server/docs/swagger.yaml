@@ -106,6 +106,56 @@ definitions:
       secret-access-key:
         type: string
     type: object
+  config.ComplianceRule:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/config.RuleAction'
+        type: array
+      category:
+        type: string
+      conditions:
+        items:
+          $ref: '#/definitions/config.RuleCondition'
+        type: array
+      created_time:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      last_modified:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      severity:
+        type: string
+      valid_from:
+        type: string
+      valid_until:
+        type: string
+    type: object
+  config.ComplianceRules:
+    properties:
+      global_settings:
+        $ref: '#/definitions/config.GlobalComplianceSettings'
+      last_modified:
+        type: string
+      rule_validation:
+        additionalProperties: true
+        type: object
+      rules:
+        additionalProperties:
+          $ref: '#/definitions/config.ComplianceRule'
+        type: object
+      version:
+        type: string
+    type: object
   config.DiskList:
     properties:
       mount-point:
@@ -115,6 +165,19 @@ definitions:
     properties:
       dir:
         type: string
+    type: object
+  config.GlobalComplianceSettings:
+    properties:
+      block_suspicious_activity:
+        type: boolean
+      enable_audit_logging:
+        type: boolean
+      max_transaction_amount:
+        type: integer
+      require_deep_inspection:
+        type: boolean
+      retention_days:
+        type: integer
     type: object
   config.HuaWeiObs:
     properties:
@@ -151,6 +214,24 @@ definitions:
         type: string
       store-path:
         description: 本地文件存储路径
+        type: string
+    type: object
+  config.MCP:
+    properties:
+      message_path:
+        description: 消息路径
+        type: string
+      name:
+        description: MCP名称
+        type: string
+      sse_path:
+        description: SSE路径
+        type: string
+      url_prefix:
+        description: URL前缀
+        type: string
+      version:
+        description: MCP版本
         type: string
     type: object
   config.Minio:
@@ -306,6 +387,75 @@ definitions:
         description: 数据库账号
         type: string
     type: object
+  config.NfcRelay:
+    properties:
+      hubCheckIntervalSec:
+        type: integer
+      security:
+        allOf:
+        - $ref: '#/definitions/config.NfcRelaySecurity'
+        description: 安全配置
+      sessionInactiveTimeoutSec:
+        type: integer
+      websocketMaxMessageBytes:
+        type: integer
+      websocketPongWaitSec:
+        type: integer
+      websocketWriteWaitSec:
+        type: integer
+    type: object
+  config.NfcRelaySecurity:
+    properties:
+      auditKeyRotationHours:
+        type: integer
+      blockedMerchantCategories:
+        items:
+          type: string
+        type: array
+      certFile:
+        type: string
+      clientCAFile:
+        type: string
+      enableAntiReplay:
+        description: 防重放攻击配置
+        type: boolean
+      enableAuditEncryption:
+        description: 审计级加密配置 (更新配置项)
+        type: boolean
+      enableComplianceAudit:
+        description: 合规审计配置
+        type: boolean
+      enableDeepInspection:
+        type: boolean
+      enableE2EEncryption:
+        description: 端到端加密配置
+        type: boolean
+      enableInputSanitize:
+        type: boolean
+      enableTLS:
+        description: TLS/WSS 配置
+        type: boolean
+      encryptionAlgorithm:
+        type: string
+      forceTLS:
+        type: boolean
+      keyExchangeMethod:
+        type: string
+      keyFile:
+        type: string
+      maxMessageSize:
+        description: 输入验证配置
+        type: integer
+      maxNonceCache:
+        type: integer
+      maxTransactionAmount:
+        type: integer
+      replayWindowMs:
+        type: integer
+      requireClientCert:
+        description: 客户端认证配置
+        type: boolean
+    type: object
   config.Oracle:
     properties:
       config:
@@ -439,6 +589,25 @@ definitions:
         description: 是否使用集群模式
         type: boolean
     type: object
+  config.RuleAction:
+    properties:
+      parameters:
+        additionalProperties: true
+        type: object
+      type:
+        type: string
+    type: object
+  config.RuleCondition:
+    properties:
+      field:
+        type: string
+      logic_op:
+        description: AND, OR
+        type: string
+      operator:
+        type: string
+      value: {}
+    type: object
   config.Server:
     properties:
       aliyun-oss:
@@ -477,6 +646,10 @@ definitions:
         allOf:
         - $ref: '#/definitions/config.Local'
         description: oss
+      mcp:
+        allOf:
+        - $ref: '#/definitions/config.MCP'
+        description: MCP配置
       minio:
         $ref: '#/definitions/config.Minio'
       mongo:
@@ -487,6 +660,10 @@ definitions:
         allOf:
         - $ref: '#/definitions/config.Mysql'
         description: gorm
+      nfc-relay:
+        allOf:
+        - $ref: '#/definitions/config.NfcRelay'
+        description: NFC Relay 配置
       oracle:
         $ref: '#/definitions/config.Oracle'
       pgsql:
@@ -644,6 +821,21 @@ definitions:
         type: string
       secret-key:
         type: string
+    type: object
+  config.ValidationResult:
+    properties:
+      backup_path:
+        type: string
+      errors:
+        items:
+          type: string
+        type: array
+      is_valid:
+        type: boolean
+      warnings:
+        items:
+          type: string
+        type: array
     type: object
   config.Zap:
     properties:
@@ -844,6 +1036,410 @@ definitions:
         description: 作者
         type: integer
     type: object
+  nfc_relay_admin.BatchDecryptRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/nfc_relay_admin.DecryptAndVerifyRequest'
+        type: array
+      mode:
+        description: PARALLEL, SEQUENTIAL
+        type: string
+    required:
+    - items
+    type: object
+  nfc_relay_admin.BatchDecryptResponse:
+    properties:
+      failCount:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/nfc_relay_admin.DecryptAndVerifyResponse'
+        type: array
+      successCount:
+        type: integer
+      totalTime:
+        description: 微秒
+        type: integer
+    type: object
+  nfc_relay_admin.ComplianceRuleRequest:
+    properties:
+      action:
+        enum:
+        - BLOCK
+        - WARN
+        - LOG
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      pattern:
+        type: string
+      riskLevel:
+        enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+        - CRITICAL
+        type: string
+    required:
+    - action
+    - name
+    - riskLevel
+    type: object
+  nfc_relay_admin.ComplianceRuleResponse:
+    properties:
+      action:
+        type: string
+      createdAt:
+        type: string
+      createdBy:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      pattern:
+        type: string
+      riskLevel:
+        type: string
+      updatedAt:
+        type: string
+      updatedBy:
+        type: string
+    type: object
+  nfc_relay_admin.ComplianceRulesListResponse:
+    properties:
+      page:
+        type: integer
+      rules:
+        items:
+          $ref: '#/definitions/nfc_relay_admin.ComplianceRuleResponse'
+        type: array
+      size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  nfc_relay_admin.ConfigAuditResponse:
+    properties:
+      page:
+        type: integer
+      records:
+        items:
+          $ref: '#/definitions/nfc_relay_admin.ConfigChangeRecord'
+        type: array
+      size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  nfc_relay_admin.ConfigAuditStats:
+    properties:
+      changesByConfig:
+        additionalProperties:
+          type: integer
+        type: object
+      changesByOperator:
+        additionalProperties:
+          type: integer
+        type: object
+      changesByType:
+        additionalProperties:
+          type: integer
+        type: object
+      changesThisMonth:
+        type: integer
+      changesThisWeek:
+        type: integer
+      changesToday:
+        type: integer
+      configChangesTrend:
+        items:
+          $ref: '#/definitions/nfc_relay_admin.ConfigChangeTrendPoint'
+        type: array
+      recentOperators:
+        items:
+          $ref: '#/definitions/nfc_relay_admin.OperatorActivity'
+        type: array
+      successRate:
+        type: number
+      totalChanges:
+        type: integer
+    type: object
+  nfc_relay_admin.ConfigChangeRecord:
+    properties:
+      changeType:
+        description: CREATE, UPDATE, DELETE, RELOAD
+        type: string
+      changedFields:
+        items:
+          type: string
+        type: array
+      configType:
+        type: string
+      errorMessage:
+        type: string
+      id:
+        type: integer
+      ipAddress:
+        type: string
+      newValue:
+        additionalProperties: true
+        type: object
+      oldValue:
+        additionalProperties: true
+        type: object
+      operatorId:
+        type: string
+      operatorName:
+        type: string
+      reason:
+        type: string
+      rollbackId:
+        type: integer
+      sessionId:
+        type: string
+      status:
+        description: SUCCESS, FAILED, PENDING
+        type: string
+      timestamp:
+        type: string
+      userAgent:
+        type: string
+    type: object
+  nfc_relay_admin.ConfigChangeTrendPoint:
+    properties:
+      changeCount:
+        type: integer
+      date:
+        type: string
+      failedCount:
+        type: integer
+      successCount:
+        type: integer
+    type: object
+  nfc_relay_admin.ConfigReloadRequest:
+    properties:
+      configData:
+        additionalProperties: true
+        type: object
+      configType:
+        enum:
+        - main
+        - security
+        - nfc_relay
+        - compliance
+        - all
+        type: string
+      forceReload:
+        type: boolean
+      validateOnly:
+        type: boolean
+    required:
+    - configType
+    type: object
+  nfc_relay_admin.ConfigReloadResponse:
+    properties:
+      newConfig: {}
+      previousConfig: {}
+      reloadTime:
+        description: 毫秒
+        type: integer
+      reloadedConfigs:
+        items:
+          type: string
+        type: array
+      success:
+        type: boolean
+      validationErrors:
+        items:
+          $ref: '#/definitions/nfc_relay_admin.ValidationError'
+        type: array
+    type: object
+  nfc_relay_admin.ConfigStatus:
+    properties:
+      configType:
+        type: string
+      isValid:
+        type: boolean
+      lastReloadTime:
+        type: string
+      reloadCount:
+        type: integer
+      source:
+        description: file, database, remote
+        type: string
+      validationErrors:
+        items:
+          type: string
+        type: array
+      version:
+        type: string
+    type: object
+  nfc_relay_admin.DecryptAndVerifyRequest:
+    properties:
+      apduData:
+        $ref: '#/definitions/security.APDUDataClass'
+      auditLevel:
+        description: BASIC, ENHANCED, STRICT
+        type: string
+      sessionId:
+        type: string
+      userId:
+        type: string
+      verifyOnly:
+        description: 仅验证不解密
+        type: boolean
+    required:
+    - apduData
+    - sessionId
+    - userId
+    type: object
+  nfc_relay_admin.DecryptAndVerifyResponse:
+    properties:
+      auditResult:
+        $ref: '#/definitions/security.ComplianceResult'
+      decryptedData: {}
+      success:
+        type: boolean
+      verificationDetails:
+        $ref: '#/definitions/nfc_relay_admin.VerificationDetails'
+    type: object
+  nfc_relay_admin.HotReloadStatus:
+    properties:
+      enabled:
+        type: boolean
+      lastOperation:
+        $ref: '#/definitions/nfc_relay_admin.ReloadOperation'
+      statistics:
+        $ref: '#/definitions/nfc_relay_admin.ReloadStatistics'
+      watchedConfigs:
+        items:
+          $ref: '#/definitions/nfc_relay_admin.ConfigStatus'
+        type: array
+    type: object
+  nfc_relay_admin.OperatorActivity:
+    properties:
+      changeCount:
+        type: integer
+      lastActivity:
+        type: string
+      operatorId:
+        type: string
+      operatorName:
+        type: string
+      successRate:
+        type: number
+    type: object
+  nfc_relay_admin.ReloadOperation:
+    properties:
+      configType:
+        type: string
+      message:
+        type: string
+      operationType:
+        type: string
+      operatorId:
+        type: string
+      success:
+        type: boolean
+      timestamp:
+        type: string
+    type: object
+  nfc_relay_admin.ReloadStatistics:
+    properties:
+      averageReloadTime:
+        description: 毫秒
+        type: integer
+      failedReloads:
+        type: integer
+      lastFailureTime:
+        type: string
+      lastSuccessTime:
+        type: string
+      successfulReloads:
+        type: integer
+      totalReloads:
+        type: integer
+    type: object
+  nfc_relay_admin.RuleFileInfo:
+    properties:
+      description:
+        type: string
+      filename:
+        type: string
+      isActive:
+        type: boolean
+      modTime:
+        type: string
+      ruleCount:
+        type: integer
+      size:
+        type: integer
+      version:
+        type: string
+    type: object
+  nfc_relay_admin.RuleTestRequest:
+    properties:
+      ruleId:
+        type: string
+      testContext:
+        additionalProperties: true
+        type: object
+      testData:
+        $ref: '#/definitions/security.APDUDataClass'
+    required:
+    - ruleId
+    - testData
+    type: object
+  nfc_relay_admin.RuleTestResponse:
+    properties:
+      details:
+        type: string
+      matched:
+        type: boolean
+      result:
+        $ref: '#/definitions/security.ComplianceResult'
+      ruleId:
+        type: string
+      testTime:
+        description: 微秒
+        type: integer
+    type: object
+  nfc_relay_admin.ValidationError:
+    properties:
+      error:
+        type: string
+      field:
+        type: string
+      suggest:
+        type: string
+    type: object
+  nfc_relay_admin.VerificationDetails:
+    properties:
+      complianceStatus:
+        type: string
+      decryptionTime:
+        description: 微秒
+        type: integer
+      encryptionValid:
+        type: boolean
+      integrityValid:
+        type: boolean
+      riskAssessment:
+        type: string
+      verificationTime:
+        description: 微秒
+        type: integer
+    type: object
   request.AddMenuAuthorityInfo:
     properties:
       authorityId:
@@ -1014,6 +1610,58 @@ definitions:
         description: 是否前端表格列
         type: boolean
     type: object
+  request.AutoMcpTool:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      params:
+        items:
+          properties:
+            default:
+              type: string
+            description:
+              type: string
+            name:
+              type: string
+            required:
+              type: boolean
+            type:
+              description: string, number, boolean, object, array
+              type: string
+          required:
+          - description
+          - name
+          - type
+          type: object
+        type: array
+      response:
+        items:
+          properties:
+            type:
+              description: text, image
+              type: string
+          required:
+          - type
+          type: object
+        type: array
+    required:
+    - description
+    - name
+    type: object
+  request.BatchUpdateComplianceRulesRequest:
+    properties:
+      operations:
+        items:
+          $ref: '#/definitions/request.ComplianceRuleOperation'
+        type: array
+      reason:
+        example: 批量更新规则
+        type: string
+    required:
+    - operations
+    type: object
   request.CasbinInReceive:
     properties:
       authorityId:
@@ -1041,6 +1689,128 @@ definitions:
       password:
         description: 密码
         type: string
+    type: object
+  request.ClientBanRequest:
+    properties:
+      ban_reason:
+        description: 封禁原因
+        type: string
+      ban_type:
+        description: 封禁类型
+        enum:
+        - temporary
+        - permanent
+        type: string
+      client_id:
+        description: 客户端ID
+        type: string
+      duration:
+        description: 封禁时长(分钟，仅临时封禁需要)
+        type: integer
+      notes:
+        description: 备注信息
+        type: string
+      severity:
+        description: 严重程度
+        enum:
+        - low
+        - medium
+        - high
+        - critical
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+    required:
+    - ban_reason
+    - ban_type
+    - client_id
+    - severity
+    type: object
+  request.ClientUnbanRequest:
+    properties:
+      client_id:
+        description: 客户端ID
+        type: string
+      reason:
+        description: 解封原因
+        type: string
+    required:
+    - client_id
+    type: object
+  request.ComplianceRuleOperation:
+    properties:
+      rule:
+        $ref: '#/definitions/request.CreateComplianceRuleRequest'
+      rule_id:
+        example: rule_001
+        type: string
+      type:
+        description: create, update, delete
+        example: update
+        type: string
+    required:
+    - rule_id
+    - type
+    type: object
+  request.CreateAuditLogRequest:
+    properties:
+      action:
+        description: 操作动作
+        type: string
+      category:
+        description: 事件分类
+        type: string
+      client_id_initiator:
+        description: 发起方客户端ID
+        type: string
+      client_id_responder:
+        description: 响应方客户端ID
+        type: string
+      details:
+        description: 事件详情
+      duration:
+        description: 操作耗时(毫秒)
+        type: integer
+      error_message:
+        description: 错误信息
+        type: string
+      event_type:
+        description: 事件类型
+        type: string
+      level:
+        description: 日志级别
+        type: string
+      request_id:
+        description: 请求ID
+        type: string
+      resource:
+        description: 操作资源
+        type: string
+      result:
+        description: 操作结果
+        type: string
+      server_id:
+        description: 服务器ID
+        type: string
+      session_id:
+        description: 会话ID
+        type: string
+      source_ip:
+        description: 源IP地址
+        type: string
+      user_agent:
+        description: 用户代理
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+    required:
+    - event_type
+    - level
+    - result
+    type: object
+  request.CreateComplianceRuleRequest:
     type: object
   request.DataSource:
     properties:
@@ -1145,6 +1915,21 @@ definitions:
     - adminPassword
     - dbName
     type: object
+  request.LockUserAccountRequest:
+    properties:
+      duration:
+        description: 锁定时长(分钟，0表示永久锁定)
+        type: integer
+      reason:
+        description: 锁定原因
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+    required:
+    - reason
+    - user_id
+    type: object
   request.Login:
     properties:
       captcha:
@@ -1201,6 +1986,33 @@ definitions:
       userName:
         example: 用户名
         type: string
+    type: object
+  request.ReloadConfigRequest:
+    properties:
+      config_type:
+        example: main
+        type: string
+      force:
+        example: false
+        type: boolean
+      reason:
+        example: 配置更新
+        type: string
+    required:
+    - config_type
+    type: object
+  request.RuleActionRequest:
+    properties:
+      parameters:
+        additionalProperties: true
+        type: object
+      type:
+        example: block
+        type: string
+    required:
+    - type
+    type: object
+  request.RuleConditionRequest:
     type: object
   request.SearchApiParams:
     properties:
@@ -1298,6 +2110,392 @@ definitions:
         description: 主键ID
         type: integer
     type: object
+  request.UnlockUserAccountRequest:
+    properties:
+      reason:
+        description: 解锁原因
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+    required:
+    - user_id
+    type: object
+  request.UpdateComplianceRuleRequest:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/request.RuleActionRequest'
+        type: array
+      category:
+        example: transaction
+        type: string
+      conditions:
+        items:
+          $ref: '#/definitions/request.RuleConditionRequest'
+        type: array
+      description:
+        example: 检查单笔交易金额是否超过限制
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        example: 交易金额限制
+        type: string
+      severity:
+        example: high
+        type: string
+      valid_from:
+        type: string
+      valid_until:
+        type: string
+    type: object
+  request.UpdateUserSecurityRequest:
+    properties:
+      notes:
+        description: 安全备注
+        type: string
+      risk_score:
+        description: 风险评分
+        type: number
+      security_level:
+        description: 安全级别
+        type: string
+      status:
+        description: 账户状态
+        type: string
+      two_factor_enabled:
+        description: 是否启用双因子认证
+        type: boolean
+      user_id:
+        description: 用户ID
+        type: string
+    required:
+    - user_id
+    type: object
+  request.ValidateConfigRequest:
+    properties:
+      config_type:
+        example: compliance
+        type: string
+      deep:
+        example: true
+        type: boolean
+    type: object
+  response.Alert:
+    properties:
+      id:
+        description: 告警ID
+        type: string
+      level:
+        description: 告警级别
+        type: string
+      message:
+        description: 告警消息
+        type: string
+      resolved:
+        description: 是否已解决
+        type: boolean
+      timestamp:
+        description: 告警时间
+        type: string
+      type:
+        description: 告警类型
+        type: string
+    type: object
+  response.AlertsResponse:
+    properties:
+      alerts:
+        description: 告警列表
+        items:
+          $ref: '#/definitions/response.Alert'
+        type: array
+    type: object
+  response.ApduExchangeCount:
+    properties:
+      downstream:
+        description: 下行消息数（Provider到Receiver）
+        type: integer
+      upstream:
+        description: 上行消息数（Receiver到Provider）
+        type: integer
+    type: object
+  response.AuditLogEntry:
+    properties:
+      action:
+        description: 操作动作
+        type: string
+      category:
+        description: 事件分类
+        type: string
+      client_id_initiator:
+        description: 发起方客户端ID
+        type: string
+      client_id_responder:
+        description: 响应方客户端ID
+        type: string
+      created_at:
+        description: 创建时间
+        type: string
+      details:
+        description: 事件详情JSON
+        type: string
+      duration:
+        description: 操作耗时(毫秒)
+        type: integer
+      error_message:
+        description: 错误信息
+        type: string
+      event_time:
+        description: 事件发生时间
+        type: string
+      event_type:
+        description: 事件类型
+        type: string
+      id:
+        description: 日志ID
+        type: integer
+      level:
+        description: 日志级别
+        type: string
+      request_id:
+        description: 请求ID
+        type: string
+      resource:
+        description: 操作资源
+        type: string
+      result:
+        description: 操作结果
+        type: string
+      server_id:
+        description: 服务器ID
+        type: string
+      session_id:
+        description: 会话ID
+        type: string
+      source_ip:
+        description: 源IP地址
+        type: string
+      user_agent:
+        description: 用户代理
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+    type: object
+  response.AuditLogStatsResponse:
+    properties:
+      category_stats:
+        additionalProperties:
+          type: integer
+        description: 事件分类统计
+        type: object
+      error_count:
+        description: 错误数量
+        type: integer
+      event_type_stats:
+        additionalProperties:
+          type: integer
+        description: 事件类型统计
+        type: object
+      hourly_stats:
+        description: 按小时统计
+        items:
+          $ref: '#/definitions/response.HourlyLogStats'
+        type: array
+      info_count:
+        description: 信息数量
+        type: integer
+      total_logs:
+        description: 总日志数
+        type: integer
+      warning_count:
+        description: 警告数量
+        type: integer
+    type: object
+  response.ClientBanRecordEntry:
+    properties:
+      ban_reason:
+        description: 封禁原因
+        type: string
+      ban_type:
+        description: 封禁类型
+        type: string
+      banned_at:
+        description: 封禁时间
+        type: string
+      banned_by:
+        description: 执行封禁的管理员ID
+        type: integer
+      client_id:
+        description: 客户端ID
+        type: string
+      created_at:
+        description: 创建时间
+        type: string
+      expires_at:
+        description: 解封时间
+        type: string
+      id:
+        description: 记录ID
+        type: integer
+      is_active:
+        description: 是否激活
+        type: boolean
+      notes:
+        description: 备注信息
+        type: string
+      severity:
+        description: 严重程度
+        type: string
+      source_ip:
+        description: 客户端IP
+        type: string
+      unbanned_at:
+        description: 实际解封时间
+        type: string
+      unbanned_by:
+        description: 执行解封的管理员ID
+        type: integer
+      updated_at:
+        description: 更新时间
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+      violations:
+        description: 违规次数
+        type: integer
+    type: object
+  response.ClientDetailsResponse:
+    properties:
+      client_id:
+        description: 客户端ID
+        type: string
+      connected_at:
+        description: 连接时间
+        type: string
+      connection_events:
+        description: 连接事件历史
+        items:
+          $ref: '#/definitions/response.ConnectionEvent'
+        type: array
+      display_name:
+        description: 显示名称
+        type: string
+      ip_address:
+        description: IP地址
+        type: string
+      is_online:
+        description: 在线状态
+        type: boolean
+      last_message_at:
+        description: 最后消息时间
+        type: string
+      received_message_count:
+        description: 已接收消息数
+        type: integer
+      role:
+        description: 角色：provider/receiver/none
+        type: string
+      sent_message_count:
+        description: 已发送消息数
+        type: integer
+      session_id:
+        description: 当前会话ID
+        type: string
+      user_agent:
+        description: 用户代理
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+    type: object
+  response.ClientInfo:
+    properties:
+      client_id:
+        description: 客户端ID
+        type: string
+      connected_at:
+        description: 连接时间
+        type: string
+      display_name:
+        description: 显示名称
+        type: string
+      ip_address:
+        description: IP地址
+        type: string
+      is_online:
+        description: 在线状态
+        type: boolean
+      role:
+        description: 角色：provider/receiver/none
+        type: string
+      session_id:
+        description: 当前会话ID
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+    type: object
+  response.ComparisonDataResponse:
+    properties:
+      current_period:
+        allOf:
+        - $ref: '#/definitions/response.PeriodData'
+        description: 当前时期数据
+      previous_period:
+        allOf:
+        - $ref: '#/definitions/response.PeriodData'
+        description: 之前时期数据
+    type: object
+  response.ConnectionEvent:
+    properties:
+      client_id:
+        description: 相关客户端ID
+        type: string
+      details:
+        description: 事件详情
+        type: string
+      event:
+        description: 事件类型
+        type: string
+      timestamp:
+        description: 事件时间
+        type: string
+    type: object
+  response.DashboardStatsResponse:
+    properties:
+      active_connections:
+        description: 活动连接数
+        type: integer
+      active_sessions:
+        description: 活动会话数
+        type: integer
+      apdu_errors_last_hour:
+        description: 最近一小时APDU错误数
+        type: integer
+      apdu_relayed_last_minute:
+        description: 最近一分钟APDU中继数
+        type: integer
+      connection_trend:
+        description: 连接趋势
+        items:
+          $ref: '#/definitions/response.TrendPoint'
+        type: array
+      hub_status:
+        description: Hub状态
+        type: string
+      session_trend:
+        description: 会话趋势
+        items:
+          $ref: '#/definitions/response.TrendPoint'
+        type: array
+    type: object
   response.Email:
     properties:
       body:
@@ -1320,6 +2518,15 @@ definitions:
       file:
         $ref: '#/definitions/example.ExaFileUploadAndDownload'
     type: object
+  response.ExportResponse:
+    properties:
+      download_url:
+        description: 下载链接
+        type: string
+      expires_at:
+        description: 过期时间
+        type: string
+    type: object
   response.FilePathResponse:
     properties:
       filePath:
@@ -1329,6 +2536,32 @@ definitions:
     properties:
       file:
         $ref: '#/definitions/example.ExaFile'
+    type: object
+  response.GeographicDistributionResponse:
+    properties:
+      locations:
+        description: 位置分布
+        items:
+          $ref: '#/definitions/response.LocationData'
+        type: array
+    type: object
+  response.HourlyLogStats:
+    properties:
+      count:
+        description: 数量
+        type: integer
+      hour:
+        description: 小时
+        type: integer
+    type: object
+  response.LocationData:
+    properties:
+      count:
+        description: 数量
+        type: integer
+      location:
+        description: 位置名称
+        type: string
     type: object
   response.LoginResponse:
     properties:
@@ -1349,6 +2582,145 @@ definitions:
       total:
         type: integer
     type: object
+  response.PaginatedAuditLogResponse:
+    properties:
+      list:
+        description: 审计日志列表
+        items:
+          $ref: '#/definitions/response.AuditLogEntry'
+        type: array
+      page:
+        description: 当前页码
+        type: integer
+      pageSize:
+        description: 每页条数
+        type: integer
+      total:
+        description: 总数
+        type: integer
+    type: object
+  response.PaginatedClientBanResponse:
+    properties:
+      list:
+        description: 封禁记录列表
+        items:
+          $ref: '#/definitions/response.ClientBanRecordEntry'
+        type: array
+      page:
+        description: 当前页码
+        type: integer
+      pageSize:
+        description: 每页条数
+        type: integer
+      total:
+        description: 总数
+        type: integer
+    type: object
+  response.PaginatedClientListResponse:
+    properties:
+      list:
+        description: 客户端列表
+        items:
+          $ref: '#/definitions/response.ClientInfo'
+        type: array
+      page:
+        description: 当前页码
+        type: integer
+      pageSize:
+        description: 每页数量
+        type: integer
+      total:
+        description: 总记录数
+        type: integer
+    type: object
+  response.PaginatedSessionListResponse:
+    properties:
+      list:
+        description: 会话列表
+        items:
+          $ref: '#/definitions/response.SessionInfo'
+        type: array
+      page:
+        description: 当前页码
+        type: integer
+      pageSize:
+        description: 每页数量
+        type: integer
+      total:
+        description: 总记录数
+        type: integer
+    type: object
+  response.PaginatedUserSecurityProfileResponse:
+    properties:
+      list:
+        description: 用户安全档案列表
+        items:
+          $ref: '#/definitions/response.UserSecurityProfileEntry'
+        type: array
+      page:
+        description: 当前页码
+        type: integer
+      pageSize:
+        description: 每页条数
+        type: integer
+      total:
+        description: 总数
+        type: integer
+    type: object
+  response.ParticipantInfo:
+    properties:
+      client_id:
+        description: 客户端ID
+        type: string
+      display_name:
+        description: 显示名称
+        type: string
+      ip_address:
+        description: IP地址
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+    type: object
+  response.PerformanceMetricsResponse:
+    properties:
+      cpu_usage:
+        description: CPU使用率
+        type: number
+      memory_usage:
+        description: 内存使用率
+        type: number
+      network_latency:
+        description: 网络延迟（毫秒）
+        type: number
+      throughput_apdu:
+        description: APDU吞吐量
+        type: integer
+    type: object
+  response.PeriodData:
+    properties:
+      apdu_count:
+        description: APDU数量
+        type: integer
+      average_latency:
+        description: 平均延迟
+        type: number
+      connections:
+        description: 连接数
+        type: integer
+      end_time:
+        description: 结束时间
+        type: string
+      sessions:
+        description: 会话数
+        type: integer
+      start_time:
+        description: 开始时间
+        type: string
+      success_rate:
+        description: 成功率
+        type: number
+    type: object
   response.PolicyPathResponse:
     properties:
       paths:
@@ -1362,6 +2734,107 @@ definitions:
         type: integer
       data: {}
       msg:
+        type: string
+    type: object
+  response.SecuritySummaryResponse:
+    properties:
+      active_ban_count:
+        description: 活跃封禁数量
+        type: integer
+      high_risk_user_count:
+        description: 高风险用户数量
+        type: integer
+      locked_account_count:
+        description: 锁定账户数量
+        type: integer
+      total_violations:
+        description: 总违规次数
+        type: integer
+    type: object
+  response.SessionDetailsResponse:
+    properties:
+      apdu_exchange_count:
+        allOf:
+        - $ref: '#/definitions/response.ApduExchangeCount'
+        description: APDU交换统计
+      created_at:
+        description: 创建时间
+        type: string
+      last_activity_at:
+        description: 最后活动时间
+        type: string
+      provider_info:
+        allOf:
+        - $ref: '#/definitions/response.ParticipantInfo'
+        description: Provider信息
+      receiver_info:
+        allOf:
+        - $ref: '#/definitions/response.ParticipantInfo'
+        description: Receiver信息
+      session_events_history:
+        description: 会话事件历史
+        items:
+          $ref: '#/definitions/response.SessionEvent'
+        type: array
+      session_id:
+        description: 会话ID
+        type: string
+      status:
+        description: 会话状态
+        type: string
+      terminated_at:
+        description: 终止时间
+        type: string
+      termination_reason:
+        description: 终止原因
+        type: string
+    type: object
+  response.SessionEvent:
+    properties:
+      client_id:
+        description: 相关客户端ID
+        type: string
+      details:
+        description: 事件详情
+        type: string
+      event:
+        description: 事件类型
+        type: string
+      timestamp:
+        description: 事件时间
+        type: string
+    type: object
+  response.SessionInfo:
+    properties:
+      created_at:
+        description: 创建时间
+        type: string
+      last_activity_at:
+        description: 最后活动时间
+        type: string
+      provider_client_id:
+        description: Provider客户端ID
+        type: string
+      provider_display_name:
+        description: Provider显示名称
+        type: string
+      provider_user_id:
+        description: Provider用户ID
+        type: string
+      receiver_client_id:
+        description: Receiver客户端ID
+        type: string
+      receiver_display_name:
+        description: Receiver显示名称
+        type: string
+      receiver_user_id:
+        description: Receiver用户ID
+        type: string
+      session_id:
+        description: 会话ID
+        type: string
+      status:
+        description: 会话状态
         type: string
     type: object
   response.SysAPIListResponse:
@@ -1436,6 +2909,177 @@ definitions:
       user:
         $ref: '#/definitions/system.SysUser'
     type: object
+  response.TrendPoint:
+    properties:
+      count:
+        description: 数量
+        type: integer
+      time:
+        description: 时间
+        type: string
+    type: object
+  response.UserSecurityProfileEntry:
+    properties:
+      account_locked_at:
+        description: 账户锁定时间
+        type: string
+      created_at:
+        description: 创建时间
+        type: string
+      failed_login_count:
+        description: 连续失败登录次数
+        type: integer
+      id:
+        description: 档案ID
+        type: integer
+      last_attempt_at:
+        description: 最后尝试时间
+        type: string
+      last_login_at:
+        description: 最后登录时间
+        type: string
+      last_login_ip:
+        description: 最后登录IP
+        type: string
+      last_violation_at:
+        description: 最后违规时间
+        type: string
+      lock_expires_at:
+        description: 锁定过期时间
+        type: string
+      login_attempts:
+        description: 今日登录尝试次数
+        type: integer
+      notes:
+        description: 安全备注
+        type: string
+      risk_score:
+        description: 风险评分
+        type: number
+      security_level:
+        description: 安全级别
+        type: string
+      status:
+        description: 账户状态
+        type: string
+      two_factor_enabled:
+        description: 是否启用双因子认证
+        type: boolean
+      updated_at:
+        description: 更新时间
+        type: string
+      user_id:
+        description: 用户ID
+        type: string
+      violation_count:
+        description: 违规次数
+        type: integer
+    type: object
+  security.APDUDataClass:
+    properties:
+      auditData:
+        allOf:
+        - $ref: '#/definitions/security.AuditableData'
+        description: 审计数据 - 服务器可读，用于合规检查
+      businessData:
+        allOf:
+        - $ref: '#/definitions/security.EncryptedBusinessData'
+        description: 业务数据 - 服务器可解密，用于合规检查
+      metadata:
+        allOf:
+        - $ref: '#/definitions/security.APDUMetadata'
+        description: 元数据 - 明文，用于路由和监控
+    type: object
+  security.APDUMetadata:
+    properties:
+      checksumCrc:
+        description: 数据完整性校验
+        type: string
+      clientId:
+        type: string
+      deviceInfo:
+        description: 设备指纹
+        type: string
+      direction:
+        description: '"command" 或 "response"'
+        type: string
+      sequenceNum:
+        description: 序列号，防重放
+        type: integer
+      sessionId:
+        type: string
+      timestamp:
+        type: string
+      userId:
+        type: string
+    type: object
+  security.AuditableData:
+    properties:
+      amount:
+        description: 交易金额 (分为单位)
+        type: integer
+      applicationId:
+        description: 应用ID (脱敏后)
+        type: string
+      commandClass:
+        description: 命令类别 (SELECT, READ, WRITE等)
+        type: string
+      commandType:
+        description: 具体命令类型
+        type: string
+      currency:
+        description: 货币代码
+        type: string
+      merchantCategory:
+        description: 商户类别
+        type: string
+      riskScore:
+        description: 风险评分
+        type: integer
+      timestamp:
+        description: 时间戳
+        type: string
+      transactionType:
+        description: 交易类型
+        type: string
+    type: object
+  security.ComplianceResult:
+    properties:
+      actions:
+        description: 建议的处理动作
+        items:
+          type: string
+        type: array
+      compliant:
+        type: boolean
+      reason:
+        type: string
+      riskLevel:
+        description: LOW, MEDIUM, HIGH, CRITICAL
+        type: string
+    type: object
+  security.EncryptedBusinessData:
+    properties:
+      encryptedData:
+        description: 所有业务数据都使用审计密钥加密，服务器可解密进行合规检查
+        type: string
+      encryptionInfo:
+        allOf:
+        - $ref: '#/definitions/security.EncryptionInfo'
+        description: 加密元信息
+    type: object
+  security.EncryptionInfo:
+    properties:
+      algorithm:
+        description: 加密算法
+        type: string
+      nonce:
+        description: 随机数
+        type: string
+      tag:
+        description: 认证标签
+        type: string
+    type: object
   system.Condition:
     properties:
       ID:
@@ -1494,6 +3138,9 @@ definitions:
         type: boolean
       title:
         description: 菜单名
+        type: string
+      transitionType:
+        description: 路由切换动画
         type: string
     type: object
   system.SysApi:
@@ -1929,8 +3576,1450 @@ info:
   contact: {}
   description: 使用gin+vue进行极速开发的全栈开发基础平台
   title: Gin-Vue-Admin Swagger API接口文档
-  version: v2.7.9-beta
+  version: v2.8.2
 paths:
+  /admin/nfc-relay/v1/audit-logs:
+    get:
+      consumes:
+      - application/json
+      description: 获取审计日志列表，支持分页和筛选
+      parameters:
+      - description: 事件分类
+        in: query
+        name: category
+        type: string
+      - description: 客户端ID
+        in: query
+        name: clientID
+        type: string
+      - description: 结束时间（ISO8601格式）
+        in: query
+        name: endTime
+        type: string
+      - description: 事件类型
+        in: query
+        name: eventType
+        type: string
+      - description: 关键词搜索
+        in: query
+        name: keyword
+        type: string
+      - description: 日志级别
+        in: query
+        name: level
+        type: string
+      - description: 页码
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        maximum: 100
+        minimum: 1
+        name: pageSize
+        type: integer
+      - description: 操作结果
+        in: query
+        name: result
+        type: string
+      - description: 会话ID
+        in: query
+        name: sessionID
+        type: string
+      - description: 源IP
+        in: query
+        name: sourceIP
+        type: string
+      - description: 开始时间（ISO8601格式）
+        in: query
+        name: startTime
+        type: string
+      - description: 用户ID
+        in: query
+        name: userID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PaginatedAuditLogResponse'
+              type: object
+      summary: 获取审计日志列表
+      tags:
+      - NFC中继审计日志
+    post:
+      consumes:
+      - application/json
+      description: 创建新的审计日志记录
+      parameters:
+      - description: 创建审计日志
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.CreateAuditLogRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 创建审计日志
+      tags:
+      - NFC中继审计日志
+  /admin/nfc-relay/v1/audit-logs/batch:
+    post:
+      consumes:
+      - application/json
+      description: 批量创建多条审计日志记录
+      parameters:
+      - description: 批量创建审计日志
+        in: body
+        name: data
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/request.CreateAuditLogRequest'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 批量创建审计日志
+      tags:
+      - NFC中继审计日志
+  /admin/nfc-relay/v1/audit-logs/cleanup:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定天数之前的审计日志
+      parameters:
+      - description: 保留天数
+        in: query
+        name: retentionDays
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 删除过期审计日志
+      tags:
+      - NFC中继审计日志
+  /admin/nfc-relay/v1/audit-logs/stats:
+    get:
+      consumes:
+      - application/json
+      description: 获取审计日志的统计数据，包括按级别、类型等维度的统计
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.AuditLogStatsResponse'
+              type: object
+      summary: 获取审计日志统计信息
+      tags:
+      - NFC中继审计日志
+  /admin/nfc-relay/v1/clients:
+    get:
+      consumes:
+      - application/json
+      description: 支持分页和筛选的客户端列表查询
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: pageSize
+        type: integer
+      - description: 客户端ID筛选
+        in: query
+        name: clientID
+        type: string
+      - description: 用户ID筛选
+        in: query
+        name: userID
+        type: string
+      - description: 角色筛选
+        in: query
+        name: role
+        type: string
+      - description: IP地址筛选
+        in: query
+        name: ipAddress
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PaginatedClientListResponse'
+              type: object
+      summary: 获取连接客户端列表
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/clients/{clientID}/details:
+    get:
+      consumes:
+      - application/json
+      description: 获取客户端的详细信息包括连接历史和统计
+      parameters:
+      - description: 客户端ID
+        in: path
+        name: clientID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.ClientDetailsResponse'
+              type: object
+      summary: 获取指定客户端的详细信息
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/clients/{clientID}/disconnect:
+    post:
+      consumes:
+      - application/json
+      description: 强制断开指定客户端的WebSocket连接
+      parameters:
+      - description: 客户端ID
+        in: path
+        name: clientID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 管理员强制断开指定客户端
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/compliance/rule-files:
+    get:
+      consumes:
+      - application/json
+      description: 获取所有合规规则文件的信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/nfc_relay_admin.RuleFileInfo'
+                  type: array
+              type: object
+      summary: 获取规则文件列表
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/compliance/rule-files/export:
+    get:
+      consumes:
+      - application/json
+      description: 导出当前的合规规则到文件
+      parameters:
+      - description: 导出格式
+        enum:
+        - json
+        - yaml
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 导出规则文件
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/compliance/rule-files/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 从文件导入合规规则
+      parameters:
+      - description: 规则文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: 是否替换现有规则
+        in: formData
+        name: replace
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 导入规则文件
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/compliance/rules:
+    get:
+      consumes:
+      - application/json
+      description: 获取系统中的所有合规规则
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页大小
+        in: query
+        name: size
+        type: integer
+      - description: 是否启用
+        in: query
+        name: enabled
+        type: boolean
+      - description: 风险级别
+        in: query
+        name: riskLevel
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.ComplianceRulesListResponse'
+              type: object
+      summary: 获取所有合规规则
+      tags:
+      - NFC中继管理
+    post:
+      consumes:
+      - application/json
+      description: 创建新的合规规则
+      parameters:
+      - description: 合规规则信息
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/nfc_relay_admin.ComplianceRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 创建合规规则
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/compliance/rules/{rule_id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定的合规规则
+      parameters:
+      - description: 规则ID
+        in: path
+        name: rule_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 删除合规规则
+      tags:
+      - NFC中继管理
+    get:
+      consumes:
+      - application/json
+      description: 根据ID获取特定的合规规则
+      parameters:
+      - description: 规则ID
+        in: path
+        name: rule_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.ComplianceRuleResponse'
+              type: object
+      summary: 获取单个合规规则
+      tags:
+      - NFC中继管理
+    put:
+      consumes:
+      - application/json
+      description: 更新现有的合规规则
+      parameters:
+      - description: 规则ID
+        in: path
+        name: rule_id
+        required: true
+        type: string
+      - description: 合规规则信息
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/nfc_relay_admin.ComplianceRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 更新合规规则
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/compliance/rules/test:
+    post:
+      consumes:
+      - application/json
+      description: 使用测试数据验证合规规则的效果
+      parameters:
+      - description: 规则测试请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/nfc_relay_admin.RuleTestRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.RuleTestResponse'
+              type: object
+      summary: 测试合规规则
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config:
+    get:
+      consumes:
+      - application/json
+      description: 获取NFC中继系统的配置信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 获取系统配置
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config-audit/changes/{change_id}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定配置变更记录的详细信息
+      parameters:
+      - description: 变更记录ID
+        in: path
+        name: change_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.ConfigChangeRecord'
+              type: object
+      summary: 获取配置变更详情
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config-audit/export:
+    get:
+      consumes:
+      - application/json
+      description: 导出配置审计日志到文件
+      parameters:
+      - description: 导出格式
+        enum:
+        - csv
+        - xlsx
+        - json
+        in: query
+        name: format
+        type: string
+      - description: 配置类型
+        in: query
+        name: configType
+        type: string
+      - description: 开始时间
+        in: query
+        name: startTime
+        type: string
+      - description: 结束时间
+        in: query
+        name: endTime
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 导出配置审计日志
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config-audit/logs:
+    get:
+      consumes:
+      - application/json
+      description: 查询配置变更的审计日志记录
+      parameters:
+      - description: 配置类型
+        in: query
+        name: configType
+        type: string
+      - description: 变更类型
+        in: query
+        name: changeType
+        type: string
+      - description: 操作员ID
+        in: query
+        name: operatorId
+        type: string
+      - description: 开始时间
+        in: query
+        name: startTime
+        type: string
+      - description: 结束时间
+        in: query
+        name: endTime
+        type: string
+      - description: 状态
+        in: query
+        name: status
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页大小
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.ConfigAuditResponse'
+              type: object
+      summary: 获取配置审计日志
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config-audit/records:
+    post:
+      consumes:
+      - application/json
+      description: 手动创建配置变更审计记录
+      parameters:
+      - description: 配置变更记录
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/nfc_relay_admin.ConfigChangeRecord'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 创建配置审计记录
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config-audit/stats:
+    get:
+      consumes:
+      - application/json
+      description: 获取配置变更的统计信息和趋势
+      parameters:
+      - description: 统计天数
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.ConfigAuditStats'
+              type: object
+      summary: 获取配置审计统计
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config/history/{config_type}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定配置的变更历史记录
+      parameters:
+      - description: 配置类型
+        in: path
+        name: config_type
+        required: true
+        type: string
+      - description: 返回记录数量限制
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/nfc_relay_admin.ReloadOperation'
+                  type: array
+              type: object
+      summary: 获取配置变更历史
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config/hot-reload-status:
+    get:
+      consumes:
+      - application/json
+      description: 获取热重载功能的整体状态和统计信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.HotReloadStatus'
+              type: object
+      summary: 获取热重载状态
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config/hot-reload/toggle:
+    post:
+      consumes:
+      - application/json
+      description: 启用或禁用配置热重载功能
+      parameters:
+      - description: 是否启用
+        in: query
+        name: enabled
+        required: true
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 切换热重载功能
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config/reload:
+    post:
+      consumes:
+      - application/json
+      description: 动态重载指定类型的配置，支持验证和回滚
+      parameters:
+      - description: 配置重载请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/nfc_relay_admin.ConfigReloadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.ConfigReloadResponse'
+              type: object
+      summary: 重载配置
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config/revert/{config_type}:
+    post:
+      consumes:
+      - application/json
+      description: 将配置回滚到之前的版本
+      parameters:
+      - description: 配置类型
+        in: path
+        name: config_type
+        required: true
+        type: string
+      - description: 回滚到的版本
+        in: query
+        name: version
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.ConfigReloadResponse'
+              type: object
+      summary: 回滚配置
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/config/status:
+    get:
+      consumes:
+      - application/json
+      description: 获取各种配置的当前状态和重载历史
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/nfc_relay_admin.ConfigStatus'
+                  type: array
+              type: object
+      summary: 获取配置状态
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/dashboard/alerts:
+    get:
+      consumes:
+      - application/json
+      description: 获取系统告警信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.AlertsResponse'
+              type: object
+      summary: 获取告警信息
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/dashboard/alerts/{alert_id}/acknowledge:
+    post:
+      consumes:
+      - application/json
+      description: 管理员确认指定的告警
+      parameters:
+      - description: 告警ID
+        in: path
+        name: alert_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 确认告警
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/dashboard/comparison:
+    get:
+      consumes:
+      - application/json
+      description: 获取不同时间段的对比数据
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.ComparisonDataResponse'
+              type: object
+      summary: 获取对比数据
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/dashboard/enhanced:
+    get:
+      consumes:
+      - application/json
+      description: 获取NFC中继系统的核心统计数据和状态
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.DashboardStatsResponse'
+              type: object
+      summary: 获取增强版仪表盘统计数据
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/dashboard/export:
+    post:
+      consumes:
+      - application/json
+      description: 导出仪表盘数据为文件
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.ExportResponse'
+              type: object
+      summary: 导出仪表盘数据
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/dashboard/geographic:
+    get:
+      consumes:
+      - application/json
+      description: 获取客户端地理分布数据
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.GeographicDistributionResponse'
+              type: object
+      summary: 获取地理分布
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/dashboard/performance:
+    get:
+      consumes:
+      - application/json
+      description: 获取系统性能指标数据
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PerformanceMetricsResponse'
+              type: object
+      summary: 获取性能指标
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/encryption/batch-decrypt-verify:
+    post:
+      consumes:
+      - application/json
+      description: 批量处理多个APDU数据的解密验证
+      parameters:
+      - description: 批量解密请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/nfc_relay_admin.BatchDecryptRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.BatchDecryptResponse'
+              type: object
+      summary: 批量解密和验证APDU数据
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/encryption/decrypt-verify:
+    post:
+      consumes:
+      - application/json
+      description: 对接收到的APDU数据进行解密验证，支持合规检查
+      parameters:
+      - description: 解密验证请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/nfc_relay_admin.DecryptAndVerifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/nfc_relay_admin.DecryptAndVerifyResponse'
+              type: object
+      summary: 解密和验证APDU数据
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/encryption/status:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前加密系统的状态信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+      summary: 获取加密状态
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/realtime:
+    get:
+      consumes:
+      - application/json
+      description: 建立WebSocket连接获取实时数据
+      produces:
+      - application/json
+      responses:
+        "101":
+          description: Switching Protocols
+          schema:
+            type: string
+      summary: WebSocket实时数据
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/security/ban-client:
+    post:
+      consumes:
+      - application/json
+      description: 封禁指定的客户端
+      parameters:
+      - description: 封禁请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.ClientBanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 封禁成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 封禁客户端
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/cleanup:
+    post:
+      consumes:
+      - application/json
+      description: 清理过期的封禁记录和账户锁定
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 清理成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 清理过期数据
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/client-ban-status/{clientID}:
+    get:
+      consumes:
+      - application/json
+      description: 检查指定客户端的封禁状态
+      parameters:
+      - description: 客户端ID
+        in: path
+        name: clientID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 检查成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+      summary: 检查客户端是否被封禁
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/client-bans:
+    get:
+      consumes:
+      - application/json
+      description: 获取客户端封禁记录列表，支持分页和筛选
+      parameters:
+      - description: 封禁类型
+        in: query
+        name: banType
+        type: string
+      - description: 客户端ID
+        in: query
+        name: clientID
+        type: string
+      - description: 结束时间
+        in: query
+        name: endTime
+        type: string
+      - description: 是否激活
+        in: query
+        name: isActive
+        type: boolean
+      - description: 页码
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        maximum: 100
+        minimum: 1
+        name: pageSize
+        type: integer
+      - description: 严重程度
+        in: query
+        name: severity
+        type: string
+      - description: 开始时间
+        in: query
+        name: startTime
+        type: string
+      - description: 用户ID
+        in: query
+        name: userID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PaginatedClientBanResponse'
+              type: object
+      summary: 获取客户端封禁列表
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/lock-user:
+    post:
+      consumes:
+      - application/json
+      description: 锁定指定用户的账户
+      parameters:
+      - description: 锁定请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.LockUserAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 锁定成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 锁定用户账户
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/summary:
+    get:
+      consumes:
+      - application/json
+      description: 获取系统安全状态摘要信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.SecuritySummaryResponse'
+              type: object
+      summary: 获取安全摘要
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/unban-client:
+    post:
+      consumes:
+      - application/json
+      description: 解封指定的客户端
+      parameters:
+      - description: 解封请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.ClientUnbanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 解封成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 解封客户端
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/unlock-user:
+    post:
+      consumes:
+      - application/json
+      description: 解锁指定用户的账户
+      parameters:
+      - description: 解锁请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.UnlockUserAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 解锁成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 解锁用户账户
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/user-security:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户安全档案列表，支持分页和筛选
+      parameters:
+      - description: 是否锁定
+        in: query
+        name: isLocked
+        type: boolean
+      - description: 最大风险评分
+        in: query
+        name: maxRiskScore
+        type: number
+      - description: 最小风险评分
+        in: query
+        name: minRiskScore
+        type: number
+      - description: 页码
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        maximum: 100
+        minimum: 1
+        name: pageSize
+        type: integer
+      - description: 安全级别
+        in: query
+        name: securityLevel
+        type: string
+      - description: 账户状态
+        in: query
+        name: status
+        type: string
+      - description: 用户ID模糊查询
+        in: query
+        name: userIDLike
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PaginatedUserSecurityProfileResponse'
+              type: object
+      summary: 获取用户安全档案列表
+      tags:
+      - NFC中继安全管理
+    put:
+      consumes:
+      - application/json
+      description: 更新指定用户的安全档案信息
+      parameters:
+      - description: 更新请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.UpdateUserSecurityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 更新用户安全档案
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/security/user-security/{userID}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定用户的安全档案信息
+      parameters:
+      - description: 用户ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.UserSecurityProfileEntry'
+              type: object
+      summary: 获取用户安全档案
+      tags:
+      - NFC中继安全管理
+  /admin/nfc-relay/v1/sessions:
+    get:
+      consumes:
+      - application/json
+      description: 支持分页和筛选的会话列表查询
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: pageSize
+        type: integer
+      - description: 会话ID筛选
+        in: query
+        name: sessionID
+        type: string
+      - description: 参与方客户端ID筛选
+        in: query
+        name: participantClientID
+        type: string
+      - description: 参与方用户ID筛选
+        in: query
+        name: participantUserID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PaginatedSessionListResponse'
+              type: object
+      summary: 获取活动会话列表
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/sessions/{sessionID}/details:
+    get:
+      consumes:
+      - application/json
+      description: 获取会话的详细信息包括参与者信息和交换统计
+      parameters:
+      - description: 会话ID
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.SessionDetailsResponse'
+              type: object
+      summary: 获取指定会话的详细信息
+      tags:
+      - NFC中继管理
+  /admin/nfc-relay/v1/sessions/{sessionID}/terminate:
+    post:
+      consumes:
+      - application/json
+      description: 强制终止指定的NFC中继会话
+      parameters:
+      - description: 会话ID
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 管理员强制终止指定会话
+      tags:
+      - NFC中继管理
   /api/createApi:
     post:
       consumes:
@@ -2935,8 +6024,7 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  items:
-                    type: object
+                  items: {}
                   type: array
                 msg:
                   type: string
@@ -2946,6 +6034,75 @@ paths:
       summary: 安装插件
       tags:
       - AutoCodePlugin
+  /autoCode/mcp:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建自动代码
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.AutoMcpTool'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{"success":true,"data":{},"msg":"创建成功"}'
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: 自动McpTool
+      tags:
+      - mcp
+  /autoCode/mcpList:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建自动代码
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.AutoMcpTool'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{"success":true,"data":{},"msg":"创建成功"}'
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: 自动McpTool
+      tags:
+      - mcp
+  /autoCode/mcpTest:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 调用MCP Tool的参数
+        in: body
+        name: data
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{"success":true,"data":{},"msg":"测试成功"}'
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 测试McpTool
+      tags:
+      - mcp
   /autoCode/preview:
     post:
       consumes:
@@ -3142,6 +6299,378 @@ paths:
       summary: 获取权限列表
       tags:
       - Casbin
+  /configManager/batchUpdateComplianceRules:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 批量更新合规规则请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.BatchUpdateComplianceRulesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 批量更新成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 批量更新合规规则
+      tags:
+      - ConfigManager
+  /configManager/changeHistory:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - example: create
+        in: query
+        name: change_type
+        type: string
+      - example: compliance
+        in: query
+        name: config_type
+        type: string
+      - in: query
+        name: end_time
+        type: string
+      - description: 关键字
+        in: query
+        name: keyword
+        type: string
+      - example: admin
+        in: query
+        name: operator_id
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页大小
+        in: query
+        name: pageSize
+        type: integer
+      - in: query
+        name: start_time
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PageResult'
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取配置变更历史
+      tags:
+      - ConfigManager
+  /configManager/complianceRule:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建合规规则请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.CreateComplianceRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 创建合规规则
+      tags:
+      - ConfigManager
+  /configManager/complianceRule/{rule_id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则ID
+        in: path
+        name: rule_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 删除合规规则
+      tags:
+      - ConfigManager
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则ID
+        in: path
+        name: rule_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/config.ComplianceRule'
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取单个合规规则
+      tags:
+      - ConfigManager
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则ID
+        in: path
+        name: rule_id
+        required: true
+        type: string
+      - description: 更新合规规则请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.UpdateComplianceRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 更新合规规则
+      tags:
+      - ConfigManager
+  /configManager/complianceRules:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/config.ComplianceRules'
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取所有合规规则
+      tags:
+      - ConfigManager
+  /configManager/complianceRulesList:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - example: transaction
+        in: query
+        name: category
+        type: string
+      - example: true
+        in: query
+        name: enabled
+        type: boolean
+      - description: 关键字
+        in: query
+        name: keyword
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页大小
+        in: query
+        name: pageSize
+        type: integer
+      - example: 交易
+        in: query
+        name: search
+        type: string
+      - example: high
+        in: query
+        name: severity
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PageResult'
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取合规规则列表（分页）
+      tags:
+      - ConfigManager
+  /configManager/loadComplianceRules:
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 加载成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 从文件加载合规规则
+      tags:
+      - ConfigManager
+  /configManager/reloadMainConfig:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 重载配置请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.ReloadConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 重载成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 重载主配置
+      tags:
+      - ConfigManager
+  /configManager/saveComplianceRules:
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 保存合规规则到文件
+      tags:
+      - ConfigManager
+  /configManager/validateConfig:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 验证配置请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.ValidateConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 验证完成
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/config.ValidationResult'
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 验证配置
+      tags:
+      - ConfigManager
   /customer/customer:
     delete:
       consumes:
@@ -4525,18 +8054,6 @@ paths:
       summary: 更新SysDictionaryDetail
       tags:
       - SysDictionaryDetail
-  /sysExportTemplate/ExportTemplate:
-    get:
-      consumes:
-      - application/json
-      produces:
-      - application/json
-      responses: {}
-      security:
-      - ApiKeyAuth: []
-      summary: 导出表格模板
-      tags:
-      - SysExportTemplate
   /sysExportTemplate/createSysExportTemplate:
     post:
       consumes:
@@ -4618,6 +8135,42 @@ paths:
       summary: 导出表格
       tags:
       - SysExportTemplate
+  /sysExportTemplate/exportExcelByToken:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses: {}
+      security:
+      - ApiKeyAuth: []
+      summary: 导出表格
+      tags:
+      - ExportExcelByToken
+  /sysExportTemplate/exportTemplate:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses: {}
+      security:
+      - ApiKeyAuth: []
+      summary: 导出表格模板
+      tags:
+      - SysExportTemplate
+  /sysExportTemplate/exportTemplateByToken:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses: {}
+      security:
+      - ApiKeyAuth: []
+      summary: 通过token导出表格模板
+      tags:
+      - ExportTemplateByToken
   /sysExportTemplate/findSysExportTemplate:
     get:
       consumes:
@@ -4781,34 +8334,6 @@ paths:
       summary: 更新导出模板
       tags:
       - SysExportTemplate
-  /sysOperationRecord/createSysOperationRecord:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 创建SysOperationRecord
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/system.SysOperationRecord'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 创建SysOperationRecord
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                msg:
-                  type: string
-              type: object
-      security:
-      - ApiKeyAuth: []
-      summary: 创建SysOperationRecord
-      tags:
-      - SysOperationRecord
   /sysOperationRecord/deleteSysOperationRecord:
     delete:
       consumes:
@@ -5316,7 +8841,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: 重启系统
+          description: 重载系统
           schema:
             allOf:
             - $ref: '#/definitions/response.Response'
@@ -5326,7 +8851,7 @@ paths:
               type: object
       security:
       - ApiKeyAuth: []
-      summary: 重启系统
+      summary: 重载系统
       tags:
       - System
   /system/setSystemConfig:

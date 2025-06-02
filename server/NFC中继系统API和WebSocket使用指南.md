@@ -123,7 +123,7 @@ connect()
 
 | 属性 | 值 |
 |------|---|
-| **基础路径** | `/api/admin/nfc-relay/v1` |
+| **基础路径** | `/admin/nfc-relay/v1` |
 | **认证方式** | JWT Token (在请求头中) |
 | **数据格式** | JSON |
 
@@ -235,7 +235,7 @@ if (message.type === MESSAGE_TYPES.LOG_ENTRY) {
 
 ### 3. ✅ API路径已正确
 
-前端API配置已经正确使用 `/api/admin/nfc-relay/v1` 路径，与后端路由匹配。
+前端API配置已经正确使用 `/admin/nfc-relay/v1` 路径，与后端路由匹配。
 
 ## 🏗 架构设计
 

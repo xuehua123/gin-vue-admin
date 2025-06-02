@@ -98,7 +98,7 @@ type ConfigChangeTrendPoint struct {
 // @Param page query int false "页码"
 // @Param pageSize query int false "每页大小"
 // @Success 200 {object} response.Response{data=ConfigAuditResponse}
-// @Router /api/admin/nfc-relay/v1/config-audit/logs [get]
+// @Router /admin/nfc-relay/v1/config-audit/logs [get]
 func (c *ConfigAuditApi) GetConfigAuditLogs(ctx *gin.Context) {
 	var query ConfigAuditQuery
 
@@ -177,7 +177,7 @@ func (c *ConfigAuditApi) GetConfigAuditLogs(ctx *gin.Context) {
 // @Produce json
 // @Param days query int false "统计天数"
 // @Success 200 {object} response.Response{data=ConfigAuditStats}
-// @Router /api/admin/nfc-relay/v1/config-audit/stats [get]
+// @Router /admin/nfc-relay/v1/config-audit/stats [get]
 func (c *ConfigAuditApi) GetConfigAuditStats(ctx *gin.Context) {
 	daysStr := ctx.DefaultQuery("days", "30")
 	days, _ := strconv.Atoi(daysStr)
@@ -248,7 +248,7 @@ func (c *ConfigAuditApi) GetConfigAuditStats(ctx *gin.Context) {
 // @Produce json
 // @Param change_id path int true "变更记录ID"
 // @Success 200 {object} response.Response{data=ConfigChangeRecord}
-// @Router /api/admin/nfc-relay/v1/config-audit/changes/{change_id} [get]
+// @Router /admin/nfc-relay/v1/config-audit/changes/{change_id} [get]
 func (c *ConfigAuditApi) GetConfigChangeDetail(ctx *gin.Context) {
 	changeIDStr := ctx.Param("change_id")
 	changeID, err := strconv.ParseInt(changeIDStr, 10, 64)
@@ -301,7 +301,7 @@ func (c *ConfigAuditApi) GetConfigChangeDetail(ctx *gin.Context) {
 // @Produce json
 // @Param data body ConfigChangeRecord true "配置变更记录"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/config-audit/records [post]
+// @Router /admin/nfc-relay/v1/config-audit/records [post]
 func (c *ConfigAuditApi) CreateConfigAuditRecord(ctx *gin.Context) {
 	var record ConfigChangeRecord
 	if err := ctx.ShouldBindJSON(&record); err != nil {
@@ -350,7 +350,7 @@ func (c *ConfigAuditApi) CreateConfigAuditRecord(ctx *gin.Context) {
 // @Param startTime query string false "开始时间"
 // @Param endTime query string false "结束时间"
 // @Success 200 {file} file
-// @Router /api/admin/nfc-relay/v1/config-audit/export [get]
+// @Router /admin/nfc-relay/v1/config-audit/export [get]
 func (c *ConfigAuditApi) ExportConfigAuditLogs(ctx *gin.Context) {
 	format := ctx.DefaultQuery("format", "csv")
 	configType := ctx.Query("configType")

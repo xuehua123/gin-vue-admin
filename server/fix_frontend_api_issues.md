@@ -5,10 +5,10 @@
 根据错误日志分析，存在以下两个主要问题：
 
 ### 1. API路径重复问题
-**错误**: `http://localhost:8082/api/api/admin/nfc-relay/v1/clients`
+**错误**: `http://localhost:8082/api/admin/nfc-relay/v1/clients`
 **原因**: 
 - 前端 `baseURL` 设置为 `/api`
-- 后端API路径为 `/api/admin/nfc-relay/v1/...`
+- 后端API路径为 `/admin/nfc-relay/v1/...`
 - 导致重复的 `/api/api/` 路径
 
 ### 2. WebSocket连接失败
@@ -43,7 +43,7 @@ VITE_BASE_API = /api
 // 修改API配置
 export const API_CONFIG = {
   // HTTP API基础路径 - 去掉重复的 /api
-  BASE_URL: '/admin/nfc-relay/v1',  // 从 '/api/admin/nfc-relay/v1' 改为 '/admin/nfc-relay/v1'
+  BASE_URL: '/admin/nfc-relay/v1',  // 从 '/admin/nfc-relay/v1' 改为 '/admin/nfc-relay/v1'
   
   // WebSocket配置
   WEBSOCKET: {
@@ -122,7 +122,7 @@ npm run dev
 修复后应该看到：
 
 1. **API调用正确** ✅:
-   - `http://localhost:8082/api/admin/nfc-relay/v1/clients`
+   - `http://localhost:8082/admin/nfc-relay/v1/clients`
    - 返回200状态码
 
 2. **WebSocket连接成功** 🎯:

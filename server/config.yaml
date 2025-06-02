@@ -10,7 +10,7 @@ autocode:
     root: D:\work\IdeaProjects\gin-vue-admin
     server: server
     module: github.com/flipped-aurora/gin-vue-admin/server
-    ai-path: "https://ai.gin-vue-admin.com/{FUNC}/jsxuehua/7b8442f9-bca9-4bfd-8808-7b4f1b83fbeb"
+    ai-path: https://ai.gin-vue-admin.com/{FUNC}/jsxuehua/7b8442f9-bca9-4bfd-8808-7b4f1b83fbeb
 aws-s3:
     bucket: xxxxx-10005608
     region: ap-shanghai
@@ -22,7 +22,7 @@ aws-s3:
     s3-force-path-style: false
     disable-ssl: false
 captcha:
-    key-long: 6
+    key-long: 4
     img-width: 240
     img-height: 80
     open-captcha: 0
@@ -35,18 +35,8 @@ cloudflare-r2:
     access-key-id: xxx_key_id
     secret-access-key: xxx_secret_key
 cors:
-    mode: strict-whitelist
-    whitelist:
-        - allow-origin: example1.com
-          allow-methods: POST, GET
-          allow-headers: Content-Type,AccessToken,X-CSRF-Token, Authorization, Token,X-Token,X-User-Id
-          expose-headers: Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type
-          allow-credentials: true
-        - allow-origin: example2.com
-          allow-methods: GET, POST
-          allow-headers: content-type
-          expose-headers: Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type
-          allow-credentials: true
+    mode: ""
+    whitelist: []
 db-list:
     - type: ""
       alias-name: ""
@@ -147,6 +137,33 @@ mysql:
     max-open-conns: 100
     singular: false
     log-zap: false
+nfc-relay:
+    websocket-pong-wait-sec: 60
+    websocket-max-message-bytes: 2048
+    websocket-write-wait-sec: 10
+    hub-check-interval-sec: 60
+    session-inactive-timeout-sec: 300
+    security:
+        enable-tls: false
+        cert-file: ./certs/server.crt
+        key-file: ./certs/server.key
+        force-tls: false
+        enable-audit-encryption: false
+        encryption-algorithm: AES-256-GCM
+        audit-key-rotation-hours: 0
+        enable-compliance-audit: false
+        enable-deep-inspection: false
+        max-transaction-amount: 0
+        blocked-merchant-categories: []
+        enable-e2e-encryption: true
+        key-exchange-method: ECDH
+        enable-anti-replay: true
+        replay-window-ms: 30000
+        max-nonce-cache: 10000
+        max-message-size: 4096
+        enable-input-sanitize: true
+        require-client-cert: false
+        client-ca-file: ./certs/ca.crt
 oracle:
     prefix: ""
     port: ""
@@ -184,7 +201,7 @@ qiniu:
     use-https: false
     use-cdn-domains: false
 redis:
-    name: "nfc"
+    name: nfc
     addr: 49.235.40.39:26379
     password: xuehua123
     db: 0
@@ -243,33 +260,3 @@ zap:
     show-line: true
     log-in-console: true
     retention-day: -1
-nfc-relay:
-    hub-check-interval-sec: 60
-    session-inactive-timeout-sec: 300 # 5 分钟
-    websocket-write-wait-sec: 10
-    websocket-pong-wait-sec: 60
-    websocket-max-message-bytes: 2048
-    security:
-        # TLS/WSS 配置
-        enable-tls: false
-        cert-file: "./certs/server.crt"
-        key-file: "./certs/server.key"
-        force-tls: false
-        
-        # 端到端加密配置
-        enable-e2e-encryption: true
-        encryption-algorithm: "AES-256-GCM"
-        key-exchange-method: "ECDH"
-        
-        # 防重放攻击配置
-        enable-anti-replay: true
-        replay-window-ms: 30000  # 30秒窗口
-        max-nonce-cache: 10000
-        
-        # 输入验证配置
-        max-message-size: 4096
-        enable-input-sanitize: true
-        
-        # 客户端认证配置
-        require-client-cert: false
-        client-ca-file: "./certs/ca.crt"

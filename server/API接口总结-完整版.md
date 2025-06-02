@@ -118,68 +118,68 @@ POST   /api/system/getTables         # 获取数据库所有表信息
 
 ### 仪表盘API (7个)
 ```
-GET    /api/admin/nfc-relay/v1/dashboard-stats-enhanced   # 获取增强版仪表盘数据
-GET    /api/admin/nfc-relay/v1/performance-metrics        # 获取性能指标
-GET    /api/admin/nfc-relay/v1/geographic-distribution    # 获取地理分布
-GET    /api/admin/nfc-relay/v1/alerts                     # 获取告警信息
-POST   /api/admin/nfc-relay/v1/alerts/:alert_id/acknowledge # 确认告警
-POST   /api/admin/nfc-relay/v1/export                     # 导出数据
-GET    /api/admin/nfc-relay/v1/comparison                 # 获取对比数据
+GET    /admin/nfc-relay/v1/dashboard-stats-enhanced   # 获取增强版仪表盘数据
+GET    /admin/nfc-relay/v1/performance-metrics        # 获取性能指标
+GET    /admin/nfc-relay/v1/geographic-distribution    # 获取地理分布
+GET    /admin/nfc-relay/v1/alerts                     # 获取告警信息
+POST   /admin/nfc-relay/v1/alerts/:alert_id/acknowledge # 确认告警
+POST   /admin/nfc-relay/v1/export                     # 导出数据
+GET    /admin/nfc-relay/v1/comparison                 # 获取对比数据
 ```
 
 ### 客户端管理API (3个)
 ```
-GET    /api/admin/nfc-relay/v1/clients                    # 获取客户端列表
-GET    /api/admin/nfc-relay/v1/clients/:clientID/details  # 获取客户端详情
-POST   /api/admin/nfc-relay/v1/clients/:clientID/disconnect # 强制断开客户端
+GET    /admin/nfc-relay/v1/clients                    # 获取客户端列表
+GET    /admin/nfc-relay/v1/clients/:clientID/details  # 获取客户端详情
+POST   /admin/nfc-relay/v1/clients/:clientID/disconnect # 强制断开客户端
 ```
 
 ### 会话管理API (3个)
 ```
-GET    /api/admin/nfc-relay/v1/sessions                   # 获取会话列表
-GET    /api/admin/nfc-relay/v1/sessions/:sessionID/details # 获取会话详情
-POST   /api/admin/nfc-relay/v1/sessions/:sessionID/terminate # 强制终止会话
+GET    /admin/nfc-relay/v1/sessions                   # 获取会话列表
+GET    /admin/nfc-relay/v1/sessions/:sessionID/details # 获取会话详情
+POST   /admin/nfc-relay/v1/sessions/:sessionID/terminate # 强制终止会话
 ```
 
 ### 审计日志API (6个)
 ```
-GET    /api/admin/nfc-relay/v1/audit-logs                # 获取审计日志
-POST   /api/admin/nfc-relay/v1/audit-logs-db             # 创建审计日志
-GET    /api/admin/nfc-relay/v1/audit-logs-db             # 获取审计日志列表
-GET    /api/admin/nfc-relay/v1/audit-logs-db/stats       # 获取审计日志统计
-POST   /api/admin/nfc-relay/v1/audit-logs-db/batch       # 批量创建审计日志
-DELETE /api/admin/nfc-relay/v1/audit-logs-db/cleanup     # 删除过期审计日志
+GET    /admin/nfc-relay/v1/audit-logs                # 获取审计日志
+POST   /admin/nfc-relay/v1/audit-logs-db             # 创建审计日志
+GET    /admin/nfc-relay/v1/audit-logs-db             # 获取审计日志列表
+GET    /admin/nfc-relay/v1/audit-logs-db/stats       # 获取审计日志统计
+POST   /admin/nfc-relay/v1/audit-logs-db/batch       # 批量创建审计日志
+DELETE /admin/nfc-relay/v1/audit-logs-db/cleanup     # 删除过期审计日志
 ```
 
 ### 安全管理API (11个)
 ```
-POST   /api/admin/nfc-relay/v1/security/ban-client           # 封禁客户端
-POST   /api/admin/nfc-relay/v1/security/unban-client         # 解封客户端
-GET    /api/admin/nfc-relay/v1/security/client-bans          # 获取客户端封禁列表
-GET    /api/admin/nfc-relay/v1/security/client-ban-status/:clientID # 检查客户端封禁状态
-GET    /api/admin/nfc-relay/v1/security/user-security/:userID # 获取用户安全档案
-GET    /api/admin/nfc-relay/v1/security/user-security        # 获取用户安全档案列表
-PUT    /api/admin/nfc-relay/v1/security/user-security        # 更新用户安全档案
-POST   /api/admin/nfc-relay/v1/security/lock-user            # 锁定用户账户
-POST   /api/admin/nfc-relay/v1/security/unlock-user          # 解锁用户账户
-GET    /api/admin/nfc-relay/v1/security/summary              # 获取安全摘要
-POST   /api/admin/nfc-relay/v1/security/cleanup              # 清理过期数据
+POST   /admin/nfc-relay/v1/security/ban-client           # 封禁客户端
+POST   /admin/nfc-relay/v1/security/unban-client         # 解封客户端
+GET    /admin/nfc-relay/v1/security/client-bans          # 获取客户端封禁列表
+GET    /admin/nfc-relay/v1/security/client-ban-status/:clientID # 检查客户端封禁状态
+GET    /admin/nfc-relay/v1/security/user-security/:userID # 获取用户安全档案
+GET    /admin/nfc-relay/v1/security/user-security        # 获取用户安全档案列表
+PUT    /admin/nfc-relay/v1/security/user-security        # 更新用户安全档案
+POST   /admin/nfc-relay/v1/security/lock-user            # 锁定用户账户
+POST   /admin/nfc-relay/v1/security/unlock-user          # 解锁用户账户
+GET    /admin/nfc-relay/v1/security/summary              # 获取安全摘要
+POST   /admin/nfc-relay/v1/security/cleanup              # 清理过期数据
 ```
 
 ### 系统配置API (2个)
 ```
-GET    /api/admin/nfc-relay/v1/config                     # 获取系统配置
-GET    /api/admin/nfc-relay/v1/realtime                   # WebSocket实时数据
+GET    /admin/nfc-relay/v1/config                     # 获取系统配置
+GET    /admin/nfc-relay/v1/realtime                   # WebSocket实时数据
 ```
 
 ### 安全配置API (6个)
 ```
-GET    /api/admin/nfc-relay/v1/security/config               # 获取安全配置
-PUT    /api/admin/nfc-relay/v1/security/config               # 更新安全配置
-GET    /api/admin/nfc-relay/v1/security/compliance-stats     # 获取合规统计
-POST   /api/admin/nfc-relay/v1/security/test-features        # 测试安全功能
-POST   /api/admin/nfc-relay/v1/security/unblock-user/:userId # 解除用户封禁
-GET    /api/admin/nfc-relay/v1/security/status               # 获取安全状态
+GET    /admin/nfc-relay/v1/security/config               # 获取安全配置
+PUT    /admin/nfc-relay/v1/security/config               # 更新安全配置
+GET    /admin/nfc-relay/v1/security/compliance-stats     # 获取合规统计
+POST   /admin/nfc-relay/v1/security/test-features        # 测试安全功能
+POST   /admin/nfc-relay/v1/security/unblock-user/:userId # 解除用户封禁
+GET    /admin/nfc-relay/v1/security/status               # 获取安全状态
 ```
 
 ---
@@ -188,41 +188,41 @@ GET    /api/admin/nfc-relay/v1/security/status               # 获取安全状�
 
 ### 加密验证API (3个)
 ```
-POST   /api/admin/nfc-relay/v1/encryption/decrypt-verify        # 解密和验证APDU数据
-POST   /api/admin/nfc-relay/v1/encryption/batch-decrypt-verify  # 批量解密和验证
-GET    /api/admin/nfc-relay/v1/encryption/status                # 获取加密状态
+POST   /admin/nfc-relay/v1/encryption/decrypt-verify        # 解密和验证APDU数据
+POST   /admin/nfc-relay/v1/encryption/batch-decrypt-verify  # 批量解密和验证
+GET    /admin/nfc-relay/v1/encryption/status                # 获取加密状态
 ```
 
 ### 配置热重载API (6个)
 ```
-POST   /api/admin/nfc-relay/v1/config/reload                    # 重载配置
-GET    /api/admin/nfc-relay/v1/config/status                    # 获取配置状态
-GET    /api/admin/nfc-relay/v1/config/hot-reload-status         # 获取热重载状态
-POST   /api/admin/nfc-relay/v1/config/hot-reload/toggle         # 切换热重载功能
-POST   /api/admin/nfc-relay/v1/config/revert/:config_type       # 回滚配置
-GET    /api/admin/nfc-relay/v1/config/history/:config_type      # 获取配置变更历史
+POST   /admin/nfc-relay/v1/config/reload                    # 重载配置
+GET    /admin/nfc-relay/v1/config/status                    # 获取配置状态
+GET    /admin/nfc-relay/v1/config/hot-reload-status         # 获取热重载状态
+POST   /admin/nfc-relay/v1/config/hot-reload/toggle         # 切换热重载功能
+POST   /admin/nfc-relay/v1/config/revert/:config_type       # 回滚配置
+GET    /admin/nfc-relay/v1/config/history/:config_type      # 获取配置变更历史
 ```
 
 ### 合规规则管理API (9个)
 ```
-GET    /api/admin/nfc-relay/v1/compliance/rules                 # 获取所有合规规则
-GET    /api/admin/nfc-relay/v1/compliance/rules/:rule_id        # 获取单个合规规则
-POST   /api/admin/nfc-relay/v1/compliance/rules                 # 创建合规规则
-PUT    /api/admin/nfc-relay/v1/compliance/rules/:rule_id        # 更新合规规则
-DELETE /api/admin/nfc-relay/v1/compliance/rules/:rule_id        # 删除合规规则
-POST   /api/admin/nfc-relay/v1/compliance/rules/test            # 测试合规规则
-GET    /api/admin/nfc-relay/v1/compliance/rule-files            # 获取规则文件列表
-POST   /api/admin/nfc-relay/v1/compliance/rule-files/import     # 导入规则文件
-GET    /api/admin/nfc-relay/v1/compliance/rule-files/export     # 导出规则文件
+GET    /admin/nfc-relay/v1/compliance/rules                 # 获取所有合规规则
+GET    /admin/nfc-relay/v1/compliance/rules/:rule_id        # 获取单个合规规则
+POST   /admin/nfc-relay/v1/compliance/rules                 # 创建合规规则
+PUT    /admin/nfc-relay/v1/compliance/rules/:rule_id        # 更新合规规则
+DELETE /admin/nfc-relay/v1/compliance/rules/:rule_id        # 删除合规规则
+POST   /admin/nfc-relay/v1/compliance/rules/test            # 测试合规规则
+GET    /admin/nfc-relay/v1/compliance/rule-files            # 获取规则文件列表
+POST   /admin/nfc-relay/v1/compliance/rule-files/import     # 导入规则文件
+GET    /admin/nfc-relay/v1/compliance/rule-files/export     # 导出规则文件
 ```
 
 ### 配置变更审计API (6个)
 ```
-GET    /api/admin/nfc-relay/v1/config-audit/logs                # 获取配置审计日志
-GET    /api/admin/nfc-relay/v1/config-audit/stats               # 获取配置审计统计
-GET    /api/admin/nfc-relay/v1/config-audit/changes/:change_id  # 获取配置变更详情
-POST   /api/admin/nfc-relay/v1/config-audit/records             # 创建配置审计记录
-GET    /api/admin/nfc-relay/v1/config-audit/export              # 导出配置审计日志
+GET    /admin/nfc-relay/v1/config-audit/logs                # 获取配置审计日志
+GET    /admin/nfc-relay/v1/config-audit/stats               # 获取配置审计统计
+GET    /admin/nfc-relay/v1/config-audit/changes/:change_id  # 获取配置变更详情
+POST   /admin/nfc-relay/v1/config-audit/records             # 创建配置审计记录
+GET    /admin/nfc-relay/v1/config-audit/export              # 导出配置审计日志
 ```
 
 ---
@@ -232,7 +232,7 @@ GET    /api/admin/nfc-relay/v1/config-audit/export              # 导出配置�
 ```
 ws://host:port/ws/nfc-relay/client                           # NFC客户端连接
 ws://host:port/ws/nfc-relay/realtime                         # 管理端实时数据
-ws://host:port/api/admin/nfc-relay/v1/realtime               # 管理后台实时推送
+ws://host:port/admin/nfc-relay/v1/realtime               # 管理后台实时推送
 ws://host:port/nfc-relay/realtime                            # 实时数据传输
 ```
 

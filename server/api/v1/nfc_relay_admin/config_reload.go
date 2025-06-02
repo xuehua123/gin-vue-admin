@@ -84,7 +84,7 @@ type ReloadStatistics struct {
 // @Produce json
 // @Param data body ConfigReloadRequest true "配置重载请求"
 // @Success 200 {object} response.Response{data=ConfigReloadResponse}
-// @Router /api/admin/nfc-relay/v1/config/reload [post]
+// @Router /admin/nfc-relay/v1/config/reload [post]
 func (c *ConfigReloadApi) ReloadConfig(ctx *gin.Context) {
 	var req ConfigReloadRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -161,7 +161,7 @@ func (c *ConfigReloadApi) ReloadConfig(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=[]ConfigStatus}
-// @Router /api/admin/nfc-relay/v1/config/status [get]
+// @Router /admin/nfc-relay/v1/config/status [get]
 func (c *ConfigReloadApi) GetConfigStatus(ctx *gin.Context) {
 	operatorUserID := ctx.GetString("userID")
 
@@ -218,7 +218,7 @@ func (c *ConfigReloadApi) GetConfigStatus(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.Response{data=HotReloadStatus}
-// @Router /api/admin/nfc-relay/v1/config/hot-reload-status [get]
+// @Router /admin/nfc-relay/v1/config/hot-reload-status [get]
 func (c *ConfigReloadApi) GetHotReloadStatus(ctx *gin.Context) {
 	operatorUserID := ctx.GetString("userID")
 
@@ -279,7 +279,7 @@ func (c *ConfigReloadApi) GetHotReloadStatus(ctx *gin.Context) {
 // @Produce json
 // @Param enabled query bool true "是否启用"
 // @Success 200 {object} response.Response
-// @Router /api/admin/nfc-relay/v1/config/hot-reload/toggle [post]
+// @Router /admin/nfc-relay/v1/config/hot-reload/toggle [post]
 func (c *ConfigReloadApi) ToggleHotReload(ctx *gin.Context) {
 	enabledStr := ctx.Query("enabled")
 	if enabledStr == "" {
@@ -322,7 +322,7 @@ func (c *ConfigReloadApi) ToggleHotReload(ctx *gin.Context) {
 // @Param config_type path string true "配置类型"
 // @Param version query string false "回滚到的版本"
 // @Success 200 {object} response.Response{data=ConfigReloadResponse}
-// @Router /api/admin/nfc-relay/v1/config/revert/{config_type} [post]
+// @Router /admin/nfc-relay/v1/config/revert/{config_type} [post]
 func (c *ConfigReloadApi) RevertConfig(ctx *gin.Context) {
 	configType := ctx.Param("config_type")
 	version := ctx.DefaultQuery("version", "previous")
@@ -369,7 +369,7 @@ func (c *ConfigReloadApi) RevertConfig(ctx *gin.Context) {
 // @Param config_type path string true "配置类型"
 // @Param limit query int false "返回记录数量限制"
 // @Success 200 {object} response.Response{data=[]ReloadOperation}
-// @Router /api/admin/nfc-relay/v1/config/history/{config_type} [get]
+// @Router /admin/nfc-relay/v1/config/history/{config_type} [get]
 func (c *ConfigReloadApi) GetConfigHistory(ctx *gin.Context) {
 	configType := ctx.Param("config_type")
 	limitStr := ctx.DefaultQuery("limit", "50")

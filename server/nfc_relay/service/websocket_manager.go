@@ -148,9 +148,9 @@ func NewRealtimeDataService(relayHub *handler.Hub) *RealtimeDataService {
 	go service.collectStats()
 
 	// 启动模拟数据生成器（用于演示）
-	mockGenerator := NewMockDataGenerator(service)
-	mockGenerator.StartMockData()
-	service.logger.Info("模拟数据生成器已启动")
+	//mockGenerator := NewMockDataGenerator(service)
+	//mockGenerator.StartMockData()
+	//service.logger.Info("模拟数据生成器已启动")
 
 	return service
 }
