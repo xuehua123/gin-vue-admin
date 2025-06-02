@@ -7,7 +7,6 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/docs"
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
-	NFCRelayRouter "github.com/flipped-aurora/gin-vue-admin/server/nfc_relay/router"
 	"github.com/flipped-aurora/gin-vue-admin/server/router"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -91,7 +90,7 @@ func Routers() *gin.Engine {
 	// 初始化 NFC 中继 WebSocket 路由
 	// 通常 WebSocket 端点有自己的会话和认证机制，可以放在 PublicGroup
 	// 或者为其创建一个不经过主要鉴权中间件的特定 Group
-	NFCRelayRouter.InitNFCRelayRouter(PublicGroup)
+	//NFCRelayRouter.InitNFCRelayRouter(PublicGroup)
 
 	// 注意：NFC Relay 管理后台 API 路由现在通过 router_biz.go 中的 initBizRouter 注册
 	// 移除重复注册：NFCRelayRouter.InitNFCRelayAdminApiRouter(PrivateGroup)
@@ -117,10 +116,10 @@ func Routers() *gin.Engine {
 		systemRouter.InitAuthorityBtnRouterRouter(PrivateGroup)             // 按钮权限管理
 		systemRouter.InitSysExportTemplateRouter(PrivateGroup, PublicGroup) // 导出模板
 		systemRouter.InitSysParamsRouter(PrivateGroup, PublicGroup)         // 参数管理
-		systemRouter.InitConfigManagerRouter(PrivateGroup)                  // 配置管理
-		exampleRouter.InitCustomerRouter(PrivateGroup)                      // 客户路由
-		exampleRouter.InitFileUploadAndDownloadRouter(PrivateGroup)         // 文件上传下载功能路由
-		exampleRouter.InitAttachmentCategoryRouterRouter(PrivateGroup)      // 文件上传下载分类
+		//systemRouter.InitConfigManagerRouter(PrivateGroup)                  // 配置管理
+		exampleRouter.InitCustomerRouter(PrivateGroup)                 // 客户路由
+		exampleRouter.InitFileUploadAndDownloadRouter(PrivateGroup)    // 文件上传下载功能路由
+		exampleRouter.InitAttachmentCategoryRouterRouter(PrivateGroup) // 文件上传下载分类
 
 	}
 
