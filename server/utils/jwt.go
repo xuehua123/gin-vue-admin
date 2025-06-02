@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -89,17 +88,19 @@ func (j *JWT) ParseToken(tokenString string) (*request.CustomClaims, error) {
 
 //@author: [piexlmax](https://github.com/piexlmax)
 //@function: SetRedisJWT
-//@description: jwt存入redis并设置过期时间
+//@description: jwt存入redis并设置过期时间 (此函数已废弃，请参考新的 jwt:active 机制)
 //@param: jwt string, userName string
 //@return: err error
 
 func SetRedisJWT(jwt string, userName string) (err error) {
 	// 此处过期时间等于jwt过期时间
-	dr, err := ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
-	if err != nil {
-		return err
-	}
-	timer := dr
-	err = global.GVA_REDIS.Set(context.Background(), userName, jwt, timer).Err()
-	return err
+	// dr, err := ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
+	// if err != nil {
+	// 	return err
+	// }
+	// timer := dr
+	// err = global.GVA_REDIS.Set(context.Background(), userName, jwt, timer).Err()
+	// return err
+	global.GVA_LOG.Warn("SetRedisJWT 方法已废弃，不再执行实际操作。")
+	return errors.New("SetRedisJWT 方法已废弃")
 }

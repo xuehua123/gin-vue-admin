@@ -1,6 +1,8 @@
 package system
 
 import (
+	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -13,7 +15,7 @@ import (
 	systemRes "github.com/flipped-aurora/gin-vue-admin/server/model/system/response"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -76,55 +78,60 @@ func (b *BaseApi) Login(c *gin.Context) {
 
 // TokenNext 登录以后签发jwt
 func (b *BaseApi) TokenNext(c *gin.Context, user system.SysUser) {
-	token, claims, err := utils.LoginToken(&user)
+	j := utils.NewJWT()
+	// 为本次登录会话生成唯一的 clientID
+	clientID := uuid.New().String()
+
+	// 创建 claims
+	claims := j.CreateClaims(systemReq.BaseClaims{
+		UUID:        user.UUID,
+		ID:          user.ID,
+		Username:    user.Username,
+		NickName:    user.NickName,
+		AuthorityId: user.AuthorityId,
+		ClientID:    clientID, // 填充 ClientID
+	})
+
+	// 使用 RegisteredClaims 中的 ID 作为 JTI
+	// 如果 RegisteredClaims.ID 为空，则需要确保为其生成一个唯一值，或者调整 CreateClaims 逻辑
+	// 通常 jwt "github.com/golang-jwt/jwt/v5" 会在 NewWithClaims 时内部处理或允许设置 jti
+	// 我们需要确保 claims.RegisteredClaims.ID (作为 JTI) 是有效的。
+	// 默认情况下，jwt.RegisteredClaims 的 ID 字段是空的，需要显式设置或者 CreateClaims 应该负责。
+	// 假设 CreateClaims 能够处理或 jwt 库有默认机制，如果不行，这里需要手动生成JTI:
+	if claims.RegisteredClaims.ID == "" {
+		claims.RegisteredClaims.ID = uuid.New().String() // 确保 JTI 存在
+	}
+	jti := claims.RegisteredClaims.ID
+
+	token, err := j.CreateToken(claims)
 	if err != nil {
 		global.GVA_LOG.Error("获取token失败!", zap.Error(err))
 		response.FailWithMessage("获取token失败", c)
 		return
 	}
-	if !global.GVA_CONFIG.System.UseMultipoint {
-		utils.SetToken(c, token, int(claims.RegisteredClaims.ExpiresAt.Unix()-time.Now().Unix()))
-		response.OkWithDetailed(systemRes.LoginResponse{
-			User:      user,
-			Token:     token,
-			ExpiresAt: claims.RegisteredClaims.ExpiresAt.Unix() * 1000,
-		}, "登录成功", c)
-		return
+
+	// 根据开发手册V2.0，实现 jwt:active 机制
+	userID := user.UUID.String()
+	redisKey := fmt.Sprintf("jwt:active:%s:%s", userID, jti)
+	expiration := time.Unix(claims.RegisteredClaims.ExpiresAt.Unix(), 0).Sub(time.Now())
+
+	err = global.GVA_REDIS.Set(context.Background(), redisKey, clientID, expiration).Err()
+	if err != nil {
+		global.GVA_LOG.Error("存储JWT到Redis失败!", zap.Error(err), zap.String("redisKey", redisKey))
+		// 注意：这里不应立即失败登录，但需要记录严重错误。根据策略，或者可以返回错误。
+		// 为了保持与原逻辑相似的登录成功响应，暂时只记录错误。
 	}
 
-	if jwtStr, err := jwtService.GetRedisJWT(user.Username); err == redis.Nil {
-		if err := utils.SetRedisJWT(token, user.Username); err != nil {
-			global.GVA_LOG.Error("设置登录状态失败!", zap.Error(err))
-			response.FailWithMessage("设置登录状态失败", c)
-			return
-		}
-		utils.SetToken(c, token, int(claims.RegisteredClaims.ExpiresAt.Unix()-time.Now().Unix()))
-		response.OkWithDetailed(systemRes.LoginResponse{
-			User:      user,
-			Token:     token,
-			ExpiresAt: claims.RegisteredClaims.ExpiresAt.Unix() * 1000,
-		}, "登录成功", c)
-	} else if err != nil {
-		global.GVA_LOG.Error("设置登录状态失败!", zap.Error(err))
-		response.FailWithMessage("设置登录状态失败", c)
-	} else {
-		var blackJWT system.JwtBlacklist
-		blackJWT.Jwt = jwtStr
-		if err := jwtService.JsonInBlacklist(blackJWT); err != nil {
-			response.FailWithMessage("jwt作废失败", c)
-			return
-		}
-		if err := utils.SetRedisJWT(token, user.GetUsername()); err != nil {
-			response.FailWithMessage("设置登录状态失败", c)
-			return
-		}
-		utils.SetToken(c, token, int(claims.RegisteredClaims.ExpiresAt.Unix()-time.Now().Unix()))
-		response.OkWithDetailed(systemRes.LoginResponse{
-			User:      user,
-			Token:     token,
-			ExpiresAt: claims.RegisteredClaims.ExpiresAt.Unix() * 1000,
-		}, "登录成功", c)
-	}
+	// 清理旧的 SetRedisJWT 和 UseMultipoint 相关逻辑
+	// 此处不再需要 utils.SetRedisJWT(token, user.Username)
+	// 也不再需要 jwtService.GetRedisJWT 和 JsonInBlacklist 的旧逻辑
+
+	utils.SetToken(c, token, int(expiration.Seconds())) // 使用计算出的实际剩余秒数
+	response.OkWithDetailed(systemRes.LoginResponse{
+		User:      user,
+		Token:     token,
+		ExpiresAt: claims.RegisteredClaims.ExpiresAt.Unix() * 1000,
+	}, "登录成功", c)
 }
 
 // Register

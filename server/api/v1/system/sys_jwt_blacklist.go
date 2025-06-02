@@ -3,7 +3,7 @@ package system
 import (
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/common/response"
-	"github.com/flipped-aurora/gin-vue-admin/server/model/system"
+	"github.com/flipped-aurora/gin-vue-admin/server/model/system/request"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -20,14 +20,23 @@ type JwtApi struct{}
 // @Success   200  {object}  response.Response{msg=string}  "jwt加入黑名单"
 // @Router    /jwt/jsonInBlacklist [post]
 func (j *JwtApi) JsonInBlacklist(c *gin.Context) {
-	token := utils.GetToken(c)
-	jwt := system.JwtBlacklist{Jwt: token}
-	err := jwtService.JsonInBlacklist(jwt)
+	claims, ok := c.Get("claims")
+	if !ok {
+		response.FailWithMessage("获取用户信息失败，无法登出", c)
+		return
+	}
+	customClaims, ok := claims.(*request.CustomClaims)
+	if !ok {
+		response.FailWithMessage("用户信息类型断言失败，无法登出", c)
+		return
+	}
+
+	err := jwtService.RevokeActiveJWT(customClaims)
 	if err != nil {
 		global.GVA_LOG.Error("jwt作废失败!", zap.Error(err))
 		response.FailWithMessage("jwt作废失败", c)
 		return
 	}
 	utils.ClearToken(c)
-	response.OkWithMessage("jwt作废成功", c)
+	response.OkWithMessage("token作废成功(用户已登出)", c)
 }
