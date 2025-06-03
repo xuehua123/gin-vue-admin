@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-T">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EMQX JWT 认证测试页面</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsrsasign/11.1.0/jsrsasign-all-min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Tailwind gray-100 */
+        }
+        .log-entry {
+            padding: 6px 8px;
+            border-bottom: 1px solid #e5e7eb; /* Tailwind gray-200 */
+            font-size: 0.875rem;
+            word-break: break-all;
+        }
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        .log-entry.success { color: #10b981; } /* Tailwind green-600 */
+        .log-entry.error { color: #ef4444; } /* Tailwind red-500 */
+        .log-entry.info { color: #3b82f6; } /* Tailwind blue-500 */
+        .log-entry.message { color: #6b7280; } /* Tailwind gray-500 */
+        .loader {
+            border: 4px solid #f3f4f6; /* Tailwind gray-100 */
+            border-top: 4px solid #3b82f6; /* Tailwind blue-500 */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* 自定义消息弹窗样式 */
+        .custom-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .custom-modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        .custom-modal {
+            background-color: white;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .custom-modal h3 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        .custom-modal p {
+            margin-bottom: 24px;
+            font-size: 1rem;
+            color: #4b5563; /* Tailwind gray-600 */
+        }
+        .custom-modal button {
+            background-color: #3b82f6; /* Tailwind blue-500 */
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.2s;
+        }
+        .custom-modal button:hover {
+            background-color: #2563eb; /* Tailwind blue-600 */
+        }
+        .consumed-message-entry {
+            padding: 4px 6px;
+            border-bottom: 1px solid #e5e7eb; /* Tailwind gray-200 */
+            font-size: 0.8rem;
+            color: #374151; /* Tailwind gray-700 */
+            word-break: break-all;
+        }
+         .consumed-message-entry:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-6xl mx-auto bg-white p-6 md:p-8 rounded-lg shadow-lg">
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-8">EMQX JWT 认证测试工具</h1>
+
+        <!-- EMQX配置说明 -->
+        <div class="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 class="text-lg font-semibold text-blue-800 mb-3">📋 EMQX配置要求</h3>
+            <div class="text-sm text-blue-700">
+                <p class="mb-2">为了支持项目完整JWT验证，请确保EMQX配置如下：</p>
+                <div class="space-y-4">
+                    <div>
+                        <p class="font-semibold mb-1">🔹 EMQX兼容JWT（推荐，当前配置）：</p>
+                        <pre class="bg-blue-100 p-3 rounded text-xs overflow-x-auto"><code># EMQX配置文件 (emqx.conf)
+authentication = [
+  {
+    algorithm = "hmac-based"
+    disconnect_after_expire = true
+    enable = true
+    from = password
+    mechanism = jwt
+    secret = "78c0f08f-9663-4c9c-a399-cc4ec36b8112"
+    secret_base64_encoded = false
+    use_jwks = false
+    verify_claims {
+      client_id = "${clientid}"
+      user_id = "${username}"
+      # 可选：验证受众字段
+      # aud = "GVA"
+    }
+  }
+]</code></pre>
+                    </div>
+                    
+                    <div>
+                        <p class="font-semibold mb-1">🔹 项目完整JWT配置（如需支持真实项目JWT）：</p>
+                        <pre class="bg-green-100 p-3 rounded text-xs overflow-x-auto"><code># EMQX配置文件 - 项目完整JWT支持
+authentication = [
+  {
+    algorithm = "hmac-based"
+    disconnect_after_expire = true
+    enable = true
+    from = password
+    mechanism = jwt
+    secret = "78c0f08f-9663-4c9c-a399-cc4ec36b8112"
+    secret_base64_encoded = false
+    use_jwks = false
+    verify_claims {
+      client_id = "${clientid}"
+      # 移除user_id验证，因为项目中user_id是UUID格式
+      # username = "${username}"  # 可选：验证username字段
+    }
+  }
+]</code></pre>
+                    </div>
+                </div>
+                <p class="mt-2 text-xs text-blue-600">💡 EMQX兼容JWT确保连接成功，项目完整JWT保持与后端一致的数据结构。</p>
+            </div>
+        </div>
+
+        <!-- 连接设置 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="space-y-4 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">连接参数</h2>
+                <div>
+                    <label for="host" class="block text-sm font-medium text-gray-700">EMQX 主机 (例如: broker.emqx.io 或 192.168.1.100):</label>
+                    <input type="text" id="host" value="your-emqx-broker.com" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="port" class="block text-sm font-medium text-gray-700">端口:</label>
+                    <input type="number" id="port" value="8083" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                </div>
+                 <div class="flex items-center">
+                    <input id="ssl" type="checkbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <label for="ssl" class="ml-2 block text-sm text-gray-900">使用 SSL/TLS (例如 wss://)</label>
+                </div>
+                <div>
+                    <label for="clientId" class="block text-sm font-medium text-gray-700">客户端 ID:</label>
+                    <input type="text" id="clientId" value="nfc_test_client_001" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700">用户名:</label>
+                    <input type="text" id="username" value="test_user_nfc" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="secret" class="block text-sm font-medium text-gray-700">JWT 密钥 (只读):</label>
+                    <input type="text" id="secret" value="78c0f08f-9663-4c9c-a399-cc4ec36b8112" readonly class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 sm:text-sm">
+                </div>
+            </div>
+
+            <div class="space-y-4 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">JWT 信息与连接控制</h2>
+                
+                <!-- JWT生成方式选择 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">JWT生成方式:</label>
+                    <div class="flex flex-wrap gap-4">
+                        <label class="flex items-center">
+                            <input type="radio" name="jwtMode" value="emqx" checked class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                            <span class="ml-2 text-sm text-gray-900">EMQX兼容JWT</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="jwtMode" value="project" class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                            <span class="ml-2 text-sm text-gray-900">项目完整JWT</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="jwtMode" value="simple" class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                            <span class="ml-2 text-sm text-gray-900">简化版JWT</span>
+                        </label>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">
+                        <span class="font-semibold">EMQX兼容JWT:</span> 专门适配EMQX验证规则的JWT格式<br/>
+                        <span class="font-semibold">项目完整JWT:</span> 与后端生成逻辑完全一致，包含所有Claims字段<br/>
+                        <span class="font-semibold">简化版JWT:</span> 仅包含基础字段的简单JWT
+                    </p>
+                </div>
+                
+                <button id="generateJwtBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md shadow-sm transition duration-150 ease-in-out">生成 JWT</button>
+                <div>
+                    <label for="generatedJwt" class="block text-sm font-medium text-gray-700">生成的 JWT (将用作密码):</label>
+                    <textarea id="generatedJwt" rows="8" readonly class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 sm:text-sm resize-none font-mono text-xs"></textarea>
+                </div>
+                
+                <!-- JWT解析显示 -->
+                <div>
+                    <div class="flex justify-between items-center">
+                        <label class="block text-sm font-medium text-gray-700">JWT解析结果:</label>
+                        <button id="parseJwtBtn" class="px-3 py-1 bg-indigo-500 hover:bg-indigo-600 text-white text-xs rounded transition duration-150 ease-in-out">解析JWT</button>
+                    </div>
+                    <div id="jwtParseResult" class="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs font-mono max-h-40 overflow-y-auto hidden"></div>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <button id="connectBtn" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-sm transition duration-150 ease-in-out">连接</button>
+                    <button id="disconnectBtn" class="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow-sm transition duration-150 ease-in-out" disabled>断开连接</button>
+                </div>
+                 <div id="status" class="mt-2 text-sm font-medium text-center">状态: 未连接 <span id="loadingSpinner" class="hidden loader"></span></div>
+            </div>
+        </div>
+
+        <!-- 订阅、发布和消费 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="space-y-4 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">通用订阅</h2>
+                <div>
+                    <label for="subTopic" class="block text-sm font-medium text-gray-700">订阅主题:</label>
+                    <input type="text" id="subTopic" value="test/topic/general" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                </div>
+                <button id="subscribeBtn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-md shadow-sm transition duration-150 ease-in-out" disabled>订阅此主题</button>
+            </div>
+
+            <div class="space-y-4 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">发布消息</h2>
+                <div>
+                    <label for="pubTopic" class="block text-sm font-medium text-gray-700">发布主题:</label>
+                    <input type="text" id="pubTopic" value="test/topic/pub" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="pubMessage" class="block text-sm font-medium text-gray-700">消息内容:</label>
+                    <textarea id="pubMessage" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm resize-none">你好，EMQX！当前时间: </textarea>
+                </div>
+                <button id="publishBtn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md shadow-sm transition duration-150 ease-in-out" disabled>发布</button>
+            </div>
+            
+            <!-- 新增：消费指定主题的消息 -->
+            <div class="space-y-4 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">消费指定主题</h2>
+                <div>
+                    <label for="consumeSpecificTopicInput" class="block text-sm font-medium text-gray-700">要消费的主题:</label>
+                    <input type="text" id="consumeSpecificTopicInput" value="device/sensor/data" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                </div>
+                <button id="startConsumeSpecificBtn" class="w-full bg-teal-500 hover:bg-teal-600 text-white font-semibold py-2 px-4 rounded-md shadow-sm transition duration-150 ease-in-out" disabled>开始消费</button>
+                <button id="stopConsumeSpecificBtn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 px-4 rounded-md shadow-sm transition duration-150 ease-in-out mt-2" disabled>停止消费</button>
+                <h3 class="text-md font-medium text-gray-700 mt-4">来自 <span id="consumingTopicName" class="font-bold"></span> 的消息:</h3>
+                <div id="consumedMessagesArea" class="h-32 overflow-y-auto bg-white border border-gray-300 rounded-md p-2 text-sm">
+                    <!-- Consumed messages will appear here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志 -->
+        <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-gray-700">通用日志和接收的所有消息</h2>
+                <button id="clearLogBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-1 px-3 rounded-md text-sm transition duration-150 ease-in-out">清空日志</button>
+            </div>
+            <div id="logArea" class="h-64 overflow-y-auto bg-white border border-gray-300 rounded-md p-2 text-sm">
+                <!-- 日志条目将在这里添加 -->
+            </div>
+        </div>
+
+        <!-- 使用说明 -->
+        <div class="mt-8 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <h3 class="text-lg font-semibold text-green-800 mb-3">📖 使用说明</h3>
+            <div class="text-sm text-green-700 space-y-2">
+                <p><strong>1. JWT生成方式：</strong></p>
+                <ul class="list-disc ml-6 space-y-1">
+                    <li><strong>EMQX兼容JWT：</strong>专门为EMQX设计，user_id=username，确保EMQX验证通过</li>
+                    <li><strong>项目完整JWT：</strong>与后端sys_user.go中TokenNext()方法生成的JWT结构完全一致，user_id=UUID</li>
+                    <li><strong>简化版JWT：</strong>仅包含client_id、user_id、exp字段的简单JWT，用于对比测试</li>
+                </ul>
+                
+                <p><strong>2. 测试步骤：</strong></p>
+                <ol class="list-decimal ml-6 space-y-1">
+                    <li>配置EMQX服务器地址和端口</li>
+                    <li>选择JWT生成方式（建议先使用"EMQX兼容JWT"测试连接）</li>
+                    <li>点击"生成JWT"按钮</li>
+                    <li>点击"解析JWT"查看生成的JWT内容</li>
+                    <li>点击"连接"测试MQTT连接</li>
+                </ol>
+                
+                <p><strong>3. EMQX配置建议：</strong></p>
+                <ul class="list-disc ml-6 space-y-1">
+                    <li><strong>使用EMQX兼容JWT：</strong>保持当前EMQX配置不变</li>
+                    <li><strong>使用项目完整JWT：</strong>需要修改EMQX配置中的verify_claims，将user_id验证改为其他字段或移除</li>
+                    <li><strong>推荐配置：</strong>只验证client_id字段，让项目完整JWT也能通过验证</li>
+                </ul>
+                
+                <p><strong>4. 字段对应关系：</strong></p>
+                <ul class="list-disc ml-6 space-y-1">
+                    <li><code>user_id</code>: UUID格式，对应用户唯一标识</li>
+                    <li><code>client_id</code>: 客户端会话ID，用于MQTT连接识别</li>
+                    <li><code>username</code>: 用户名</li>
+                    <li><code>authority_id</code>: 权限角色ID（888为管理员）</li>
+                    <li><code>jti</code>: JWT唯一标识符，用于防重放</li>
+                    <li><code>aud</code>: 受众，项目中为["GVA"]</li>
+                    <li><code>iss</code>: 签发者，项目中为"qmPlus"</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自定义消息弹窗 -->
+    <div id="customModalOverlay" class="custom-modal-overlay">
+        <div class="custom-modal">
+            <h3 id="modalTitle">提示</h3>
+            <p id="modalMessage">这是一条消息。</p>
+            <button id="modalCloseBtn">关闭</button>
+        </div>
+    </div>
+
+    <script>
+        // MQTT 客户端实例
+        let client = null;
+        // JWT 密钥 (从您的配置中获取)
+        const emqxSecret = "78c0f08f-9663-4c9c-a399-cc4ec36b8112";
+
+        // DOM 元素获取
+        const hostInput = document.getElementById('host');
+        const portInput = document.getElementById('port');
+        const sslCheckbox = document.getElementById('ssl');
+        const clientIdInput = document.getElementById('clientId');
+        const usernameInput = document.getElementById('username');
+        const secretInput = document.getElementById('secret'); 
+        const generatedJwtTextarea = document.getElementById('generatedJwt');
+        const generateJwtBtn = document.getElementById('generateJwtBtn');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const statusDiv = document.getElementById('status');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+
+        const subTopicInput = document.getElementById('subTopic');
+        const subscribeBtn = document.getElementById('subscribeBtn');
+        const pubTopicInput = document.getElementById('pubTopic');
+        const pubMessageTextarea = document.getElementById('pubMessage');
+        const publishBtn = document.getElementById('publishBtn');
+        const logArea = document.getElementById('logArea');
+        const clearLogBtn = document.getElementById('clearLogBtn');
+
+        // 新增：消费指定主题相关 DOM
+        const consumeSpecificTopicInput = document.getElementById('consumeSpecificTopicInput');
+        const startConsumeSpecificBtn = document.getElementById('startConsumeSpecificBtn');
+        const stopConsumeSpecificBtn = document.getElementById('stopConsumeSpecificBtn');
+        const consumedMessagesArea = document.getElementById('consumedMessagesArea');
+        const consumingTopicNameSpan = document.getElementById('consumingTopicName');
+
+        // JWT模式选择相关DOM
+        const jwtModeRadios = document.querySelectorAll('input[name="jwtMode"]');
+        const parseJwtBtn = document.getElementById('parseJwtBtn');
+        const jwtParseResult = document.getElementById('jwtParseResult');
+
+        // 自定义弹窗元素
+        const modalOverlay = document.getElementById('customModalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalCloseBtn = document.getElementById('modalCloseBtn');
+
+        // 状态变量
+        let specificallyConsumedTopic = null;
+        let isSpecificallyConsuming = false;
+
+        // JWT解析函数
+        function parseJWT(token) {
+            try {
+                if (!token) {
+                    return null;
+                }
+                
+                const parts = token.split('.');
+                if (parts.length !== 3) {
+                    throw new Error('无效的JWT格式');
+                }
+                
+                const header = JSON.parse(atob(parts[0]));
+                const payload = JSON.parse(atob(parts[1]));
+                
+                return {
+                    header: header,
+                    payload: payload,
+                    signature: parts[2]
+                };
+            } catch (e) {
+                throw new Error(`JWT解析失败: ${e.message}`);
+            }
+        }
+
+        // 显示JWT解析结果
+        function showJWTParseResult() {
+            const token = generatedJwtTextarea.value.trim();
+            if (!token) {
+                showModal('错误', 'JWT为空，请先生成JWT！');
+                return;
+            }
+            
+            try {
+                const parsed = parseJWT(token);
+                const result = {
+                    header: parsed.header,
+                    payload: parsed.payload,
+                    verification: {
+                        algorithm: parsed.header.alg,
+                        expires_at: new Date(parsed.payload.exp * 1000).toLocaleString(),
+                        issued_for: parsed.payload.aud,
+                        issuer: parsed.payload.iss,
+                        jwt_id: parsed.payload.jti,
+                        not_before: new Date(parsed.payload.nbf * 1000).toLocaleString()
+                    }
+                };
+                
+                jwtParseResult.innerHTML = JSON.stringify(result, null, 2);
+                jwtParseResult.classList.remove('hidden');
+                log('JWT解析成功', 'success');
+            } catch (e) {
+                jwtParseResult.innerHTML = `解析错误: ${e.message}`;
+                jwtParseResult.classList.remove('hidden');
+                log(`JWT解析失败: ${e.message}`, 'error');
+            }
+        }
+
+        parseJwtBtn.addEventListener('click', showJWTParseResult);
+
+        // 获取当前选择的JWT生成模式
+        function getSelectedJwtMode() {
+            const selectedRadio = document.querySelector('input[name="jwtMode"]:checked');
+            return selectedRadio ? selectedRadio.value : 'project';
+        }
+
+        // 根据模式生成JWT
+        function generateJWTByMode() {
+            const mode = getSelectedJwtMode();
+            log(`使用${mode === 'project' ? '项目完整' : mode === 'emqx' ? 'EMQX兼容' : '简化版'}JWT生成模式`, 'info');
+            
+            if (mode === 'project') {
+                return generateProjectJWT();
+            } else if (mode === 'emqx') {
+                return generateEMQXCompatibleJWT();
+            } else {
+                return generateJWT();
+            }
+        }
+
+        generateJwtBtn.addEventListener('click', generateJWTByMode);
+
+        // 显示自定义弹窗
+        function showModal(title, message) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalOverlay.classList.add('active');
+        }
+
+        // 关闭自定义弹窗
+        modalCloseBtn.addEventListener('click', () => {
+            modalOverlay.classList.remove('active');
+        });
+        modalOverlay.addEventListener('click', (event) => {
+            if (event.target === modalOverlay) {
+                modalOverlay.classList.remove('active');
+            }
+        });
+
+
+        // 日志记录函数
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.classList.add('log-entry', type);
+            entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logArea.appendChild(entry);
+            logArea.scrollTop = logArea.scrollHeight; 
+        }
+
+        clearLogBtn.addEventListener('click', () => {
+            logArea.innerHTML = '';
+            log('通用日志已清空。', 'info');
+        });
+        
+        // 更新主UI状态
+        function updateMainUIState(isConnected) {
+            connectBtn.disabled = isConnected;
+            disconnectBtn.disabled = !isConnected;
+            subscribeBtn.disabled = !isConnected; // General subscribe
+            publishBtn.disabled = !isConnected;
+
+            hostInput.disabled = isConnected;
+            portInput.disabled = isConnected;
+            sslCheckbox.disabled = isConnected;
+            clientIdInput.disabled = isConnected;
+            usernameInput.disabled = isConnected;
+            generateJwtBtn.disabled = isConnected;
+
+            if (isConnected) {
+                statusDiv.innerHTML = '状态: 已连接 <span class="text-green-500 font-semibold">✔</span>';
+            } else {
+                statusDiv.innerHTML = '状态: 未连接 <span id="loadingSpinner" class="hidden loader"></span>';
+            }
+            loadingSpinner.classList.add('hidden');
+            updateSpecificConsumeUI(); // Also update specific consume UI based on connection
+        }
+        
+        // 更新消费指定主题UI状态
+        function updateSpecificConsumeUI() {
+            const isConnected = client && client.isConnected();
+            startConsumeSpecificBtn.disabled = !isConnected || isSpecificallyConsuming;
+            stopConsumeSpecificBtn.disabled = !isConnected || !isSpecificallyConsuming;
+            consumeSpecificTopicInput.disabled = !isConnected || isSpecificallyConsuming;
+            consumingTopicNameSpan.textContent = isSpecificallyConsuming ? specificallyConsumedTopic : "无";
+        }
+
+        // 项目配置常量 - 与config.yaml保持一致
+        const PROJECT_CONFIG = {
+            JWT: {
+                SIGNING_KEY: "78c0f08f-9663-4c9c-a399-cc4ec36b8112",
+                EXPIRES_TIME: "7d",  // 7天过期
+                BUFFER_TIME: "1d",   // 1天缓冲时间
+                ISSUER: "qmPlus"
+            }
+        };
+
+        // 模拟UUID生成 - 生成符合UUID v4格式的字符串
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // 解析时间字符串为毫秒数 - 复制项目中ParseDuration的逻辑
+        function parseDuration(d) {
+            d = d.trim();
+            
+            // 处理标准时间格式 (如 "1h", "30m", "24h")
+            const match = d.match(/^(\d+)(ns|us|µs|ms|s|m|h)$/);
+            if (match) {
+                const value = parseInt(match[1]);
+                const unit = match[2];
+                switch (unit) {
+                    case 'ns': return value / 1000000; // 纳秒转毫秒
+                    case 'us': case 'µs': return value / 1000; // 微秒转毫秒
+                    case 'ms': return value; // 毫秒
+                    case 's': return value * 1000; // 秒转毫秒
+                    case 'm': return value * 60 * 1000; // 分钟转毫秒
+                    case 'h': return value * 60 * 60 * 1000; // 小时转毫秒
+                }
+            }
+            
+            // 处理天数格式 (如 "7d", "1d")
+            if (d.includes('d')) {
+                const index = d.indexOf('d');
+                const days = parseInt(d.substring(0, index));
+                return days * 24 * 60 * 60 * 1000; // 天转毫秒
+            }
+            
+            // 如果是纯数字，直接返回
+            const num = parseInt(d);
+            if (!isNaN(num)) {
+                return num;
+            }
+            
+            return 0;
+        }
+
+        // 生成项目兼容的JWT - 完全复制项目的JWT生成逻辑
+        function generateProjectJWT() {
+            const clientId = clientIdInput.value.trim();
+            const username = usernameInput.value.trim();
+
+            if (!clientId || !username) {
+                showModal('错误', '客户端ID和用户名不能为空！');
+                log('生成JWT失败：客户端ID和用户名不能为空。', 'error');
+                return null;
+            }
+
+            // 模拟用户数据 - 对应项目中的BaseClaims结构
+            const userUUID = generateUUID(); // 模拟用户UUID（用作项目内部ID）
+            const userId = Math.floor(Math.random() * 1000) + 1; // 模拟用户数字ID
+            const authorityId = 888; // 模拟权限ID
+
+            // 解析配置中的时间
+            const bufferTime = parseDuration(PROJECT_CONFIG.JWT.BUFFER_TIME);
+            const expiresTime = parseDuration(PROJECT_CONFIG.JWT.EXPIRES_TIME);
+
+            // 生成唯一的JTI
+            const jti = generateUUID();
+
+            // 当前时间
+            const now = Math.floor(Date.now() / 1000);
+
+            // 构建完整的Claims结构 - 对应项目中的CustomClaims
+            const header = { 
+                alg: "HS256", 
+                typ: "JWT" 
+            };
+
+            const payload = {
+                // BaseClaims 部分 - 严格按照项目结构
+                user_id: userUUID,        // 项目真实结构：UUID字段映射为user_id（JSON标签）
+                id: userId,               // 数字用户ID
+                username: username,       // 用户名
+                nick_name: username,      // 昵称（使用用户名）
+                authority_id: authorityId, // 权限ID
+                client_id: clientId,      // 客户端ID
+                
+                // BufferTime
+                buffer_time: Math.floor(bufferTime / 1000), // 缓冲时间（秒）
+                
+                // RegisteredClaims 部分
+                jti: jti,                 // JWT唯一标识符
+                aud: ["GVA"],            // 受众（项目使用GVA）
+                nbf: now - 1,            // 签名生效时间（提前1秒）
+                exp: now + Math.floor(expiresTime / 1000), // 过期时间
+                iss: PROJECT_CONFIG.JWT.ISSUER // 签名发行者
+            };
+
+            try {
+                const sJWT = KJUR.jws.JWS.sign("HS256", JSON.stringify(header), JSON.stringify(payload), PROJECT_CONFIG.JWT.SIGNING_KEY);
+                
+                generatedJwtTextarea.value = sJWT;
+                
+                log('项目完整JWT生成成功（真实项目结构）', 'success');
+                log(`JTI: ${jti}`, 'info');
+                log(`用户ID(UUID): ${userUUID}`, 'info');
+                log(`用户名: ${username}`, 'info');
+                log(`客户端ID: ${clientId}`, 'info');
+                log(`过期时间: ${new Date((now + Math.floor(expiresTime / 1000)) * 1000).toLocaleString()}`, 'info');
+                
+                return sJWT;
+            } catch (e) {
+                console.error("JWT 生成错误: ", e);
+                log(`JWT 生成错误: ${e.message}`, 'error');
+                generatedJwtTextarea.value = `生成失败: ${e.message}`;
+                showModal('JWT 生成失败', e.message);
+                return null;
+            }
+        }
+
+        // 生成EMQX兼容的JWT - 专门适配EMQX验证规则
+        function generateEMQXCompatibleJWT() {
+            const clientId = clientIdInput.value.trim();
+            const username = usernameInput.value.trim();
+
+            if (!clientId || !username) {
+                showModal('错误', '客户端ID和用户名不能为空！');
+                log('生成JWT失败：客户端ID和用户名不能为空。', 'error');
+                return null;
+            }
+
+            // 模拟用户数据
+            const userUUID = generateUUID(); // 模拟用户UUID（作为内部ID）
+            const userId = Math.floor(Math.random() * 1000) + 1; // 模拟用户数字ID
+            const authorityId = 888; // 模拟权限ID
+
+            // 解析配置中的时间
+            const bufferTime = parseDuration(PROJECT_CONFIG.JWT.BUFFER_TIME);
+            const expiresTime = parseDuration(PROJECT_CONFIG.JWT.EXPIRES_TIME);
+
+            // 生成唯一的JTI
+            const jti = generateUUID();
+
+            // 当前时间
+            const now = Math.floor(Date.now() / 1000);
+
+            // 构建EMQX兼容的Claims结构
+            const header = { 
+                alg: "HS256", 
+                typ: "JWT" 
+            };
+
+            const payload = {
+                // EMQX验证的核心字段
+                client_id: clientId,      // EMQX验证：${clientid}
+                user_id: username,        // EMQX验证：${username} - 关键字段
+                
+                // 项目扩展字段（保持兼容性）
+                id: userId,               // 数字用户ID
+                username: username,       // 用户名
+                nick_name: username,      // 昵称
+                authority_id: authorityId, // 权限ID
+                UUID: userUUID,           // 内部UUID标识
+                
+                // 时间相关
+                buffer_time: Math.floor(bufferTime / 1000), // 缓冲时间（秒）
+                
+                // JWT标准字段
+                jti: jti,                 // JWT唯一标识符
+                aud: ["GVA"],            // 受众
+                nbf: now - 1,            // 签名生效时间（提前1秒）
+                exp: now + Math.floor(expiresTime / 1000), // 过期时间
+                iss: PROJECT_CONFIG.JWT.ISSUER // 签名发行者
+            };
+
+            try {
+                const sJWT = KJUR.jws.JWS.sign("HS256", JSON.stringify(header), JSON.stringify(payload), PROJECT_CONFIG.JWT.SIGNING_KEY);
+                
+                generatedJwtTextarea.value = sJWT;
+                
+                log('EMQX兼容JWT生成成功', 'success');
+                log(`JTI: ${jti}`, 'info');
+                log(`用户ID: ${username} (EMQX验证字段)`, 'info');
+                log(`客户端ID: ${clientId} (EMQX验证字段)`, 'info');
+                log(`内部UUID: ${userUUID}`, 'info');
+                log(`过期时间: ${new Date((now + Math.floor(expiresTime / 1000)) * 1000).toLocaleString()}`, 'info');
+                
+                return sJWT;
+            } catch (e) {
+                console.error("JWT 生成错误: ", e);
+                log(`JWT 生成错误: ${e.message}`, 'error');
+                generatedJwtTextarea.value = `生成失败: ${e.message}`;
+                showModal('JWT 生成失败', e.message);
+                return null;
+            }
+        }
+
+        // 生成 JWT (保留原来的简单版本作为对比)
+        function generateJWT() {
+            const clientId = clientIdInput.value.trim();
+            const username = usernameInput.value.trim();
+
+            if (!clientId || !username) {
+                showModal('错误', '客户端ID和用户名不能为空！');
+                log('生成JWT失败：客户端ID和用户名不能为空。', 'error');
+                return null;
+            }
+
+            const header = { alg: "HS256", typ: "JWT" };
+            const payload = {
+                client_id: clientId,
+                user_id: username,
+                exp: Math.floor(Date.now() / 1000) + (60 * 60) 
+            };
+
+            try {
+                const sJWT = KJUR.jws.JWS.sign("HS256", JSON.stringify(header), JSON.stringify(payload), emqxSecret);
+                generatedJwtTextarea.value = sJWT;
+                log('简单JWT 生成成功。', 'success');
+                return sJWT;
+            } catch (e) {
+                console.error("JWT 生成错误: ", e);
+                log(`JWT 生成错误: ${e.message}`, 'error');
+                generatedJwtTextarea.value = `生成失败: ${e.message}`;
+                showModal('JWT 生成失败', e.message);
+                return null;
+            }
+        }
+
+        function sanitizeHost(hostStr) {
+            if (!hostStr) return "";
+            let sanitized = hostStr.replace(/^(?:https?|wss?):\/\//i, "");
+            sanitized = sanitized.replace(/\/+$/, "");
+            sanitized = sanitized.replace(/^\[|\]$/g, "");
+            return sanitized;
+        }
+
+        connectBtn.addEventListener('click', () => {
+            let rawHost = hostInput.value.trim();
+            const port = parseInt(portInput.value.trim(), 10);
+            let useSSLFromCheckbox = sslCheckbox.checked;
+            let finalUseSSL = useSSLFromCheckbox; 
+            const clientIdVal = clientIdInput.value.trim(); // Renamed to avoid conflict
+            const usernameVal = usernameInput.value.trim(); // Renamed to avoid conflict
+            
+            const host = sanitizeHost(rawHost);
+            if (host !== rawHost) {
+                log(`主机名已清理: 从 "${rawHost}" 到 "${host}"`, 'info');
+                hostInput.value = host; 
+            }
+
+            if (!host || !port || !clientIdVal || !usernameVal) {
+                showModal('连接错误', '主机、端口、客户端ID和用户名不能为空！');
+                log('连接错误：主机、端口、客户端ID和用户名不能为空。', 'error');
+                return;
+            }
+
+            if (window.location.protocol === 'https:') {
+                if (!useSSLFromCheckbox) {
+                    log('页面通过 HTTPS 加载，自动强制使用 SSL (wss://) 进行 MQTT 连接。', 'info');
+                    showModal('自动 SSL/TLS', '由于此页面通过 HTTPS 加载，MQTT 连接将自动使用安全的 SSL/TLS (wss://)。');
+                    finalUseSSL = true; 
+                    sslCheckbox.checked = true; 
+                }
+            } else {
+                if (useSSLFromCheckbox) {
+                    log('提示：页面通过 HTTP 加载，但您选择了 SSL (wss://) 连接。请确保您的 EMQX 服务器在该端口上配置了 wss。', 'info');
+                }
+            }
+
+            const jwtToken = generateJWTByMode();
+            if (!jwtToken) {
+                showModal('连接错误', '无法生成JWT，请检查客户端ID和用户名。');
+                return;
+            }
+
+            statusDiv.innerHTML = '状态: 连接中... <span id="loadingSpinner" class="loader"></span>';
+            document.getElementById('loadingSpinner').classList.remove('hidden'); // Corrected spinner access
+            
+            client = new Paho.MQTT.Client(host, port, clientIdVal);
+
+            client.onConnectionLost = onConnectionLost;
+            client.onMessageArrived = onMessageArrived;
+
+            const connectOptions = {
+                userName: usernameVal, 
+                password: jwtToken, 
+                useSSL: finalUseSSL, 
+                timeout: 10, 
+                mqttVersion: 4, 
+                onSuccess: onConnect,
+                onFailure: onFailure
+            };
+            
+            log(`尝试连接到 ${finalUseSSL ? 'wss' : 'ws'}://${host}:${port} ...`, 'info');
+            try {
+                client.connect(connectOptions);
+            } catch (error) {
+                console.error("连接时发生异常: ", error);
+                log(`连接时发生异常: ${error.message}`, 'error');
+                statusDiv.innerHTML = '状态: 连接异常 <span id="loadingSpinner" class="hidden loader"></span>';
+                document.getElementById('loadingSpinner').classList.add('hidden'); // Corrected spinner access
+                updateMainUIState(false);
+            }
+        });
+
+        function onConnect() {
+            log('成功连接到 EMQX Broker!', 'success');
+            updateMainUIState(true);
+        }
+
+        function onFailure(responseObject) {
+            log(`连接失败: ${responseObject.errorMessage} (错误码: ${responseObject.errorCode})`, 'error');
+            console.error("连接失败: ", responseObject);
+            showModal('连接失败', `${responseObject.errorMessage} (错误码: ${responseObject.errorCode})`);
+            updateMainUIState(false);
+            client = null; 
+        }
+
+        function onConnectionLost(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                log(`连接丢失: ${responseObject.errorMessage} (错误码: ${responseObject.errorCode})`, 'error');
+                console.error("连接丢失: ", responseObject);
+            } else {
+                log('连接已主动断开。', 'info');
+            }
+            showModal('连接已断开', responseObject.errorMessage || '连接已由客户端或服务器关闭。');
+            
+            isSpecificallyConsuming = false;
+            specificallyConsumedTopic = null;
+            consumedMessagesArea.innerHTML = ''; // Clear specific consumption area
+
+            updateMainUIState(false); // This will also call updateSpecificConsumeUI
+            client = null; 
+        }
+        
+        // 新增：记录到指定消费区域的函数
+        function logToSpecificArea(payload) {
+            const entry = document.createElement('div');
+            entry.className = 'consumed-message-entry'; 
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${payload}`;
+            consumedMessagesArea.appendChild(entry);
+            consumedMessagesArea.scrollTop = consumedMessagesArea.scrollHeight;
+        }
+
+        function onMessageArrived(message) {
+            const generalLogMessage = `收到消息 - 主题: ${message.destinationName}, 内容: ${message.payloadString}`;
+            log(generalLogMessage, 'message'); 
+
+            if (isSpecificallyConsuming && message.destinationName === specificallyConsumedTopic) {
+                logToSpecificArea(message.payloadString);
+            }
+        }
+
+        disconnectBtn.addEventListener('click', () => {
+            if (client && client.isConnected()) {
+                try {
+                    client.disconnect();
+                    log('正在断开连接...', 'info');
+                     // onConnectionLost will handle UI updates
+                } catch (error) {
+                    console.error("断开连接时发生异常: ", error);
+                    log(`断开连接时发生异常: ${error.message}`, 'error');
+                    updateMainUIState(false); 
+                    client = null;
+                }
+            } else {
+                log('客户端未连接或实例不存在。', 'info');
+                updateMainUIState(false); 
+            }
+        });
+
+        // 通用订阅按钮逻辑
+        subscribeBtn.addEventListener('click', () => {
+            const topic = subTopicInput.value.trim();
+            if (!topic) {
+                showModal('订阅错误', '订阅主题不能为空！');
+                log('订阅错误：主题不能为空。', 'error');
+                return;
+            }
+            if (client && client.isConnected()) {
+                try {
+                    client.subscribe(topic, {
+                        onSuccess: function() {
+                             log(`成功订阅通用主题: ${topic}`, 'success');
+                        },
+                        onFailure: function(responseObject) {
+                            log(`订阅通用主题 ${topic} 失败: ${responseObject.errorMessage}`, 'error');
+                            showModal('订阅失败', `订阅通用主题 ${topic} 失败: ${responseObject.errorMessage}`);
+                        }
+                    });
+                    log(`尝试订阅通用主题: ${topic}`, 'info');
+                } catch (error) {
+                     console.error("订阅时发生异常: ", error);
+                     log(`订阅时发生异常: ${error.message}`, 'error');
+                     showModal('订阅异常', `订阅时发生异常: ${error.message}`);
+                }
+            } else {
+                showModal('错误', '客户端未连接。请先连接。');
+                log('订阅失败：客户端未连接。', 'error');
+            }
+        });
+        
+        // 开始消费指定主题按钮逻辑
+        startConsumeSpecificBtn.addEventListener('click', () => {
+            if (!client || !client.isConnected()) {
+                showModal('错误', '客户端未连接。请先连接。');
+                log('开始消费失败：客户端未连接。', 'error');
+                return;
+            }
+            const topicToConsume = consumeSpecificTopicInput.value.trim();
+            if (!topicToConsume) {
+                showModal('消费错误', '要消费的主题不能为空！');
+                log('消费错误：主题不能为空。', 'error');
+                return;
+            }
+
+            client.subscribe(topicToConsume, {
+                onSuccess: () => {
+                    log(`成功开始消费主题: ${topicToConsume}`, 'success');
+                    specificallyConsumedTopic = topicToConsume;
+                    isSpecificallyConsuming = true;
+                    consumedMessagesArea.innerHTML = ''; // 清空旧消息
+                    logToSpecificArea(`开始监听来自 ${topicToConsume} 的消息...`);
+                    updateSpecificConsumeUI();
+                },
+                onFailure: (responseObject) => {
+                    log(`开始消费主题 ${topicToConsume} 失败: ${responseObject.errorMessage}`, 'error');
+                    showModal('消费失败', `开始消费主题 ${topicToConsume} 失败: ${responseObject.errorMessage}`);
+                }
+            });
+        });
+
+        // 停止消费指定主题按钮逻辑
+        stopConsumeSpecificBtn.addEventListener('click', () => {
+            if (!client || !client.isConnected() || !isSpecificallyConsuming || !specificallyConsumedTopic) {
+                log('无需停止消费，或客户端未连接。', 'info');
+                return;
+            }
+            const topicToUnsubscribe = specificallyConsumedTopic;
+            client.unsubscribe(topicToUnsubscribe, {
+                onSuccess: () => {
+                    log(`已停止消费主题: ${topicToUnsubscribe}`, 'info');
+                    logToSpecificArea(`已停止监听来自 ${topicToUnsubscribe} 的消息。`);
+                    specificallyConsumedTopic = null;
+                    isSpecificallyConsuming = false;
+                    updateSpecificConsumeUI();
+                },
+                onFailure: (responseObject) => {
+                    log(`停止消费主题 ${topicToUnsubscribe} 失败: ${responseObject.errorMessage}`, 'error');
+                    showModal('停止消费失败', `停止消费主题 ${topicToUnsubscribe} 失败: ${responseObject.errorMessage}`);
+                }
+            });
+        });
+
+
+        publishBtn.addEventListener('click', () => {
+            const topic = pubTopicInput.value.trim();
+            let messagePayload = pubMessageTextarea.value; 
+
+            if (!topic) {
+                showModal('发布错误', '发布主题不能为空！');
+                log('发布错误：主题不能为空。', 'error');
+                return;
+            }
+            
+            if (messagePayload.includes("当前时间:")) {
+                 messagePayload = messagePayload.replace("当前时间:", `当前时间: ${new Date().toLocaleTimeString()}`);
+            }
+
+            if (client && client.isConnected()) {
+                try {
+                    const message = new Paho.MQTT.Message(messagePayload);
+                    message.destinationName = topic;
+                    client.send(message);
+                    log(`成功发布消息到主题 ${topic}: ${messagePayload}`, 'success');
+                } catch (error) {
+                    console.error("发布时发生异常: ", error);
+                    log(`发布时发生异常: ${error.message}`, 'error');
+                    showModal('发布异常', `发布时发生异常: ${error.message}`);
+                }
+            } else {
+                showModal('错误', '客户端未连接。请先连接。');
+                log('发布失败：客户端未连接。', 'error');
+            }
+        });
+        
+        // 初始化UI状态
+        updateMainUIState(false); // This will also call updateSpecificConsumeUI
+        secretInput.value = emqxSecret; 
+        log('测试页面已加载。请输入连接参数。', 'info');
+
+    </script>
+</body>
+</html>

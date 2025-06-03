@@ -1,0 +1,188 @@
+version: '3.8'
+
+networks:
+  emqx_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  emqx_data:
+  emqx_log:
+  emqx_etc:
+
+services:
+  emqx:
+    image: emqx/emqx:5.3.2
+    container_name: emqx_nfc_relay
+    restart: unless-stopped
+    
+    # 端口映射
+    ports:
+      - "1883:1883"     # MQTT TCP
+      - "8883:8883"     # MQTT SSL
+      - "8083:8083"     # MQTT WebSocket
+      - "8084:8084"     # MQTT WebSocket SSL
+      - "18083:18083"   # EMQX Dashboard
+      - "4370:4370"     # EMQX Cluster Port
+    
+    # 环境变量配置
+    environment:
+      # 基础配置
+      EMQX_NAME: "emqx_nfc_relay"
+      EMQX_HOST: "127.0.0.1"
+      
+      # 集群配置
+      EMQX_CLUSTER__DISCOVERY_STRATEGY: "manual"
+      EMQX_CLUSTER__NAME: "emqx_nfc_relay_cluster"
+      
+      # 节点配置
+      EMQX_NODE__NAME: "emqx@emqx_nfc_relay"
+      EMQX_NODE__COOKIE: "nfc_relay_secret_cookie_2024"
+      
+      # 监听器配置
+      EMQX_LISTENERS__TCP__DEFAULT__BIND: "0.0.0.0:1883"
+      EMQX_LISTENERS__SSL__DEFAULT__BIND: "0.0.0.0:8883"
+      EMQX_LISTENERS__WS__DEFAULT__BIND: "0.0.0.0:8083"
+      EMQX_LISTENERS__WSS__DEFAULT__BIND: "0.0.0.0:8084"
+      
+      # Dashboard配置
+      EMQX_DASHBOARD__LISTENERS__HTTP__BIND: "0.0.0.0:18083"
+      EMQX_DASHBOARD__DEFAULT_USERNAME: "admin"
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: "nfc_relay_admin_2024"
+      
+      # JWT认证配置
+      EMQX_AUTHENTICATION__1__ENABLE: "true"
+      EMQX_AUTHENTICATION__1__BACKEND: "jwt"
+      EMQX_AUTHENTICATION__1__MECHANISM: "password_based"
+      EMQX_AUTHENTICATION__1__USE_JWKS: "false"
+      EMQX_AUTHENTICATION__1__ALGORITHM: "hmac-based"
+      EMQX_AUTHENTICATION__1__SECRET: "78c0f08f-9663-4c9c-a399-cc4ec36b8112"
+      EMQX_AUTHENTICATION__1__FROM: "password"
+      EMQX_AUTHENTICATION__1__VERIFY_CLAIMS__1__NAME: "exp"
+      EMQX_AUTHENTICATION__1__VERIFY_CLAIMS__1__VALUE: "$${timestamp}"
+      EMQX_AUTHENTICATION__1__VERIFY_CLAIMS__2__NAME: "iss"
+      EMQX_AUTHENTICATION__1__VERIFY_CLAIMS__2__VALUE: "qmPlus"
+      EMQX_AUTHENTICATION__1__VERIFY_CLAIMS__3__NAME: "aud"
+      EMQX_AUTHENTICATION__1__VERIFY_CLAIMS__3__VALUE: "GVA"
+      EMQX_AUTHENTICATION__1__VERIFY_CLAIMS__4__NAME: "client_id"
+      EMQX_AUTHENTICATION__1__VERIFY_CLAIMS__4__VALUE: "$${clientid}"
+      
+      # ACL配置
+      EMQX_AUTHORIZATION__SOURCES__1__TYPE: "file"
+      EMQX_AUTHORIZATION__SOURCES__1__ENABLE: "true"
+      EMQX_AUTHORIZATION__SOURCES__1__PATH: "/opt/emqx/etc/acl.conf"
+      EMQX_AUTHORIZATION__NO_MATCH: "deny"
+      EMQX_AUTHORIZATION__DENY_ACTION: "ignore"
+      
+      # 性能配置
+      EMQX_MQTT__MAX_PACKET_SIZE: "1MB"
+      EMQX_MQTT__MAX_CLIENTID_LEN: "65535"
+      EMQX_MQTT__MAX_TOPIC_LEVELS: "128"
+      EMQX_MQTT__MAX_QOS_ALLOWED: "2"
+      EMQX_MQTT__SESSION_EXPIRY_INTERVAL: "2h"
+      EMQX_MQTT__MAX_SUBSCRIPTIONS: "10"
+      
+      # 日志配置
+      EMQX_LOG__CONSOLE_HANDLER__ENABLE: "true"
+      EMQX_LOG__CONSOLE_HANDLER__LEVEL: "info"
+      EMQX_LOG__FILE_HANDLERS__DEFAULT__ENABLE: "true"
+      EMQX_LOG__FILE_HANDLERS__DEFAULT__LEVEL: "warning"
+      EMQX_LOG__FILE_HANDLERS__DEFAULT__FILE: "/opt/emqx/log/emqx.log"
+    
+    # 卷挂载
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+      - emqx_etc:/opt/emqx/etc
+      - ./config/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./config/emqx_acl.conf:/opt/emqx/etc/acl.conf:ro
+      - ./certs:/opt/emqx/etc/certs:ro
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # 网络配置
+    networks:
+      emqx_network:
+        ipv4_address: 172.20.0.10
+    
+    # 安全配置
+    security_opt:
+      - no-new-privileges:true
+    
+    # 用户配置
+    user: "1000:1000"
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # EMQX Exporter for Prometheus (可选)
+  emqx-exporter:
+    image: emqx/emqx-exporter:latest
+    container_name: emqx_exporter
+    restart: unless-stopped
+    
+    ports:
+      - "8085:8085"
+    
+    environment:
+      EMQX_EXPORTER_EMQX_ADDR: "http://emqx:18083"
+      EMQX_EXPORTER_EMQX_USERNAME: "admin"
+      EMQX_EXPORTER_EMQX_PASSWORD: "nfc_relay_admin_2024"
+      EMQX_EXPORTER_BIND_ADDR: "0.0.0.0:8085"
+      EMQX_EXPORTER_METRICS_PATH: "/metrics"
+    
+    depends_on:
+      emqx:
+        condition: service_healthy
+    
+    networks:
+      emqx_network:
+        ipv4_address: 172.20.0.11
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8085/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# 开发环境的EMQX配置 (可选)
+  emqx-dev:
+    image: emqx/emqx:5.3.2
+    container_name: emqx_nfc_relay_dev
+    restart: unless-stopped
+    profiles:
+      - dev
+    
+    ports:
+      - "1884:1883"     # 开发环境MQTT TCP
+      - "18084:18083"   # 开发环境Dashboard
+    
+    environment:
+      EMQX_NAME: "emqx_nfc_relay_dev"
+      EMQX_DASHBOARD__DEFAULT_USERNAME: "admin"
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: "dev123456"
+      # 开发环境使用更宽松的配置
+      EMQX_AUTHORIZATION__NO_MATCH: "allow"
+    
+    volumes:
+      - ./config/emqx-dev.conf:/opt/emqx/etc/emqx.conf:ro
+    
+    networks:
+      emqx_network:
+        ipv4_address: 172.20.0.20 
