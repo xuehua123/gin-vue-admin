@@ -13,6 +13,17 @@ type CustomClaims struct {
 	jwt.RegisteredClaims
 }
 
+// MQTTClaims MQTT专用JWT声明结构
+// 用于MQTT连接认证，包含角色信息
+type MQTTClaims struct {
+	UserID   string `json:"user_id"`   // 用户UUID字符串
+	Username string `json:"username"`  // 用户名
+	Role     string `json:"role"`      // 角色：transmitter, receiver, admin
+	ClientID string `json:"client_id"` // MQTT ClientID: username-role-sequence
+	Sequence int    `json:"sequence"`  // 序号，用于区分同用户同角色的多个连接
+	jwt.RegisteredClaims
+}
+
 // BaseClaims 基础声明信息
 // 包含开发手册要求的核心用户和会话标识
 type BaseClaims struct {
@@ -44,4 +55,38 @@ func (c *CustomClaims) IsValid() bool {
 	return c.BaseClaims.UUID != uuid.Nil &&
 		c.BaseClaims.ClientID != "" &&
 		c.RegisteredClaims.ID != ""
+}
+
+// GetUserID 获取用户ID
+func (m *MQTTClaims) GetUserID() string {
+	return m.UserID
+}
+
+// GetClientID 获取MQTT ClientID
+func (m *MQTTClaims) GetClientID() string {
+	return m.ClientID
+}
+
+// GetJTI 获取JWT唯一标识符
+func (m *MQTTClaims) GetJTI() string {
+	return m.RegisteredClaims.ID
+}
+
+// IsValid 验证MQTT Claims是否有效
+func (m *MQTTClaims) IsValid() bool {
+	return m.UserID != "" &&
+		m.Username != "" &&
+		m.ClientID != "" &&
+		m.Role != "" &&
+		m.RegisteredClaims.ID != ""
+}
+
+// MQTTTokenRequest MQTT Token生成请求
+type MQTTTokenRequest struct {
+	Role string `json:"role" binding:"required"` // 角色：transmitter, receiver, admin
+}
+
+// RevokeMQTTTokenRequest 撤销MQTT Token请求
+type RevokeMQTTTokenRequest struct {
+	ClientID string `json:"client_id" binding:"required"` // 要撤销的ClientID
 }

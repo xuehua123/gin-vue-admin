@@ -49,6 +49,14 @@ const routes = [
     component: () => import('@/view/superAdmin/deviceLog/deviceLogManagement.vue')
   },
   {
+    path: '/nfc-relay/monitor',
+    name: 'NFCRelayMonitor',
+    meta: {
+      title: 'NFC中继监控'
+    },
+    component: () => import('@/view/nfcRelay/transaction/monitor.vue')
+  },
+  {
     path: '/:catchAll(.*)',
     meta: {
       closeTab: true

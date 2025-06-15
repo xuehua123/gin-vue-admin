@@ -171,6 +171,40 @@ definitions:
         description: MCP版本
         type: string
     type: object
+  config.MQTT:
+    properties:
+      clean-session:
+        description: 清除会话
+        type: boolean
+      client-id:
+        description: 服务器端MQTT客户端ID
+        type: string
+      host:
+        description: MQTT Broker地址
+        type: string
+      keep-alive:
+        description: 心跳间隔(秒)
+        type: integer
+      nfc-relay:
+        allOf:
+        - $ref: '#/definitions/config.NFCRelayMQTT'
+        description: NFC中继相关配置
+      password:
+        description: MQTT密码
+        type: string
+      port:
+        description: MQTT Broker端口
+        type: integer
+      qos:
+        description: 默认QoS级别
+        type: integer
+      use-tls:
+        description: 是否使用TLS
+        type: boolean
+      username:
+        description: MQTT用户名
+        type: string
+    type: object
   config.Minio:
     properties:
       access-key-id:
@@ -322,6 +356,39 @@ definitions:
         type: boolean
       username:
         description: 数据库账号
+        type: string
+    type: object
+  config.NFCRelayMQTT:
+    properties:
+      enable-metrics:
+        description: 监控配置
+        type: boolean
+      enable-permission-control:
+        description: 权限控制
+        type: boolean
+      heartbeat-interval:
+        description: 心跳配置
+        type: integer
+      heartbeat-timeout:
+        description: 心跳超时(秒)
+        type: integer
+      max-message-size:
+        description: 最大消息大小(字节)
+        type: integer
+      message-timeout:
+        description: 消息配置
+        type: integer
+      metrics-interval:
+        description: 指标收集间隔(秒)
+        type: integer
+      retry-attempts:
+        description: 重试次数
+        type: integer
+      retry-interval:
+        description: 重试间隔(秒)
+        type: integer
+      topic-prefix:
+        description: 主题前缀
         type: string
     type: object
   config.Oracle:
@@ -503,6 +570,10 @@ definitions:
         $ref: '#/definitions/config.Minio'
       mongo:
         $ref: '#/definitions/config.Mongo'
+      mqtt:
+        allOf:
+        - $ref: '#/definitions/config.MQTT'
+        description: MQTT配置
       mssql:
         $ref: '#/definitions/config.Mssql'
       mysql:
@@ -866,6 +937,48 @@ definitions:
         description: 作者
         type: integer
     type: object
+  nfc_relay.NFCAPDUMessage:
+    properties:
+      ID:
+        description: 主键ID
+        type: integer
+      apdu_hex:
+        type: string
+      createdAt:
+        description: 创建时间
+        type: string
+      direction:
+        description: 消息信息
+        type: string
+      error_msg:
+        type: string
+      message_type:
+        type: string
+      metadata:
+        description: 扩展信息
+        type: object
+      priority:
+        description: 优先级和类型
+        type: string
+      received_at:
+        type: string
+      response_time_ms:
+        type: integer
+      sent_at:
+        description: 时间信息
+        type: string
+      sequence_number:
+        type: integer
+      status:
+        description: 状态信息
+        type: string
+      transaction_id:
+        description: 关联信息
+        type: string
+      updatedAt:
+        description: 更新时间
+        type: string
+    type: object
   request.AddMenuAuthorityInfo:
     properties:
       authorityId:
@@ -1076,6 +1189,38 @@ definitions:
     - description
     - name
     type: object
+  request.BatchUpdateTransactionRequest:
+    properties:
+      metadata:
+        additionalProperties:
+          type: string
+        description: 扩展元数据
+        type: object
+      reason:
+        description: 操作原因
+        example: 批量操作
+        maxLength: 100
+        type: string
+      status:
+        description: 新状态(仅支持取消和超时)
+        enum:
+        - cancelled
+        - timeout
+        example: cancelled
+        type: string
+      transaction_ids:
+        description: 交易ID列表
+        example:
+        - '["txn_1"'
+        - '"txn_2"]'
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - status
+    - transaction_ids
+    type: object
   request.CasbinInReceive:
     properties:
       authorityId:
@@ -1103,6 +1248,50 @@ definitions:
       password:
         description: 密码
         type: string
+    type: object
+  request.CreateTransactionRequest:
+    properties:
+      card_type:
+        description: 卡片类型
+        example: mifare_classic
+        maxLength: 50
+        type: string
+      description:
+        description: 交易描述
+        example: 业务卡片中继交易
+        maxLength: 500
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        description: 扩展元数据
+        type: object
+      receiver_client_id:
+        description: 收卡端客户端ID
+        example: user-receiver-001
+        maxLength: 128
+        minLength: 1
+        type: string
+      tags:
+        description: 标签
+        example: test,demo
+        maxLength: 500
+        type: string
+      timeout_seconds:
+        description: 超时时间(秒) 30秒-1小时
+        example: 120
+        maximum: 3600
+        minimum: 30
+        type: integer
+      transmitter_client_id:
+        description: 传卡端客户端ID
+        example: admin-transmitter-001
+        maxLength: 128
+        minLength: 1
+        type: string
+    required:
+    - receiver_client_id
+    - transmitter_client_id
     type: object
   request.DataSource:
     properties:
@@ -1139,10 +1328,13 @@ definitions:
   request.ForceLogoutRequest:
     properties:
       clientId:
+        description: 客户端ID
         type: string
       reason:
+        description: 下线原因
         type: string
       userId:
+        description: 用户ID
         type: string
     required:
     - clientId
@@ -1163,20 +1355,25 @@ definitions:
   request.GetDeviceLogsRequest:
     properties:
       clientId:
+        description: 客户端ID筛选
         type: string
       deviceModel:
+        description: 设备型号筛选
         type: string
       ipAddress:
+        description: IP地址筛选
         type: string
       keyword:
         description: 关键字
         type: string
       loginTimeEnd:
+        description: 登录时间结束
         type: string
       loginTimeStart:
+        description: 登录时间开始
         type: string
       onlineOnly:
-        description: 仅显示在线设备
+        description: 只显示在线用户
         type: boolean
       page:
         description: 页码
@@ -1185,6 +1382,7 @@ definitions:
         description: 每页大小
         type: integer
       userId:
+        description: 用户ID筛选
         type: string
     type: object
   request.GetUserList:
@@ -1261,6 +1459,14 @@ definitions:
         description: 用户名
         type: string
     type: object
+  request.MQTTTokenRequest:
+    properties:
+      role:
+        description: 角色：transmitter, receiver, admin
+        type: string
+    required:
+    - role
+    type: object
   request.PageInfo:
     properties:
       keyword:
@@ -1303,6 +1509,14 @@ definitions:
         example: 用户名
         type: string
     type: object
+  request.RevokeMQTTTokenRequest:
+    properties:
+      client_id:
+        description: 要撤销的ClientID
+        type: string
+    required:
+    - client_id
+    type: object
   request.SearchApiParams:
     properties:
       ID:
@@ -1341,6 +1555,52 @@ definitions:
       updatedAt:
         description: 更新时间
         type: string
+    type: object
+  request.SendAPDURequest:
+    properties:
+      apdu_hex:
+        description: APDU十六进制数据
+        example: 00A4040008A000000003000000
+        type: string
+      direction:
+        description: 消息方向
+        enum:
+        - to_receiver
+        - to_transmitter
+        example: to_receiver
+        type: string
+      message_type:
+        description: 消息类型
+        example: select_application
+        maxLength: 20
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        description: 扩展元数据
+        type: object
+      priority:
+        description: 优先级
+        enum:
+        - high
+        - normal
+        - low
+        example: normal
+        type: string
+      sequence_number:
+        description: 序列号
+        example: 1
+        minimum: 1
+        type: integer
+      transaction_id:
+        description: 交易ID
+        example: txn_1234567890
+        type: string
+    required:
+    - apdu_hex
+    - direction
+    - sequence_number
+    - transaction_id
     type: object
   request.SetUserAuth:
     properties:
@@ -1399,6 +1659,255 @@ definitions:
         description: 主键ID
         type: integer
     type: object
+  request.UpdateTransactionStatusRequest:
+    properties:
+      error_msg:
+        description: 错误信息
+        example: ""
+        maxLength: 500
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        description: 扩展元数据
+        type: object
+      reason:
+        description: 状态变更原因
+        example: 用户操作
+        maxLength: 100
+        type: string
+      status:
+        description: 新状态
+        enum:
+        - pending
+        - active
+        - processing
+        - completed
+        - failed
+        - cancelled
+        - timeout
+        example: active
+        type: string
+      transaction_id:
+        description: 交易ID
+        example: txn_1234567890
+        type: string
+    required:
+    - status
+    - transaction_id
+    type: object
+  response.APDUMessageItem:
+    properties:
+      apdu_hex:
+        type: string
+      created_at:
+        type: string
+      direction:
+        type: string
+      error_msg:
+        type: string
+      id:
+        type: integer
+      message_type:
+        type: string
+      priority:
+        type: string
+      received_at:
+        type: string
+      response_time_ms:
+        type: integer
+      sent_at:
+        type: string
+      sequence_number:
+        type: integer
+      status:
+        type: string
+      transaction_id:
+        type: string
+    type: object
+  response.APDUMessageListResponse:
+    properties:
+      list:
+        description: 消息列表
+        items:
+          $ref: '#/definitions/response.APDUMessageItem'
+        type: array
+      page:
+        description: 当前页
+        type: integer
+      page_size:
+        description: 页大小
+        type: integer
+      total:
+        description: 总数
+        type: integer
+    type: object
+  response.BatchError:
+    properties:
+      error:
+        description: 错误信息
+        type: string
+      id:
+        description: ID
+        type: string
+    type: object
+  response.BatchOperationResponse:
+    properties:
+      failure_count:
+        description: 失败数量
+        type: integer
+      failure_errors:
+        description: 失败错误列表
+        items:
+          $ref: '#/definitions/response.BatchError'
+        type: array
+      success_count:
+        description: 成功数量
+        type: integer
+      success_ids:
+        description: 成功的ID列表
+        items:
+          type: string
+        type: array
+      total:
+        description: 总数
+        type: integer
+    type: object
+  response.ChartPoint:
+    properties:
+      x:
+        description: X轴值(通常是时间)
+        type: string
+      "y":
+        description: Y轴值
+        type: number
+    type: object
+  response.ClientErrorStats:
+    properties:
+      client_id:
+        description: 客户端ID
+        type: string
+      error_count:
+        description: 错误数量
+        type: integer
+      error_rate:
+        description: 错误率
+        type: number
+      role:
+        description: 角色
+        type: string
+    type: object
+  response.ClientStatistics:
+    properties:
+      avg_processing_ms:
+        description: 平均处理时间
+        type: number
+      client_id:
+        description: 客户端ID
+        type: string
+      last_active_at:
+        description: 最后活跃时间
+        type: string
+      role:
+        description: 角色
+        type: string
+      success_rate:
+        description: 成功率
+        type: number
+      transaction_count:
+        description: 交易数量
+        type: integer
+    type: object
+  response.CommonError:
+    properties:
+      count:
+        description: 出现次数
+        type: integer
+      description:
+        description: 描述
+        type: string
+      error_type:
+        description: 错误类型
+        type: string
+      percentage:
+        description: 占比
+        type: number
+    type: object
+  response.CreateTransactionResponse:
+    properties:
+      card_type:
+        description: 卡片类型
+        type: string
+      created_at:
+        description: 创建时间
+        type: string
+      expires_at:
+        description: 过期时间
+        type: string
+      receiver_client_id:
+        description: 收卡端客户端ID
+        type: string
+      status:
+        description: 交易状态
+        type: string
+      transaction_id:
+        description: 交易ID
+        type: string
+      transmitter_client_id:
+        description: 传卡端客户端ID
+        type: string
+    type: object
+  response.DailyStatistics:
+    properties:
+      average_processing_ms:
+        description: 平均处理时间
+        type: number
+      date:
+        description: 日期
+        type: string
+      failed_transactions:
+        description: 失败交易数
+        type: integer
+      success_rate:
+        description: 成功率
+        type: number
+      successful_transactions:
+        description: 成功交易数
+        type: integer
+      total_apdu_messages:
+        description: APDU消息数
+        type: integer
+      total_transactions:
+        description: 总交易数
+        type: integer
+    type: object
+  response.DateRange:
+    properties:
+      days:
+        description: 天数
+        type: integer
+      end_date:
+        description: 结束日期
+        type: string
+      start_date:
+        description: 开始日期
+        type: string
+    type: object
+  response.DeviceLogStats:
+    properties:
+      avgSessionTime:
+        type: number
+      currentOnline:
+        type: integer
+      lastLoginTime:
+        type: string
+      mostUsedDevice:
+        type: string
+      totalLogins:
+        type: integer
+      uniqueDevices:
+        type: integer
+    type: object
   response.Email:
     properties:
       body:
@@ -1410,6 +1919,30 @@ definitions:
       to:
         description: 邮件发送给谁
         type: string
+    type: object
+  response.ErrorAnalysis:
+    properties:
+      common_errors:
+        description: 常见错误
+        items:
+          $ref: '#/definitions/response.CommonError'
+        type: array
+      error_rate:
+        description: 错误率
+        type: number
+      error_trend:
+        description: 错误趋势
+        items:
+          $ref: '#/definitions/response.ChartPoint'
+        type: array
+      errors_by_client:
+        description: 按客户端分组的错误
+        items:
+          $ref: '#/definitions/response.ClientErrorStats'
+        type: array
+      total_errors:
+        description: 总错误数
+        type: integer
     type: object
   response.ExaCustomerResponse:
     properties:
@@ -1440,6 +1973,42 @@ definitions:
       user:
         $ref: '#/definitions/system.SysUser'
     type: object
+  response.MQTTTokenInfo:
+    properties:
+      client_id:
+        description: ClientID
+        type: string
+      created_at:
+        description: 创建时间
+        type: string
+      jti:
+        description: JWT ID
+        type: string
+      role:
+        description: 角色
+        type: string
+      username:
+        description: 用户名
+        type: string
+    type: object
+  response.MQTTTokenResponse:
+    properties:
+      client_id:
+        description: MQTT ClientID (username-role-sequence)
+        type: string
+      expires_at:
+        description: 过期时间戳
+        type: integer
+      role:
+        description: 角色
+        type: string
+      sequence:
+        description: 序号
+        type: integer
+      token:
+        description: MQTT JWT Token
+        type: string
+    type: object
   response.PageResult:
     properties:
       list: {}
@@ -1449,6 +2018,18 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  response.PieChartItem:
+    properties:
+      count:
+        description: 数量
+        type: integer
+      name:
+        description: 名称
+        type: string
+      value:
+        description: 值
+        type: number
     type: object
   response.PolicyPathResponse:
     properties:
@@ -1464,6 +2045,79 @@ definitions:
       data: {}
       msg:
         type: string
+    type: object
+  response.SendAPDUResponse:
+    properties:
+      direction:
+        description: 消息方向
+        type: string
+      message_id:
+        description: 消息ID
+        type: integer
+      sent_at:
+        description: 发送时间
+        type: string
+      sequence_number:
+        description: 序列号
+        type: integer
+      status:
+        description: 消息状态
+        type: string
+      transaction_id:
+        description: 交易ID
+        type: string
+    type: object
+  response.StatisticsChartData:
+    properties:
+      card_type_distribution:
+        description: 卡片类型分布
+        items:
+          $ref: '#/definitions/response.PieChartItem'
+        type: array
+      response_time_trend:
+        description: 响应时间趋势
+        items:
+          $ref: '#/definitions/response.ChartPoint'
+        type: array
+      status_distribution:
+        description: 状态分布
+        items:
+          $ref: '#/definitions/response.PieChartItem'
+        type: array
+      success_rate_trend:
+        description: 成功率趋势
+        items:
+          $ref: '#/definitions/response.ChartPoint'
+        type: array
+      transaction_trend:
+        description: 交易趋势
+        items:
+          $ref: '#/definitions/response.ChartPoint'
+        type: array
+    type: object
+  response.StatisticsSummary:
+    properties:
+      average_processing_ms:
+        description: 平均处理时间
+        type: number
+      failed_transactions:
+        description: 失败交易数
+        type: integer
+      success_rate:
+        description: 成功率
+        type: number
+      successful_transactions:
+        description: 成功交易数
+        type: integer
+      total_apdu_messages:
+        description: 总APDU消息数
+        type: integer
+      total_processing_time_ms:
+        description: 总处理时间
+        type: integer
+      total_transactions:
+        description: 总交易数
+        type: integer
     type: object
   response.SysAPIListResponse:
     properties:
@@ -1536,6 +2190,242 @@ definitions:
     properties:
       user:
         $ref: '#/definitions/system.SysUser'
+    type: object
+  response.TransactionDetailResponse:
+    properties:
+      ID:
+        description: 主键ID
+        type: integer
+      apdu_count:
+        description: 统计信息
+        type: integer
+      apdu_messages:
+        description: 关联关系
+        items:
+          $ref: '#/definitions/nfc_relay.NFCAPDUMessage'
+        type: array
+      average_response_time_ms:
+        type: integer
+      card_type:
+        description: 业务信息
+        type: string
+      completed_at:
+        type: string
+      created_by:
+        description: 用户信息
+        type: string
+      createdAt:
+        description: 创建时间
+        type: string
+      description:
+        type: string
+      end_reason:
+        description: 结果信息
+        type: string
+      error_msg:
+        type: string
+      expires_at:
+        type: string
+      metadata:
+        description: 扩展信息
+        type: object
+      receiver_client_id:
+        type: string
+      started_at:
+        description: 时间信息
+        type: string
+      statistics:
+        allOf:
+        - $ref: '#/definitions/response.TransactionStatistics'
+        description: 扩展信息
+      status:
+        description: 交易状态
+        type: string
+      tags:
+        type: string
+      timeline:
+        description: 时间线
+        items:
+          $ref: '#/definitions/response.TransactionEvent'
+        type: array
+      total_processing_time_ms:
+        type: integer
+      transaction_id:
+        description: 基础信息
+        type: string
+      transmitter_client_id:
+        description: 客户端信息
+        type: string
+      updated_by:
+        type: string
+      updatedAt:
+        description: 更新时间
+        type: string
+    type: object
+  response.TransactionEvent:
+    properties:
+      actor:
+        description: 操作者
+        type: string
+      description:
+        description: 描述
+        type: string
+      event_type:
+        description: 事件类型
+        type: string
+      metadata:
+        additionalProperties: true
+        description: 扩展数据
+        type: object
+      timestamp:
+        description: 时间戳
+        type: string
+    type: object
+  response.TransactionListItem:
+    properties:
+      apdu_count:
+        type: integer
+      card_type:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      end_reason:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: integer
+      receiver_client_id:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      tags:
+        type: string
+      total_processing_time_ms:
+        type: integer
+      transaction_id:
+        type: string
+      transmitter_client_id:
+        type: string
+    type: object
+  response.TransactionListResponse:
+    properties:
+      list:
+        description: 交易列表
+        items:
+          $ref: '#/definitions/response.TransactionListItem'
+        type: array
+      page:
+        description: 当前页
+        type: integer
+      page_size:
+        description: 页大小
+        type: integer
+      summary:
+        allOf:
+        - $ref: '#/definitions/response.TransactionSummary'
+        description: 汇总信息
+      total:
+        description: 总数
+        type: integer
+    type: object
+  response.TransactionStatistics:
+    properties:
+      apdu_message_count:
+        description: APDU消息数量
+        type: integer
+      average_response_time_ms:
+        description: 平均响应时间(毫秒)
+        type: number
+      error_count:
+        description: 错误数量
+        type: integer
+      last_activity_at:
+        description: 最后活动时间
+        type: string
+      success_rate:
+        description: 成功率
+        type: number
+      total_processing_time_ms:
+        description: 总处理时间(毫秒)
+        type: integer
+    type: object
+  response.TransactionStatisticsResponse:
+    properties:
+      chart_data:
+        allOf:
+        - $ref: '#/definitions/response.StatisticsChartData'
+        description: 图表数据
+      daily_stats:
+        description: 每日统计
+        items:
+          $ref: '#/definitions/response.DailyStatistics'
+        type: array
+      date_range:
+        allOf:
+        - $ref: '#/definitions/response.DateRange'
+        description: 日期范围
+      error_analysis:
+        allOf:
+        - $ref: '#/definitions/response.ErrorAnalysis'
+        description: 错误分析
+      summary:
+        allOf:
+        - $ref: '#/definitions/response.StatisticsSummary'
+        description: 汇总数据
+      top_clients:
+        description: 客户端统计
+        items:
+          $ref: '#/definitions/response.ClientStatistics'
+        type: array
+    type: object
+  response.TransactionSummary:
+    properties:
+      active_count:
+        description: 活跃数量
+        type: integer
+      average_processing_ms:
+        description: 平均处理时间
+        type: number
+      completed_count:
+        description: 已完成数量
+        type: integer
+      failed_count:
+        description: 失败数量
+        type: integer
+      pending_count:
+        description: 等待数量
+        type: integer
+      success_rate:
+        description: 成功率
+        type: number
+      total_count:
+        description: 总数量
+        type: integer
+    type: object
+  response.UpdateTransactionStatusResponse:
+    properties:
+      previous_status:
+        description: 原状态
+        type: string
+      reason:
+        description: 变更原因
+        type: string
+      status:
+        description: 新状态
+        type: string
+      transaction_id:
+        description: 交易ID
+        type: string
+      updated_at:
+        description: 更新时间
+        type: string
     type: object
   system.Condition:
     properties:
@@ -3514,6 +4404,34 @@ paths:
       summary: 强制设备下线
       tags:
       - DeviceLog
+  /deviceLog/getDeviceLogStats:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户ID
+        in: query
+        name: userId
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取设备日志统计
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.DeviceLogStats'
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取设备日志统计
+      tags:
+      - DeviceLog
   /deviceLog/getDeviceLogsList:
     post:
       consumes:
@@ -4101,6 +5019,57 @@ paths:
       summary: 初始化用户数据库
       tags:
       - InitDB
+  /jwt/generateMQTTToken:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 角色和其他信息
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.MQTTTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 生成成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.MQTTTokenResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 生成MQTT专用JWT Token
+      tags:
+      - Jwt
+  /jwt/getUserMQTTTokens:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/response.MQTTTokenInfo'
+                  type: array
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取用户的所有活跃MQTT Token
+      tags:
+      - Jwt
   /jwt/jsonInBlacklist:
     post:
       consumes:
@@ -4109,7 +5078,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: jwt加入黑名单
+          description: 拉黑成功
           schema:
             allOf:
             - $ref: '#/definitions/response.Response'
@@ -4119,7 +5088,35 @@ paths:
               type: object
       security:
       - ApiKeyAuth: []
-      summary: jwt加入黑名单
+      summary: jwt加入黑名单(登出，废弃)
+      tags:
+      - Jwt
+  /jwt/revokeMQTTToken:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 要撤销的ClientID
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.RevokeMQTTTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 撤销成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 撤销MQTT JWT Token
       tags:
       - Jwt
   /menu/addBaseMenu:
@@ -4381,6 +5378,416 @@ paths:
       summary: 更新菜单
       tags:
       - Menu
+  /nfc-relay/transactions:
+    get:
+      consumes:
+      - application/json
+      description: 分页获取交易列表
+      parameters:
+      - description: 卡片类型
+        example: mifare_classic
+        in: query
+        name: card_type
+        type: string
+      - description: 创建用户ID
+        example: ""
+        in: query
+        name: created_by
+        type: string
+      - description: 结束时间
+        example: "2024-01-02 00:00:00"
+        in: query
+        name: end_time
+        type: string
+      - description: 搜索关键词
+        example: 支付
+        in: query
+        name: keyword
+        type: string
+      - description: 排序方向(asc/desc)
+        example: desc
+        in: query
+        name: order
+        type: string
+      - description: 排序
+        example: created_at
+        in: query
+        name: order_by
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页大小
+        in: query
+        name: pageSize
+        type: integer
+      - description: 收卡端客户端ID
+        example: user-receiver-001
+        in: query
+        name: receiver_client_id
+        type: string
+      - description: 时间范围
+        example: "2024-01-01 00:00:00"
+        in: query
+        name: start_time
+        type: string
+      - description: 交易状态
+        example: completed
+        in: query
+        name: status
+        type: string
+      - description: 过滤条件
+        example: admin-transmitter-001
+        in: query
+        name: transmitter_client_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.TransactionListResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取交易列表
+      tags:
+      - NFCTransaction
+    post:
+      consumes:
+      - application/json
+      description: 创建新的NFC中继交易
+      parameters:
+      - description: 创建交易请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.CreateTransactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.CreateTransactionResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 创建NFC中继交易
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/{transaction_id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定的交易记录
+      parameters:
+      - description: 交易ID
+        in: path
+        name: transaction_id
+        required: true
+        type: string
+      - default: false
+        description: 是否强制删除
+        in: query
+        name: force
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 删除交易
+      tags:
+      - NFCTransaction
+    get:
+      consumes:
+      - application/json
+      description: 根据交易ID获取详细信息
+      parameters:
+      - description: 交易ID
+        in: path
+        name: transaction_id
+        required: true
+        type: string
+      - default: false
+        description: 是否包含APDU消息
+        in: query
+        name: include_apdu
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.TransactionDetailResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取交易详情
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/apdu:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定交易的APDU消息记录
+      parameters:
+      - description: 消息方向
+        example: to_receiver
+        in: query
+        name: direction
+        type: string
+      - description: 结束时间
+        example: "2024-01-02 00:00:00"
+        in: query
+        name: end_time
+        type: string
+      - description: 关键字
+        in: query
+        name: keyword
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页大小
+        in: query
+        name: pageSize
+        type: integer
+      - description: 优先级
+        example: normal
+        in: query
+        name: priority
+        type: string
+      - description: 时间范围
+        example: "2024-01-01 00:00:00"
+        in: query
+        name: start_time
+        type: string
+      - description: 消息状态
+        example: sent
+        in: query
+        name: status
+        type: string
+      - description: 交易ID
+        example: txn_1234567890
+        in: query
+        name: transaction_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.APDUMessageListResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取APDU消息列表
+      tags:
+      - NFCTransaction
+    post:
+      consumes:
+      - application/json
+      description: 向指定客户端发送APDU消息
+      parameters:
+      - description: APDU消息请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.SendAPDURequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 发送成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.SendAPDUResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 发送APDU消息
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/batch-update:
+    put:
+      consumes:
+      - application/json
+      description: 批量更新多个交易的状态
+      parameters:
+      - description: 批量更新请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.BatchUpdateTransactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.BatchOperationResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 批量更新交易状态
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/export:
+    get:
+      consumes:
+      - application/json
+      description: 导出交易数据为Excel或CSV格式
+      parameters:
+      - default: '"excel"'
+        description: 导出格式(excel/csv)
+        in: query
+        name: format
+        type: string
+      - description: 开始日期(YYYY-MM-DD)
+        in: query
+        name: start_date
+        type: string
+      - description: 结束日期(YYYY-MM-DD)
+        in: query
+        name: end_date
+        type: string
+      - description: 状态筛选
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 导出成功
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 导出交易数据
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/statistics:
+    get:
+      consumes:
+      - application/json
+      description: 获取交易统计数据和图表
+      parameters:
+      - description: 过滤条件
+        example: mifare_classic
+        in: query
+        name: card_type
+        type: string
+      - description: 结束日期
+        example: "2024-01-31"
+        in: query
+        name: end_date
+        required: true
+        type: string
+      - description: 分组方式
+        enum:
+        - day
+        - week
+        - month
+        example: day
+        in: query
+        name: group_by
+        type: string
+      - description: 时间范围
+        example: "2024-01-01"
+        in: query
+        name: start_date
+        required: true
+        type: string
+      - description: 交易状态
+        example: completed
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.TransactionStatisticsResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取统计信息
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/status:
+    put:
+      consumes:
+      - application/json
+      description: 更新NFC中继交易的状态
+      parameters:
+      - description: 更新状态请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.UpdateTransactionStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.UpdateTransactionStatusResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 更新交易状态
+      tags:
+      - NFCTransaction
   /sysDictionary/createSysDictionary:
     post:
       consumes:

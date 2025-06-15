@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT JWT 测试页面</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .step {
+            border-left: 4px solid #007bff;
+            padding-left: 15px;
+            margin-bottom: 30px;
+        }
+        .step h2 {
+            color: #007bff;
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .token-display {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+        .jwt-payload {
+            background-color: #e7f3ff;
+            border: 1px solid #b8daff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.online {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.offline {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .info-table th, .info-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .info-table th {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔐 MQTT JWT 双Token认证系统测试</h1>
+    
+    <!-- 步骤1: 用户登录 -->
+    <div class="container">
+        <div class="step">
+            <h2>步骤1: 用户登录获取API JWT</h2>
+            <div class="form-group">
+                <label for="serverUrl">服务器地址:</label>
+                <input type="text" id="serverUrl" value="http://localhost:8888" placeholder="例如: http://localhost:8888">
+            </div>
+            <div class="form-group">
+                <label for="username">用户名:</label>
+                <input type="text" id="username" value="admin" placeholder="请输入用户名">
+            </div>
+            <div class="form-group">
+                <label for="password">密码:</label>
+                <input type="password" id="password" value="123456" placeholder="请输入密码">
+            </div>
+            <div class="form-group">
+                <label for="captcha">验证码:</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="text" id="captcha" placeholder="请输入验证码" style="flex: 1;">
+                    <img id="captchaImg" src="" alt="验证码" style="height: 40px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;" onclick="getCaptcha()">
+                    <button type="button" onclick="getCaptcha()" style="padding: 8px 12px;">刷新</button>
+                </div>
+                <input type="hidden" id="captchaId" value="">
+            </div>
+            <button onclick="getCaptcha()">获取验证码</button>
+            <button onclick="login()">登录</button>
+            <div id="loginResult"></div>
+            
+            <div id="apiJwtInfo" style="display: none;">
+                <h4>API JWT 信息:</h4>
+                <table class="info-table">
+                    <tr><th>字段</th><th>值</th></tr>
+                    <tr><td>API JWT Token</td><td id="apiToken" class="token-display"></td></tr>
+                    <tr><td>用户ID</td><td id="userId"></td></tr>
+                    <tr><td>客户端ID</td><td id="apiClientId"></td></tr>
+                    <tr><td>过期时间</td><td id="apiExpiresIn"></td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 步骤2: 生成MQTT JWT -->
+    <div class="container">
+        <div class="step">
+            <h2>步骤2: 生成MQTT专用JWT</h2>
+            <div class="form-group">
+                <label for="role">选择角色:</label>
+                <select id="role">
+                    <option value="transmitter">传卡端 (transmitter)</option>
+                    <option value="receiver">收卡端 (receiver)</option>
+                    <option value="admin">管理员 (admin)</option>
+                </select>
+            </div>
+            <button onclick="generateMQTTToken()" id="generateBtn" disabled>生成MQTT JWT</button>
+            <div id="mqttTokenResult"></div>
+            
+            <div id="mqttJwtInfo" style="display: none;">
+                <h4>MQTT JWT 信息:</h4>
+                <table class="info-table">
+                    <tr><th>字段</th><th>值</th></tr>
+                    <tr><td>MQTT JWT Token</td><td id="mqttToken" class="token-display"></td></tr>
+                    <tr><td>MQTT ClientID</td><td id="mqttClientId"></td></tr>
+                    <tr><td>角色</td><td id="mqttRole"></td></tr>
+                    <tr><td>序号</td><td id="mqttSequence"></td></tr>
+                    <tr><td>过期时间</td><td id="mqttExpiresAt"></td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 步骤3: JWT解析 -->
+    <div class="container">
+        <div class="step">
+            <h2>步骤3: MQTT JWT 解析结果</h2>
+            <button onclick="parseJWT()" id="parseBtn" disabled>解析MQTT JWT</button>
+            <div id="jwtParseResult"></div>
+            
+            <div id="jwtPayloadInfo" style="display: none;">
+                <h4>JWT Payload 内容:</h4>
+                <div id="jwtPayload" class="jwt-payload"></div>
+                
+                <h4>详细字段说明:</h4>
+                <table class="info-table">
+                    <tr><th>字段名</th><th>含义</th><th>值</th></tr>
+                    <tr><td>user_id</td><td>用户UUID</td><td id="payload_user_id"></td></tr>
+                    <tr><td>username</td><td>用户名</td><td id="payload_username"></td></tr>
+                    <tr><td>role</td><td>角色</td><td id="payload_role"></td></tr>
+                    <tr><td>client_id</td><td>MQTT ClientID</td><td id="payload_client_id"></td></tr>
+                    <tr><td>sequence</td><td>连接序号</td><td id="payload_sequence"></td></tr>
+                    <tr><td>jti</td><td>JWT唯一标识</td><td id="payload_jti"></td></tr>
+                    <tr><td>iss</td><td>签发者</td><td id="payload_iss"></td></tr>
+                    <tr><td>aud</td><td>受众</td><td id="payload_aud"></td></tr>
+                    <tr><td>exp</td><td>过期时间</td><td id="payload_exp"></td></tr>
+                    <tr><td>nbf</td><td>生效时间</td><td id="payload_nbf"></td></tr>
+                    <tr><td>iat</td><td>签发时间</td><td id="payload_iat"></td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 步骤4: MQTT连接参数 -->
+    <div class="container">
+        <div class="step">
+            <h2>步骤4: MQTT连接参数</h2>
+            <div id="mqttConnectionInfo" style="display: none;">
+                <h4>🔗 客户端MQTT连接参数:</h4>
+                <table class="info-table">
+                    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+                    <tr><td>Broker URL</td><td>mqtts://your-emqx-broker.com:8883</td><td>MQTT服务器地址(需要MQTTS)</td></tr>
+                    <tr><td>Client ID</td><td id="conn_client_id" style="font-weight:bold;color:#007bff;"></td><td>协议级别的ClientID</td></tr>
+                    <tr><td>Username</td><td id="conn_username" style="font-weight:bold;color:#007bff;"></td><td>认证用户名(使用ClientID)</td></tr>
+                    <tr><td>Password</td><td id="conn_password" style="font-family:monospace;font-size:10px;word-break:break-all;"></td><td>认证密码(使用MQTT JWT)</td></tr>
+                    <tr><td>Clean Session</td><td>true</td><td>清除会话</td></tr>
+                    <tr><td>MQTT Version</td><td>v5</td><td>推荐使用MQTT v5</td></tr>
+                </table>
+                
+                <h4>📝 JavaScript MQTT连接示例代码:</h4>
+                <div class="token-display" id="mqttCodeExample"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 步骤5: MQTT连接测试 -->
+    <div class="container">
+        <div class="step">
+            <h2>步骤5: MQTT连接测试</h2>
+            <div class="form-group">
+                <label for="mqttBrokerUrl">MQTT Broker地址:</label>
+                <input type="text" id="mqttBrokerUrl" value="ws://localhost:8083/mqtt" placeholder="例如: ws://localhost:8083/mqtt">
+            </div>
+            <button onclick="testMQTTConnection()" id="mqttTestBtn" disabled>测试MQTT连接</button>
+            <button onclick="disconnectMQTT()" id="mqttDisconnectBtn" disabled>断开连接</button>
+            <div id="mqttTestResult"></div>
+            
+            <div id="mqttStatus" style="display: none;">
+                <h4>MQTT连接状态:</h4>
+                <div id="connectionStatus" class="status offline">离线</div>
+                
+                <h4>消息发布测试:</h4>
+                <div class="form-group">
+                    <label for="testTopic">测试主题:</label>
+                    <input type="text" id="testTopic" value="" placeholder="例如: client/your-client-id/test">
+                </div>
+                <div class="form-group">
+                    <label for="testMessage">测试消息:</label>
+                    <textarea id="testMessage" rows="3" placeholder='{"message": "Hello MQTT!", "timestamp": "2024-01-01T00:00:00Z"}'></textarea>
+                </div>
+                <button onclick="publishMessage()">发布消息</button>
+                
+                <h4>接收到的消息:</h4>
+                <div id="receivedMessages" class="token-display" style="max-height: 200px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 步骤6: 管理功能 -->
+    <div class="container">
+        <div class="step">
+            <h2>步骤6: 管理功能测试</h2>
+            <button onclick="getUserMQTTTokens()" id="getTokensBtn" disabled>获取用户所有MQTT Token</button>
+            <button onclick="revokeMQTTToken()" id="revokeBtn" disabled>撤销当前MQTT Token</button>
+            <div id="managementResult"></div>
+        </div>
+    </div>
+
+    <!-- 引入MQTT.js库 -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    
+    <script>
+        let apiJWT = '';
+        let mqttJWT = '';
+        let currentMQTTClientID = '';
+        let serverUrl = '';
+        let mqttClient = null;
+        let receivedMessageCount = 0;
+
+        // 获取验证码
+        async function getCaptcha() {
+            serverUrl = document.getElementById('serverUrl').value;
+            if (!serverUrl) {
+                showResult('loginResult', '请先填写服务器地址', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${serverUrl}/base/captcha`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (data.code === 0) {
+                    document.getElementById('captchaImg').src = data.data.picPath;
+                    document.getElementById('captchaId').value = data.data.captchaId;
+                    showResult('loginResult', '✅ 验证码获取成功！', 'success');
+                } else {
+                    showResult('loginResult', `❌ 验证码获取失败: ${data.msg}`, 'error');
+                }
+            } catch (error) {
+                showResult('loginResult', `❌ 验证码获取失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 步骤1: 用户登录
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const captcha = document.getElementById('captcha').value;
+            const captchaId = document.getElementById('captchaId').value;
+            serverUrl = document.getElementById('serverUrl').value;
+            
+            if (!username || !password || !serverUrl || !captcha || !captchaId) {
+                showResult('loginResult', '请填写完整的登录信息和验证码', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${serverUrl}/base/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password,
+                        captcha: captcha,
+                        captchaId: captchaId
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.code === 0) {
+                    apiJWT = data.data.token;
+                    showResult('loginResult', '✅ 登录成功！', 'success');
+                    
+                    // 显示API JWT信息
+                    document.getElementById('apiToken').textContent = apiJWT;
+                    document.getElementById('userId').textContent = data.data.user.uuid || 'N/A';
+                    document.getElementById('apiClientId').textContent = 'API会话ID';
+                    document.getElementById('apiExpiresIn').textContent = data.data.expiresAt || 'N/A';
+                    document.getElementById('apiJwtInfo').style.display = 'block';
+                    
+                    // 启用下一步按钮
+                    document.getElementById('generateBtn').disabled = false;
+                } else {
+                    showResult('loginResult', `❌ 登录失败: ${data.msg}`, 'error');
+                }
+            } catch (error) {
+                showResult('loginResult', `❌ 请求失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 步骤2: 生成MQTT JWT
+        async function generateMQTTToken() {
+            const role = document.getElementById('role').value;
+            
+            if (!apiJWT) {
+                showResult('mqttTokenResult', '❌ 请先登录获取API JWT', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${serverUrl}/jwt/generateMQTTToken`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-token': apiJWT,
+                        'Authorization': `Bearer ${apiJWT}`
+                    },
+                    body: JSON.stringify({
+                        role: role
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.code === 0) {
+                    mqttJWT = data.data.token;
+                    currentMQTTClientID = data.data.client_id;
+                    
+                    showResult('mqttTokenResult', '✅ MQTT JWT生成成功！', 'success');
+                    
+                    // 显示MQTT JWT信息
+                    document.getElementById('mqttToken').textContent = mqttJWT;
+                    document.getElementById('mqttClientId').textContent = data.data.client_id;
+                    document.getElementById('mqttRole').textContent = data.data.role;
+                    document.getElementById('mqttSequence').textContent = data.data.sequence;
+                    document.getElementById('mqttExpiresAt').textContent = new Date(data.data.expires_at * 1000).toLocaleString();
+                    document.getElementById('mqttJwtInfo').style.display = 'block';
+                    
+                                         // 启用解析和管理按钮
+                     document.getElementById('parseBtn').disabled = false;
+                     document.getElementById('mqttTestBtn').disabled = false;
+                     document.getElementById('getTokensBtn').disabled = false;
+                     document.getElementById('revokeBtn').disabled = false;
+                } else {
+                    showResult('mqttTokenResult', `❌ 生成失败: ${data.msg}`, 'error');
+                }
+            } catch (error) {
+                showResult('mqttTokenResult', `❌ 请求失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 步骤3: 解析JWT
+        function parseJWT() {
+            if (!mqttJWT) {
+                showResult('jwtParseResult', '❌ 请先生成MQTT JWT', 'error');
+                return;
+            }
+
+            try {
+                // 解析JWT (注意：这只是前端解析，不验证签名)
+                const parts = mqttJWT.split('.');
+                if (parts.length !== 3) {
+                    throw new Error('无效的JWT格式');
+                }
+
+                const header = JSON.parse(atob(parts[0]));
+                const payload = JSON.parse(atob(parts[1]));
+
+                showResult('jwtParseResult', '✅ JWT解析成功！', 'success');
+
+                // 显示完整payload
+                document.getElementById('jwtPayload').textContent = JSON.stringify(payload, null, 2);
+
+                // 填充详细字段
+                document.getElementById('payload_user_id').textContent = payload.user_id || 'N/A';
+                document.getElementById('payload_username').textContent = payload.username || 'N/A';
+                document.getElementById('payload_role').textContent = payload.role || 'N/A';
+                document.getElementById('payload_client_id').textContent = payload.client_id || 'N/A';
+                document.getElementById('payload_sequence').textContent = payload.sequence || 'N/A';
+                document.getElementById('payload_jti').textContent = payload.jti || 'N/A';
+                document.getElementById('payload_iss').textContent = payload.iss || 'N/A';
+                document.getElementById('payload_aud').textContent = JSON.stringify(payload.aud) || 'N/A';
+                document.getElementById('payload_exp').textContent = payload.exp ? new Date(payload.exp * 1000).toLocaleString() : 'N/A';
+                document.getElementById('payload_nbf').textContent = payload.nbf ? new Date(payload.nbf * 1000).toLocaleString() : 'N/A';
+                document.getElementById('payload_iat').textContent = payload.iat ? new Date(payload.iat * 1000).toLocaleString() : 'N/A';
+
+                document.getElementById('jwtPayloadInfo').style.display = 'block';
+
+                // 显示MQTT连接信息
+                showMQTTConnectionInfo(payload);
+
+            } catch (error) {
+                showResult('jwtParseResult', `❌ 解析失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 显示MQTT连接信息
+        function showMQTTConnectionInfo(payload) {
+            document.getElementById('conn_client_id').textContent = payload.client_id;
+            document.getElementById('conn_username').textContent = payload.client_id;
+            document.getElementById('conn_password').textContent = mqttJWT;
+
+            // 生成连接示例代码
+            const codeExample = `// MQTT连接示例代码
+const mqtt = require('mqtt');
+
+const options = {
+    clientId: '${payload.client_id}',     // MQTT ClientID
+    username: '${payload.client_id}',     // Username (使用ClientID)
+    password: '${mqttJWT.substring(0, 50)}...', // Password (MQTT JWT)
+    clean: true,                          // Clean Session
+    protocolVersion: 5                    // MQTT v5
+};
+
+const client = mqtt.connect('mqtts://your-emqx-broker.com:8883', options);
+
+client.on('connect', () => {
+    console.log('✅ MQTT连接成功!');
+    console.log('角色:', '${payload.role}');
+    console.log('ClientID:', '${payload.client_id}');
+    
+    // 发布上线状态
+    client.publish('client/${payload.client_id}/status', JSON.stringify({
+        online: true,
+        timestamp: new Date().toISOString(),
+        role: '${payload.role}'
+    }));
+});
+
+client.on('error', (err) => {
+    console.error('❌ MQTT连接失败:', err);
+});`;
+
+            document.getElementById('mqttCodeExample').textContent = codeExample;
+            document.getElementById('mqttConnectionInfo').style.display = 'block';
+        }
+
+        // 获取用户所有MQTT Token
+        async function getUserMQTTTokens() {
+            if (!apiJWT) {
+                showResult('managementResult', '❌ 请先登录', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${serverUrl}/jwt/getUserMQTTTokens`, {
+                    method: 'GET',
+                    headers: {
+                        'x-token': apiJWT,
+                        'Authorization': `Bearer ${apiJWT}`
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (data.code === 0) {
+                    let result = '✅ 获取成功！用户活跃的MQTT连接:\\n\\n';
+                    if (data.data && data.data.length > 0) {
+                        data.data.forEach((token, index) => {
+                            result += `${index + 1}. ClientID: ${token.client_id}\\n`;
+                            result += `   角色: ${token.role}\\n`;
+                            result += `   创建时间: ${token.created_at}\\n`;
+                            result += `   JTI: ${token.jti}\\n\\n`;
+                        });
+                    } else {
+                        result += '暂无活跃的MQTT连接';
+                    }
+                    showResult('managementResult', result, 'success');
+                } else {
+                    showResult('managementResult', `❌ 获取失败: ${data.msg}`, 'error');
+                }
+            } catch (error) {
+                showResult('managementResult', `❌ 请求失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 撤销MQTT Token
+        async function revokeMQTTToken() {
+            if (!apiJWT || !currentMQTTClientID) {
+                showResult('managementResult', '❌ 请先生成MQTT JWT', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${serverUrl}/jwt/revokeMQTTToken`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-token': apiJWT,
+                        'Authorization': `Bearer ${apiJWT}`
+                    },
+                    body: JSON.stringify({
+                        client_id: currentMQTTClientID
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.code === 0) {
+                    showResult('managementResult', `✅ 撤销成功！ClientID: ${currentMQTTClientID}`, 'success');
+                } else {
+                    showResult('managementResult', `❌ 撤销失败: ${data.msg}`, 'error');
+                }
+            } catch (error) {
+                showResult('managementResult', `❌ 请求失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 显示结果的辅助函数
+        function showResult(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+                 // MQTT连接测试
+         async function testMQTTConnection() {
+             if (!mqttJWT || !currentMQTTClientID) {
+                 showResult('mqttTestResult', '❌ 请先生成MQTT JWT', 'error');
+                 return;
+             }
+
+             const brokerUrl = document.getElementById('mqttBrokerUrl').value;
+             if (!brokerUrl) {
+                 showResult('mqttTestResult', '❌ 请填写MQTT Broker地址', 'error');
+                 return;
+             }
+
+             try {
+                 // 解析JWT获取payload
+                 const payload = JSON.parse(atob(mqttJWT.split('.')[1]));
+                 
+                 showResult('mqttTestResult', '🔄 正在连接MQTT Broker...', 'success');
+
+                 const options = {
+                     clientId: currentMQTTClientID,
+                     username: currentMQTTClientID,
+                     password: mqttJWT,
+                     clean: true,
+                     connectTimeout: 10000,
+                     reconnectPeriod: 0 // 禁用自动重连，便于测试
+                 };
+
+                 mqttClient = mqtt.connect(brokerUrl, options);
+
+                 mqttClient.on('connect', () => {
+                     showResult('mqttTestResult', '✅ MQTT连接成功！', 'success');
+                     document.getElementById('connectionStatus').textContent = '在线';
+                     document.getElementById('connectionStatus').className = 'status online';
+                     document.getElementById('mqttStatus').style.display = 'block';
+                     document.getElementById('mqttDisconnectBtn').disabled = false;
+                     
+                     // 设置默认测试主题
+                     document.getElementById('testTopic').value = `client/${currentMQTTClientID}/test`;
+                     document.getElementById('testMessage').value = JSON.stringify({
+                         message: "Hello MQTT!",
+                         timestamp: new Date().toISOString(),
+                         role: payload.role,
+                         clientId: currentMQTTClientID
+                     }, null, 2);
+
+                     // 订阅一些测试主题
+                     mqttClient.subscribe(`client/${currentMQTTClientID}/+`);
+                     mqttClient.subscribe(`broadcast/+`);
+                     
+                     addReceivedMessage(`✅ 连接成功! 角色: ${payload.role}, ClientID: ${currentMQTTClientID}`);
+                 });
+
+                 mqttClient.on('error', (error) => {
+                     showResult('mqttTestResult', `❌ MQTT连接失败: ${error.message}`, 'error');
+                     document.getElementById('connectionStatus').textContent = '离线';
+                     document.getElementById('connectionStatus').className = 'status offline';
+                 });
+
+                 mqttClient.on('close', () => {
+                     showResult('mqttTestResult', '🔌 MQTT连接已断开', 'success');
+                     document.getElementById('connectionStatus').textContent = '离线';
+                     document.getElementById('connectionStatus').className = 'status offline';
+                     document.getElementById('mqttDisconnectBtn').disabled = true;
+                 });
+
+                 mqttClient.on('message', (topic, message) => {
+                     try {
+                         const messageStr = message.toString();
+                         addReceivedMessage(`📨 [${topic}] ${messageStr}`);
+                     } catch (error) {
+                         addReceivedMessage(`📨 [${topic}] ${message.toString()}`);
+                     }
+                 });
+
+             } catch (error) {
+                 showResult('mqttTestResult', `❌ 连接失败: ${error.message}`, 'error');
+             }
+         }
+
+         // 断开MQTT连接
+         function disconnectMQTT() {
+             if (mqttClient) {
+                 mqttClient.end();
+                 mqttClient = null;
+                 document.getElementById('mqttStatus').style.display = 'none';
+             }
+         }
+
+         // 发布消息
+         function publishMessage() {
+             if (!mqttClient || !mqttClient.connected) {
+                 alert('❌ MQTT未连接');
+                 return;
+             }
+
+             const topic = document.getElementById('testTopic').value;
+             const message = document.getElementById('testMessage').value;
+
+             if (!topic || !message) {
+                 alert('❌ 请填写主题和消息内容');
+                 return;
+             }
+
+             try {
+                 mqttClient.publish(topic, message);
+                 addReceivedMessage(`📤 发布消息到 [${topic}]: ${message}`);
+             } catch (error) {
+                 addReceivedMessage(`❌ 发布失败: ${error.message}`);
+             }
+         }
+
+         // 添加接收到的消息
+         function addReceivedMessage(message) {
+             receivedMessageCount++;
+             const messagesDiv = document.getElementById('receivedMessages');
+             const timestamp = new Date().toLocaleTimeString();
+             messagesDiv.innerHTML += `[${timestamp}] ${message}\n`;
+             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+         }
+
+         // 页面加载完成后的初始化
+         document.addEventListener('DOMContentLoaded', function() {
+             console.log('🔐 MQTT JWT 测试页面已加载');
+             console.log('请按照步骤1→2→3→4→5→6的顺序进行测试');
+             
+             // 页面加载时获取验证码
+             setTimeout(getCaptcha, 500);
+         });
+    </script>
+</body>
+</html> 

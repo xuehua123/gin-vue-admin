@@ -15,5 +15,9 @@ func initBizRouter(routers ...*gin.RouterGroup) {
 	privateGroup := routers[0]
 	publicGroup := routers[1]
 
+	// NFC Relay 路由初始化
+	nfcRelayRouter := router.RouterGroupApp.NFCRelay
+	nfcRelayRouter.InitNFCTransactionRouter(privateGroup, publicGroup)
+
 	holder(publicGroup, privateGroup)
 }

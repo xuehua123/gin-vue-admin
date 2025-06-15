@@ -2620,6 +2620,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/deviceLog/getDeviceLogStats": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DeviceLog"
+                ],
+                "summary": "获取设备日志统计",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户ID",
+                        "name": "userId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "获取设备日志统计",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.DeviceLogStats"
+                                        },
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/deviceLog/getDeviceLogsList": {
             "post": {
                 "security": [
@@ -3648,6 +3698,98 @@ const docTemplate = `{
                 }
             }
         },
+        "/jwt/generateMQTTToken": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jwt"
+                ],
+                "summary": "生成MQTT专用JWT Token",
+                "parameters": [
+                    {
+                        "description": "角色和其他信息",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.MQTTTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "生成成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.MQTTTokenResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/jwt/getUserMQTTTokens": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jwt"
+                ],
+                "summary": "获取用户的所有活跃MQTT Token",
+                "responses": {
+                    "200": {
+                        "description": "获取成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/response.MQTTTokenInfo"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/jwt/jsonInBlacklist": {
             "post": {
                 "security": [
@@ -3664,10 +3806,60 @@ const docTemplate = `{
                 "tags": [
                     "Jwt"
                 ],
-                "summary": "jwt加入黑名单",
+                "summary": "jwt加入黑名单(登出，废弃)",
                 "responses": {
                     "200": {
-                        "description": "jwt加入黑名单",
+                        "description": "拉黑成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/jwt/revokeMQTTToken": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jwt"
+                ],
+                "summary": "撤销MQTT JWT Token",
+                "parameters": [
+                    {
+                        "description": "要撤销的ClientID",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.RevokeMQTTTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "撤销成功",
                         "schema": {
                             "allOf": [
                                 {
@@ -4142,6 +4334,670 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "分页获取交易列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "获取交易列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "mifare_classic",
+                        "description": "卡片类型",
+                        "name": "card_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "",
+                        "description": "创建用户ID",
+                        "name": "created_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2024-01-02 00:00:00",
+                        "description": "结束时间",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "支付",
+                        "description": "搜索关键词",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "desc",
+                        "description": "排序方向(asc/desc)",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "created_at",
+                        "description": "排序",
+                        "name": "order_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页大小",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "user-receiver-001",
+                        "description": "收卡端客户端ID",
+                        "name": "receiver_client_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2024-01-01 00:00:00",
+                        "description": "时间范围",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "completed",
+                        "description": "交易状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "admin-transmitter-001",
+                        "description": "过滤条件",
+                        "name": "transmitter_client_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "获取成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.TransactionListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "创建新的NFC中继交易",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "创建NFC中继交易",
+                "parameters": [
+                    {
+                        "description": "创建交易请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.CreateTransactionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "创建成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.CreateTransactionResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/apdu": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "获取指定交易的APDU消息记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "获取APDU消息列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "to_receiver",
+                        "description": "消息方向",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2024-01-02 00:00:00",
+                        "description": "结束时间",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键字",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页大小",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "normal",
+                        "description": "优先级",
+                        "name": "priority",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2024-01-01 00:00:00",
+                        "description": "时间范围",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "sent",
+                        "description": "消息状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "txn_1234567890",
+                        "description": "交易ID",
+                        "name": "transaction_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "获取成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.APDUMessageListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "向指定客户端发送APDU消息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "发送APDU消息",
+                "parameters": [
+                    {
+                        "description": "APDU消息请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.SendAPDURequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "发送成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.SendAPDUResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/batch-update": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "批量更新多个交易的状态",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "批量更新交易状态",
+                "parameters": [
+                    {
+                        "description": "批量更新请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.BatchUpdateTransactionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.BatchOperationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/export": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "导出交易数据为Excel或CSV格式",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "导出交易数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "\"excel\"",
+                        "description": "导出格式(excel/csv)",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始日期(YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束日期(YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态筛选",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "导出成功",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/statistics": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "获取交易统计数据和图表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "获取统计信息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "mifare_classic",
+                        "description": "过滤条件",
+                        "name": "card_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2024-01-31",
+                        "description": "结束日期",
+                        "name": "end_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "day",
+                            "week",
+                            "month"
+                        ],
+                        "type": "string",
+                        "example": "day",
+                        "description": "分组方式",
+                        "name": "group_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2024-01-01",
+                        "description": "时间范围",
+                        "name": "start_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "completed",
+                        "description": "交易状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "获取成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.TransactionStatisticsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/status": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "更新NFC中继交易的状态",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "更新交易状态",
+                "parameters": [
+                    {
+                        "description": "更新状态请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.UpdateTransactionStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.UpdateTransactionStatusResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/{transaction_id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "根据交易ID获取详细信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "获取交易详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "交易ID",
+                        "name": "transaction_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "是否包含APDU消息",
+                        "name": "include_apdu",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "获取成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.TransactionDetailResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "删除指定的交易记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "删除交易",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "交易ID",
+                        "name": "transaction_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "是否强制删除",
+                        "name": "force",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
                         }
                     }
                 }
@@ -6987,6 +7843,55 @@ const docTemplate = `{
                 }
             }
         },
+        "config.MQTT": {
+            "type": "object",
+            "properties": {
+                "clean-session": {
+                    "description": "清除会话",
+                    "type": "boolean"
+                },
+                "client-id": {
+                    "description": "服务器端MQTT客户端ID",
+                    "type": "string"
+                },
+                "host": {
+                    "description": "MQTT Broker地址",
+                    "type": "string"
+                },
+                "keep-alive": {
+                    "description": "心跳间隔(秒)",
+                    "type": "integer"
+                },
+                "nfc-relay": {
+                    "description": "NFC中继相关配置",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.NFCRelayMQTT"
+                        }
+                    ]
+                },
+                "password": {
+                    "description": "MQTT密码",
+                    "type": "string"
+                },
+                "port": {
+                    "description": "MQTT Broker端口",
+                    "type": "integer"
+                },
+                "qos": {
+                    "description": "默认QoS级别",
+                    "type": "integer"
+                },
+                "use-tls": {
+                    "description": "是否使用TLS",
+                    "type": "boolean"
+                },
+                "username": {
+                    "description": "MQTT用户名",
+                    "type": "string"
+                }
+            }
+        },
         "config.Minio": {
             "type": "object",
             "properties": {
@@ -7194,6 +8099,51 @@ const docTemplate = `{
                 },
                 "username": {
                     "description": "数据库账号",
+                    "type": "string"
+                }
+            }
+        },
+        "config.NFCRelayMQTT": {
+            "type": "object",
+            "properties": {
+                "enable-metrics": {
+                    "description": "监控配置",
+                    "type": "boolean"
+                },
+                "enable-permission-control": {
+                    "description": "权限控制",
+                    "type": "boolean"
+                },
+                "heartbeat-interval": {
+                    "description": "心跳配置",
+                    "type": "integer"
+                },
+                "heartbeat-timeout": {
+                    "description": "心跳超时(秒)",
+                    "type": "integer"
+                },
+                "max-message-size": {
+                    "description": "最大消息大小(字节)",
+                    "type": "integer"
+                },
+                "message-timeout": {
+                    "description": "消息配置",
+                    "type": "integer"
+                },
+                "metrics-interval": {
+                    "description": "指标收集间隔(秒)",
+                    "type": "integer"
+                },
+                "retry-attempts": {
+                    "description": "重试次数",
+                    "type": "integer"
+                },
+                "retry-interval": {
+                    "description": "重试间隔(秒)",
+                    "type": "integer"
+                },
+                "topic-prefix": {
+                    "description": "主题前缀",
                     "type": "string"
                 }
             }
@@ -7455,6 +8405,14 @@ const docTemplate = `{
                 },
                 "mongo": {
                     "$ref": "#/definitions/config.Mongo"
+                },
+                "mqtt": {
+                    "description": "MQTT配置",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.MQTT"
+                        }
+                    ]
                 },
                 "mssql": {
                     "$ref": "#/definitions/config.Mssql"
@@ -7970,6 +8928,65 @@ const docTemplate = `{
                 }
             }
         },
+        "nfc_relay.NFCAPDUMessage": {
+            "type": "object",
+            "properties": {
+                "ID": {
+                    "description": "主键ID",
+                    "type": "integer"
+                },
+                "apdu_hex": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "description": "创建时间",
+                    "type": "string"
+                },
+                "direction": {
+                    "description": "消息信息",
+                    "type": "string"
+                },
+                "error_msg": {
+                    "type": "string"
+                },
+                "message_type": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "扩展信息",
+                    "type": "object"
+                },
+                "priority": {
+                    "description": "优先级和类型",
+                    "type": "string"
+                },
+                "received_at": {
+                    "type": "string"
+                },
+                "response_time_ms": {
+                    "type": "integer"
+                },
+                "sent_at": {
+                    "description": "时间信息",
+                    "type": "string"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "状态信息",
+                    "type": "string"
+                },
+                "transaction_id": {
+                    "description": "关联信息",
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "description": "更新时间",
+                    "type": "string"
+                }
+            }
+        },
         "request.AddMenuAuthorityInfo": {
             "type": "object",
             "properties": {
@@ -8257,6 +9274,49 @@ const docTemplate = `{
                 }
             }
         },
+        "request.BatchUpdateTransactionRequest": {
+            "type": "object",
+            "required": [
+                "status",
+                "transaction_ids"
+            ],
+            "properties": {
+                "metadata": {
+                    "description": "扩展元数据",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "description": "操作原因",
+                    "type": "string",
+                    "maxLength": 100,
+                    "example": "批量操作"
+                },
+                "status": {
+                    "description": "新状态(仅支持取消和超时)",
+                    "type": "string",
+                    "enum": [
+                        "cancelled",
+                        "timeout"
+                    ],
+                    "example": "cancelled"
+                },
+                "transaction_ids": {
+                    "description": "交易ID列表",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "[\"txn_1\"",
+                        "\"txn_2\"]"
+                    ]
+                }
+            }
+        },
         "request.CasbinInReceive": {
             "type": "object",
             "properties": {
@@ -8295,6 +9355,61 @@ const docTemplate = `{
                 "password": {
                     "description": "密码",
                     "type": "string"
+                }
+            }
+        },
+        "request.CreateTransactionRequest": {
+            "type": "object",
+            "required": [
+                "receiver_client_id",
+                "transmitter_client_id"
+            ],
+            "properties": {
+                "card_type": {
+                    "description": "卡片类型",
+                    "type": "string",
+                    "maxLength": 50,
+                    "example": "mifare_classic"
+                },
+                "description": {
+                    "description": "交易描述",
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "业务卡片中继交易"
+                },
+                "metadata": {
+                    "description": "扩展元数据",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "receiver_client_id": {
+                    "description": "收卡端客户端ID",
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "example": "user-receiver-001"
+                },
+                "tags": {
+                    "description": "标签",
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "test,demo"
+                },
+                "timeout_seconds": {
+                    "description": "超时时间(秒) 30秒-1小时",
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 30,
+                    "example": 120
+                },
+                "transmitter_client_id": {
+                    "description": "传卡端客户端ID",
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "example": "admin-transmitter-001"
                 }
             }
         },
@@ -8353,12 +9468,15 @@ const docTemplate = `{
             ],
             "properties": {
                 "clientId": {
+                    "description": "客户端ID",
                     "type": "string"
                 },
                 "reason": {
+                    "description": "下线原因",
                     "type": "string"
                 },
                 "userId": {
+                    "description": "用户ID",
                     "type": "string"
                 }
             }
@@ -8385,12 +9503,15 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "clientId": {
+                    "description": "客户端ID筛选",
                     "type": "string"
                 },
                 "deviceModel": {
+                    "description": "设备型号筛选",
                     "type": "string"
                 },
                 "ipAddress": {
+                    "description": "IP地址筛选",
                     "type": "string"
                 },
                 "keyword": {
@@ -8398,13 +9519,15 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "loginTimeEnd": {
+                    "description": "登录时间结束",
                     "type": "string"
                 },
                 "loginTimeStart": {
+                    "description": "登录时间开始",
                     "type": "string"
                 },
                 "onlineOnly": {
-                    "description": "仅显示在线设备",
+                    "description": "只显示在线用户",
                     "type": "boolean"
                 },
                 "page": {
@@ -8416,6 +9539,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "userId": {
+                    "description": "用户ID筛选",
                     "type": "string"
                 }
             }
@@ -8525,6 +9649,18 @@ const docTemplate = `{
                 }
             }
         },
+        "request.MQTTTokenRequest": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "role": {
+                    "description": "角色：transmitter, receiver, admin",
+                    "type": "string"
+                }
+            }
+        },
         "request.PageInfo": {
             "type": "object",
             "properties": {
@@ -8583,6 +9719,18 @@ const docTemplate = `{
                 }
             }
         },
+        "request.RevokeMQTTTokenRequest": {
+            "type": "object",
+            "required": [
+                "client_id"
+            ],
+            "properties": {
+                "client_id": {
+                    "description": "要撤销的ClientID",
+                    "type": "string"
+                }
+            }
+        },
         "request.SearchApiParams": {
             "type": "object",
             "properties": {
@@ -8633,6 +9781,65 @@ const docTemplate = `{
                 "updatedAt": {
                     "description": "更新时间",
                     "type": "string"
+                }
+            }
+        },
+        "request.SendAPDURequest": {
+            "type": "object",
+            "required": [
+                "apdu_hex",
+                "direction",
+                "sequence_number",
+                "transaction_id"
+            ],
+            "properties": {
+                "apdu_hex": {
+                    "description": "APDU十六进制数据",
+                    "type": "string",
+                    "example": "00A4040008A000000003000000"
+                },
+                "direction": {
+                    "description": "消息方向",
+                    "type": "string",
+                    "enum": [
+                        "to_receiver",
+                        "to_transmitter"
+                    ],
+                    "example": "to_receiver"
+                },
+                "message_type": {
+                    "description": "消息类型",
+                    "type": "string",
+                    "maxLength": 20,
+                    "example": "select_application"
+                },
+                "metadata": {
+                    "description": "扩展元数据",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "priority": {
+                    "description": "优先级",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "normal",
+                        "low"
+                    ],
+                    "example": "normal"
+                },
+                "sequence_number": {
+                    "description": "序列号",
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                },
+                "transaction_id": {
+                    "description": "交易ID",
+                    "type": "string",
+                    "example": "txn_1234567890"
                 }
             }
         },
@@ -8719,6 +9926,355 @@ const docTemplate = `{
                 }
             }
         },
+        "request.UpdateTransactionStatusRequest": {
+            "type": "object",
+            "required": [
+                "status",
+                "transaction_id"
+            ],
+            "properties": {
+                "error_msg": {
+                    "description": "错误信息",
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": ""
+                },
+                "metadata": {
+                    "description": "扩展元数据",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "description": "状态变更原因",
+                    "type": "string",
+                    "maxLength": 100,
+                    "example": "用户操作"
+                },
+                "status": {
+                    "description": "新状态",
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "active",
+                        "processing",
+                        "completed",
+                        "failed",
+                        "cancelled",
+                        "timeout"
+                    ],
+                    "example": "active"
+                },
+                "transaction_id": {
+                    "description": "交易ID",
+                    "type": "string",
+                    "example": "txn_1234567890"
+                }
+            }
+        },
+        "response.APDUMessageItem": {
+            "type": "object",
+            "properties": {
+                "apdu_hex": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "error_msg": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "message_type": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "string"
+                },
+                "received_at": {
+                    "type": "string"
+                },
+                "response_time_ms": {
+                    "type": "integer"
+                },
+                "sent_at": {
+                    "type": "string"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "transaction_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.APDUMessageListResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "description": "消息列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.APDUMessageItem"
+                    }
+                },
+                "page": {
+                    "description": "当前页",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "description": "页大小",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "总数",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.BatchError": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "错误信息",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID",
+                    "type": "string"
+                }
+            }
+        },
+        "response.BatchOperationResponse": {
+            "type": "object",
+            "properties": {
+                "failure_count": {
+                    "description": "失败数量",
+                    "type": "integer"
+                },
+                "failure_errors": {
+                    "description": "失败错误列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.BatchError"
+                    }
+                },
+                "success_count": {
+                    "description": "成功数量",
+                    "type": "integer"
+                },
+                "success_ids": {
+                    "description": "成功的ID列表",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "total": {
+                    "description": "总数",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.ChartPoint": {
+            "type": "object",
+            "properties": {
+                "x": {
+                    "description": "X轴值(通常是时间)",
+                    "type": "string"
+                },
+                "y": {
+                    "description": "Y轴值",
+                    "type": "number"
+                }
+            }
+        },
+        "response.ClientErrorStats": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "description": "客户端ID",
+                    "type": "string"
+                },
+                "error_count": {
+                    "description": "错误数量",
+                    "type": "integer"
+                },
+                "error_rate": {
+                    "description": "错误率",
+                    "type": "number"
+                },
+                "role": {
+                    "description": "角色",
+                    "type": "string"
+                }
+            }
+        },
+        "response.ClientStatistics": {
+            "type": "object",
+            "properties": {
+                "avg_processing_ms": {
+                    "description": "平均处理时间",
+                    "type": "number"
+                },
+                "client_id": {
+                    "description": "客户端ID",
+                    "type": "string"
+                },
+                "last_active_at": {
+                    "description": "最后活跃时间",
+                    "type": "string"
+                },
+                "role": {
+                    "description": "角色",
+                    "type": "string"
+                },
+                "success_rate": {
+                    "description": "成功率",
+                    "type": "number"
+                },
+                "transaction_count": {
+                    "description": "交易数量",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.CommonError": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "出现次数",
+                    "type": "integer"
+                },
+                "description": {
+                    "description": "描述",
+                    "type": "string"
+                },
+                "error_type": {
+                    "description": "错误类型",
+                    "type": "string"
+                },
+                "percentage": {
+                    "description": "占比",
+                    "type": "number"
+                }
+            }
+        },
+        "response.CreateTransactionResponse": {
+            "type": "object",
+            "properties": {
+                "card_type": {
+                    "description": "卡片类型",
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "创建时间",
+                    "type": "string"
+                },
+                "expires_at": {
+                    "description": "过期时间",
+                    "type": "string"
+                },
+                "receiver_client_id": {
+                    "description": "收卡端客户端ID",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "交易状态",
+                    "type": "string"
+                },
+                "transaction_id": {
+                    "description": "交易ID",
+                    "type": "string"
+                },
+                "transmitter_client_id": {
+                    "description": "传卡端客户端ID",
+                    "type": "string"
+                }
+            }
+        },
+        "response.DailyStatistics": {
+            "type": "object",
+            "properties": {
+                "average_processing_ms": {
+                    "description": "平均处理时间",
+                    "type": "number"
+                },
+                "date": {
+                    "description": "日期",
+                    "type": "string"
+                },
+                "failed_transactions": {
+                    "description": "失败交易数",
+                    "type": "integer"
+                },
+                "success_rate": {
+                    "description": "成功率",
+                    "type": "number"
+                },
+                "successful_transactions": {
+                    "description": "成功交易数",
+                    "type": "integer"
+                },
+                "total_apdu_messages": {
+                    "description": "APDU消息数",
+                    "type": "integer"
+                },
+                "total_transactions": {
+                    "description": "总交易数",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.DateRange": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "description": "天数",
+                    "type": "integer"
+                },
+                "end_date": {
+                    "description": "结束日期",
+                    "type": "string"
+                },
+                "start_date": {
+                    "description": "开始日期",
+                    "type": "string"
+                }
+            }
+        },
+        "response.DeviceLogStats": {
+            "type": "object",
+            "properties": {
+                "avgSessionTime": {
+                    "type": "number"
+                },
+                "currentOnline": {
+                    "type": "integer"
+                },
+                "lastLoginTime": {
+                    "type": "string"
+                },
+                "mostUsedDevice": {
+                    "type": "string"
+                },
+                "totalLogins": {
+                    "type": "integer"
+                },
+                "uniqueDevices": {
+                    "type": "integer"
+                }
+            }
+        },
         "response.Email": {
             "type": "object",
             "properties": {
@@ -8733,6 +10289,40 @@ const docTemplate = `{
                 "to": {
                     "description": "邮件发送给谁",
                     "type": "string"
+                }
+            }
+        },
+        "response.ErrorAnalysis": {
+            "type": "object",
+            "properties": {
+                "common_errors": {
+                    "description": "常见错误",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.CommonError"
+                    }
+                },
+                "error_rate": {
+                    "description": "错误率",
+                    "type": "number"
+                },
+                "error_trend": {
+                    "description": "错误趋势",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.ChartPoint"
+                    }
+                },
+                "errors_by_client": {
+                    "description": "按客户端分组的错误",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.ClientErrorStats"
+                    }
+                },
+                "total_errors": {
+                    "description": "总错误数",
+                    "type": "integer"
                 }
             }
         },
@@ -8782,6 +10372,56 @@ const docTemplate = `{
                 }
             }
         },
+        "response.MQTTTokenInfo": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "description": "ClientID",
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "创建时间",
+                    "type": "string"
+                },
+                "jti": {
+                    "description": "JWT ID",
+                    "type": "string"
+                },
+                "role": {
+                    "description": "角色",
+                    "type": "string"
+                },
+                "username": {
+                    "description": "用户名",
+                    "type": "string"
+                }
+            }
+        },
+        "response.MQTTTokenResponse": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "description": "MQTT ClientID (username-role-sequence)",
+                    "type": "string"
+                },
+                "expires_at": {
+                    "description": "过期时间戳",
+                    "type": "integer"
+                },
+                "role": {
+                    "description": "角色",
+                    "type": "string"
+                },
+                "sequence": {
+                    "description": "序号",
+                    "type": "integer"
+                },
+                "token": {
+                    "description": "MQTT JWT Token",
+                    "type": "string"
+                }
+            }
+        },
         "response.PageResult": {
             "type": "object",
             "properties": {
@@ -8794,6 +10434,23 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "response.PieChartItem": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "数量",
+                    "type": "integer"
+                },
+                "name": {
+                    "description": "名称",
+                    "type": "string"
+                },
+                "value": {
+                    "description": "值",
+                    "type": "number"
                 }
             }
         },
@@ -8817,6 +10474,108 @@ const docTemplate = `{
                 "data": {},
                 "msg": {
                     "type": "string"
+                }
+            }
+        },
+        "response.SendAPDUResponse": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "消息方向",
+                    "type": "string"
+                },
+                "message_id": {
+                    "description": "消息ID",
+                    "type": "integer"
+                },
+                "sent_at": {
+                    "description": "发送时间",
+                    "type": "string"
+                },
+                "sequence_number": {
+                    "description": "序列号",
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "消息状态",
+                    "type": "string"
+                },
+                "transaction_id": {
+                    "description": "交易ID",
+                    "type": "string"
+                }
+            }
+        },
+        "response.StatisticsChartData": {
+            "type": "object",
+            "properties": {
+                "card_type_distribution": {
+                    "description": "卡片类型分布",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.PieChartItem"
+                    }
+                },
+                "response_time_trend": {
+                    "description": "响应时间趋势",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.ChartPoint"
+                    }
+                },
+                "status_distribution": {
+                    "description": "状态分布",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.PieChartItem"
+                    }
+                },
+                "success_rate_trend": {
+                    "description": "成功率趋势",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.ChartPoint"
+                    }
+                },
+                "transaction_trend": {
+                    "description": "交易趋势",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.ChartPoint"
+                    }
+                }
+            }
+        },
+        "response.StatisticsSummary": {
+            "type": "object",
+            "properties": {
+                "average_processing_ms": {
+                    "description": "平均处理时间",
+                    "type": "number"
+                },
+                "failed_transactions": {
+                    "description": "失败交易数",
+                    "type": "integer"
+                },
+                "success_rate": {
+                    "description": "成功率",
+                    "type": "number"
+                },
+                "successful_transactions": {
+                    "description": "成功交易数",
+                    "type": "integer"
+                },
+                "total_apdu_messages": {
+                    "description": "总APDU消息数",
+                    "type": "integer"
+                },
+                "total_processing_time_ms": {
+                    "description": "总处理时间",
+                    "type": "integer"
+                },
+                "total_transactions": {
+                    "description": "总交易数",
+                    "type": "integer"
                 }
             }
         },
@@ -8930,6 +10689,354 @@ const docTemplate = `{
             "properties": {
                 "user": {
                     "$ref": "#/definitions/system.SysUser"
+                }
+            }
+        },
+        "response.TransactionDetailResponse": {
+            "type": "object",
+            "properties": {
+                "ID": {
+                    "description": "主键ID",
+                    "type": "integer"
+                },
+                "apdu_count": {
+                    "description": "统计信息",
+                    "type": "integer"
+                },
+                "apdu_messages": {
+                    "description": "关联关系",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/nfc_relay.NFCAPDUMessage"
+                    }
+                },
+                "average_response_time_ms": {
+                    "type": "integer"
+                },
+                "card_type": {
+                    "description": "业务信息",
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "description": "创建时间",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "用户信息",
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end_reason": {
+                    "description": "结果信息",
+                    "type": "string"
+                },
+                "error_msg": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "扩展信息",
+                    "type": "object"
+                },
+                "receiver_client_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间信息",
+                    "type": "string"
+                },
+                "statistics": {
+                    "description": "扩展信息",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/response.TransactionStatistics"
+                        }
+                    ]
+                },
+                "status": {
+                    "description": "交易状态",
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "string"
+                },
+                "timeline": {
+                    "description": "时间线",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.TransactionEvent"
+                    }
+                },
+                "total_processing_time_ms": {
+                    "type": "integer"
+                },
+                "transaction_id": {
+                    "description": "基础信息",
+                    "type": "string"
+                },
+                "transmitter_client_id": {
+                    "description": "客户端信息",
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "description": "更新时间",
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.TransactionEvent": {
+            "type": "object",
+            "properties": {
+                "actor": {
+                    "description": "操作者",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "描述",
+                    "type": "string"
+                },
+                "event_type": {
+                    "description": "事件类型",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "扩展数据",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "timestamp": {
+                    "description": "时间戳",
+                    "type": "string"
+                }
+            }
+        },
+        "response.TransactionListItem": {
+            "type": "object",
+            "properties": {
+                "apdu_count": {
+                    "type": "integer"
+                },
+                "card_type": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end_reason": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "receiver_client_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "string"
+                },
+                "total_processing_time_ms": {
+                    "type": "integer"
+                },
+                "transaction_id": {
+                    "type": "string"
+                },
+                "transmitter_client_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.TransactionListResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "description": "交易列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.TransactionListItem"
+                    }
+                },
+                "page": {
+                    "description": "当前页",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "description": "页大小",
+                    "type": "integer"
+                },
+                "summary": {
+                    "description": "汇总信息",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/response.TransactionSummary"
+                        }
+                    ]
+                },
+                "total": {
+                    "description": "总数",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.TransactionStatistics": {
+            "type": "object",
+            "properties": {
+                "apdu_message_count": {
+                    "description": "APDU消息数量",
+                    "type": "integer"
+                },
+                "average_response_time_ms": {
+                    "description": "平均响应时间(毫秒)",
+                    "type": "number"
+                },
+                "error_count": {
+                    "description": "错误数量",
+                    "type": "integer"
+                },
+                "last_activity_at": {
+                    "description": "最后活动时间",
+                    "type": "string"
+                },
+                "success_rate": {
+                    "description": "成功率",
+                    "type": "number"
+                },
+                "total_processing_time_ms": {
+                    "description": "总处理时间(毫秒)",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.TransactionStatisticsResponse": {
+            "type": "object",
+            "properties": {
+                "chart_data": {
+                    "description": "图表数据",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/response.StatisticsChartData"
+                        }
+                    ]
+                },
+                "daily_stats": {
+                    "description": "每日统计",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.DailyStatistics"
+                    }
+                },
+                "date_range": {
+                    "description": "日期范围",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/response.DateRange"
+                        }
+                    ]
+                },
+                "error_analysis": {
+                    "description": "错误分析",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/response.ErrorAnalysis"
+                        }
+                    ]
+                },
+                "summary": {
+                    "description": "汇总数据",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/response.StatisticsSummary"
+                        }
+                    ]
+                },
+                "top_clients": {
+                    "description": "客户端统计",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.ClientStatistics"
+                    }
+                }
+            }
+        },
+        "response.TransactionSummary": {
+            "type": "object",
+            "properties": {
+                "active_count": {
+                    "description": "活跃数量",
+                    "type": "integer"
+                },
+                "average_processing_ms": {
+                    "description": "平均处理时间",
+                    "type": "number"
+                },
+                "completed_count": {
+                    "description": "已完成数量",
+                    "type": "integer"
+                },
+                "failed_count": {
+                    "description": "失败数量",
+                    "type": "integer"
+                },
+                "pending_count": {
+                    "description": "等待数量",
+                    "type": "integer"
+                },
+                "success_rate": {
+                    "description": "成功率",
+                    "type": "number"
+                },
+                "total_count": {
+                    "description": "总数量",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.UpdateTransactionStatusResponse": {
+            "type": "object",
+            "properties": {
+                "previous_status": {
+                    "description": "原状态",
+                    "type": "string"
+                },
+                "reason": {
+                    "description": "变更原因",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "新状态",
+                    "type": "string"
+                },
+                "transaction_id": {
+                    "description": "交易ID",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "description": "更新时间",
+                    "type": "string"
                 }
             }
         },

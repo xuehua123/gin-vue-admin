@@ -260,3 +260,25 @@ zap:
   show-line: true
   log-in-console: true
   retention-day: -1
+# MQTT配置
+mqtt:
+  host: 49.235.40.39
+  port: 8883
+  username: nfc_server
+  password: xuehua123
+  client-id: nfc-relay-server
+  qos: 1
+  keep-alive: 60
+  clean-session: true
+  use-tls: true
+  nfc-relay:
+    topic-prefix: nfc_relay
+    heartbeat-interval: 30
+    heartbeat-timeout: 60
+    message-timeout: 30
+    max-message-size: 4096
+    retry-attempts: 3
+    retry-interval: 5
+    enable-permission-control: true
+    enable-metrics: true
+    metrics-interval: 60

@@ -37,4 +37,7 @@ type Server struct {
 
 	// MCP配置
 	MCP MCP `mapstructure:"mcp" json:"mcp" yaml:"mcp"`
+
+	// MQTT配置
+	MQTT MQTT `mapstructure:"mqtt" json:"mqtt" yaml:"mqtt"`
 }

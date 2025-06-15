@@ -16,4 +16,9 @@ var (
 	OldAuthorityVerify     = Rules{"OldAuthorityId": {NotEmpty()}}
 	ChangePasswordVerify   = Rules{"Password": {NotEmpty()}, "NewPassword": {NotEmpty()}}
 	SetUserAuthorityVerify = Rules{"AuthorityId": {NotEmpty()}}
+
+	// NFC中继相关验证规则
+	CreateTransactionVerify       = Rules{"TransmitterClientID": {NotEmpty()}, "ReceiverClientID": {NotEmpty()}}
+	UpdateTransactionStatusVerify = Rules{"TransactionID": {NotEmpty()}, "Status": {NotEmpty()}}
+	SendAPDUVerify                = Rules{"TransactionID": {NotEmpty()}, "Direction": {NotEmpty()}, "APDUHex": {NotEmpty()}, "SequenceNumber": {NotEmpty()}}
 )

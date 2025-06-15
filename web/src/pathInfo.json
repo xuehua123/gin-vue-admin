@@ -37,6 +37,8 @@
   "/src/view/layout/setting/title.vue": "layoutSettingTitle",
   "/src/view/layout/tabs/index.vue": "HistoryComponent",
   "/src/view/login/index.vue": "Login",
+  "/src/view/nfcRelay/transaction/monitor.vue": "Monitor",
+  "/src/view/nfcRelay/transaction/TransactionDetail.vue": "TransactionDetail",
   "/src/view/person/person.vue": "Person",
   "/src/view/routerHolder.vue": "RouterHolder",
   "/src/view/superAdmin/api/api.vue": "Api",

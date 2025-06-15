@@ -5,6 +5,7 @@ import (
 
 	adapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/example"
+	"github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay"
 	sysModel "github.com/flipped-aurora/gin-vue-admin/server/model/system"
 	"github.com/flipped-aurora/gin-vue-admin/server/plugin/announcement/model"
 	"github.com/flipped-aurora/gin-vue-admin/server/service/system"
@@ -65,6 +66,11 @@ func (e *ensureTables) MigrateTable(ctx context.Context) (context.Context, error
 		example.ExaAttachmentCategory{},
 
 		model.Info{},
+
+		// NFC Relay 相关表
+		nfc_relay.NFCTransaction{},
+		nfc_relay.NFCAPDUMessage{},
+		nfc_relay.NFCTransactionStatistics{},
 	}
 	for _, t := range tables {
 		_ = db.AutoMigrate(&t)
@@ -107,6 +113,11 @@ func (e *ensureTables) TableCreated(ctx context.Context) bool {
 		example.ExaAttachmentCategory{},
 
 		model.Info{},
+
+		// NFC Relay 相关表
+		nfc_relay.NFCTransaction{},
+		nfc_relay.NFCAPDUMessage{},
+		nfc_relay.NFCTransactionStatistics{},
 	}
 	yes := true
 	for _, t := range tables {

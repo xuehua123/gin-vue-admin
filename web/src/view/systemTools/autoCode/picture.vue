@@ -19,12 +19,12 @@
         <div class="mb-3">
           <div class="text-base font-medium mb-2">页面用途</div>
           <el-radio-group v-model="pageType" class="mb-2" @change="handlePageTypeChange">
-            <el-radio label="企业官网">企业官网</el-radio>
-            <el-radio label="电商页面">电商页面</el-radio>
-            <el-radio label="个人博客">个人博客</el-radio>
-            <el-radio label="产品介绍">产品介绍</el-radio>
-            <el-radio label="活动落地页">活动落地页</el-radio>
-            <el-radio label="其他">其他</el-radio>
+            <el-radio value="企业官网">企业官网</el-radio>
+            <el-radio value="电商页面">电商页面</el-radio>
+            <el-radio value="个人博客">个人博客</el-radio>
+            <el-radio value="产品介绍">产品介绍</el-radio>
+            <el-radio value="活动落地页">活动落地页</el-radio>
+            <el-radio value="其他">其他</el-radio>
           </el-radio-group>
           <el-input v-if="pageType === '其他'" v-model="pageTypeCustom" placeholder="请输入页面用途" class="w-full" />
         </div>
@@ -59,14 +59,14 @@
         <div class="mb-3">
           <div class="text-base font-medium mb-2">风格偏好</div>
           <el-radio-group v-model="stylePreference" class="mb-2">
-            <el-radio label="简约">简约</el-radio>
-            <el-radio label="科技感">科技感</el-radio>
-            <el-radio label="温馨">温馨</el-radio>
-            <el-radio label="专业">专业</el-radio>
-            <el-radio label="创意">创意</el-radio>
-            <el-radio label="复古">复古</el-radio>
-            <el-radio label="奢华">奢华</el-radio>
-            <el-radio label="其他">其他</el-radio>
+            <el-radio value="简约">简约</el-radio>
+            <el-radio value="科技感">科技感</el-radio>
+            <el-radio value="温馨">温馨</el-radio>
+            <el-radio value="专业">专业</el-radio>
+            <el-radio value="创意">创意</el-radio>
+            <el-radio value="复古">复古</el-radio>
+            <el-radio value="奢华">奢华</el-radio>
+            <el-radio value="其他">其他</el-radio>
           </el-radio-group>
           <el-input v-if="stylePreference === '其他'" v-model="stylePreferenceCustom" placeholder="请输入风格偏好" class="w-full" />
         </div>
@@ -74,19 +74,19 @@
         <div class="mb-3">
           <div class="text-base font-medium mb-2">设计布局</div>
           <el-radio-group v-model="layoutDesign" class="mb-2">
-            <el-radio label="单栏布局">单栏布局</el-radio>
-            <el-radio label="双栏布局">双栏布局</el-radio>
-            <el-radio label="三栏布局">三栏布局</el-radio>
-            <el-radio label="网格布局">网格布局</el-radio>
-            <el-radio label="画廊布局">画廊布局</el-radio>
-            <el-radio label="瀑布流">瀑布流</el-radio>
-            <el-radio label="卡片式">卡片式</el-radio>
-            <el-radio label="侧边栏+内容布局">侧边栏+内容布局</el-radio>
-            <el-radio label="分屏布局">分屏布局</el-radio>
-            <el-radio label="全屏滚动布局">全屏滚动布局</el-radio>
-            <el-radio label="混合布局">混合布局</el-radio>
-            <el-radio label="响应式">响应式</el-radio>
-            <el-radio label="其他">其他</el-radio>
+            <el-radio value="单栏布局">单栏布局</el-radio>
+            <el-radio value="双栏布局">双栏布局</el-radio>
+            <el-radio value="三栏布局">三栏布局</el-radio>
+            <el-radio value="网格布局">网格布局</el-radio>
+            <el-radio value="画廊布局">画廊布局</el-radio>
+            <el-radio value="瀑布流">瀑布流</el-radio>
+            <el-radio value="卡片式">卡片式</el-radio>
+            <el-radio value="侧边栏+内容布局">侧边栏+内容布局</el-radio>
+            <el-radio value="分屏布局">分屏布局</el-radio>
+            <el-radio value="全屏滚动布局">全屏滚动布局</el-radio>
+            <el-radio value="混合布局">混合布局</el-radio>
+            <el-radio value="响应式">响应式</el-radio>
+            <el-radio value="其他">其他</el-radio>
           </el-radio-group>
           <el-input v-if="layoutDesign === '其他'" v-model="layoutDesignCustom" placeholder="请输入设计布局" class="w-full" />
         </div>
@@ -94,14 +94,14 @@
         <div class="mb-3">
           <div class="text-base font-medium mb-2">配色方案</div>
           <el-radio-group v-model="colorScheme" class="mb-2">
-            <el-radio label="蓝色系">蓝色系</el-radio>
-            <el-radio label="绿色系">绿色系</el-radio>
-            <el-radio label="红色系">红色系</el-radio>
-            <el-radio label="黑白灰">黑白灰</el-radio>
-            <el-radio label="纯黑白">纯黑白</el-radio>
-            <el-radio label="暖色调">暖色调</el-radio>
-            <el-radio label="冷色调">冷色调</el-radio>
-            <el-radio label="其他">其他</el-radio>
+            <el-radio value="蓝色系">蓝色系</el-radio>
+            <el-radio value="绿色系">绿色系</el-radio>
+            <el-radio value="红色系">红色系</el-radio>
+            <el-radio value="黑白灰">黑白灰</el-radio>
+            <el-radio value="纯黑白">纯黑白</el-radio>
+            <el-radio value="暖色调">暖色调</el-radio>
+            <el-radio value="冷色调">冷色调</el-radio>
+            <el-radio value="其他">其他</el-radio>
           </el-radio-group>
           <el-input v-if="colorScheme === '其他'" v-model="colorSchemeCustom" placeholder="请输入配色方案" class="w-full" />
         </div>

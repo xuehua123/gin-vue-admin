@@ -22,7 +22,15 @@ import (
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 获取token
-		token := utils.GetToken(c)
+		token := c.Request.Header.Get("x-token")
+		if token == "" {
+			// 兼容websocket的token认证
+			token = c.Query("token")
+			if token == "" {
+				token, _ = c.Cookie("x-token")
+			}
+		}
+
 		if token == "" {
 			response.NoAuth("未登录或非法访问", c)
 			c.Abort()
