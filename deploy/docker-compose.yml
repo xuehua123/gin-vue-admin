@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: gva-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Gva123456!
+      MYSQL_DATABASE: gin_vue_admin
+      MYSQL_USER: gva_user
+      MYSQL_PASSWORD: Gva123456!
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - gva-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: gva-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --requirepass Gva123456!
+    networks:
+      - gva-network
+
+  # 后端服务 - 直接构建
+  backend:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    container_name: gva-backend
+    restart: unless-stopped
+    environment:
+      GVA_DB_TYPE: mysql
+      GVA_DB_HOST: mysql
+      GVA_DB_PORT: 3306
+      GVA_DB_NAME: gin_vue_admin
+      GVA_DB_USERNAME: gva_user
+      GVA_DB_PASSWORD: Gva123456!
+      GVA_REDIS_ADDR: redis:6379
+      GVA_REDIS_PASSWORD: Gva123456!
+      GVA_JWT_SIGNING_KEY: gin-vue-admin-secret-key-2024
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./uploads:/go/src/github.com/flipped-aurora/gin-vue-admin/server/uploads
+      - ./logs:/go/src/github.com/flipped-aurora/gin-vue-admin/server/log
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - gva-network
+
+  # 前端服务 - 直接构建
+  frontend:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    container_name: gva-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - gva-network
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  gva-network:
+    driver: bridge 
