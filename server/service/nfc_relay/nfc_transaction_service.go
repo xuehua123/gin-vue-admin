@@ -21,64 +21,66 @@ import (
 
 type NFCTransactionService struct{}
 
-// CreateTransaction 鍒涘缓浜ゆ槗
+// CreateTransaction 创建交易
 func (s *NFCTransactionService) CreateTransaction(ctx context.Context, req *request.CreateTransactionRequest, userID uuid.UUID) (*response.CreateTransactionResponse, error) {
-	// 鐢熸垚浜ゆ槗ID
+	// 生成交易ID
 	transactionID, err := s.generateTransactionID()
 	if err != nil {
-		global.GVA_LOG.Error("鐢熸垚浜ゆ槗ID澶辫触", zap.Error(err))
-		return nil, fmt.Errorf("鐢熸垚浜ゆ槗ID澶辫触: %w", err)
+		global.GVA_LOG.Error("生成交易ID失败", zap.Error(err))
+		return nil, fmt.Errorf("生成交易ID失败: %w", err)
 	}
 
-	// 妫€鏌ョ敤鎴锋槸鍚︽湁娲昏穬浜ゆ槗锛堝苟鍙戞帶鍒讹級
+	// 检查用户是否有活跃交易（并发控制）
 	lockKey := fmt.Sprintf("user_transaction:%s", userID.String())
 	locked, err := s.acquireUserLock(ctx, lockKey, 10*time.Second)
 	if err != nil {
-		global.GVA_LOG.Error("鑾峰彇鐢ㄦ埛閿佸け璐?, zap.String("userID", userID.String()), zap.Error(err))
-		return nil, fmt.Errorf("绯荤粺绻佸繖锛岃绋嶅悗閲嶈瘯")
+		global.GVA_LOG.Error("获取用户锁失败", zap.String("userID", userID.String()), zap.Error(err))
+		return nil, fmt.Errorf("系统繁忙，请稍后重试")
 	}
 	if !locked {
-		return nil, fmt.Errorf("鎮ㄥ凡鏈夋椿璺冧氦鏄擄紝鏃犳硶鍒涘缓鏂颁氦鏄?)
+		return nil, fmt.Errorf("您已有活跃交易，无法创建新交易")
 	}
 	defer s.releaseUserLock(ctx, lockKey)
 
-	// 楠岃瘉瀹㈡埛绔槸鍚﹀湪绾?	transmitterOnline, err := s.isClientOnline(ctx, req.TransmitterClientID)
+	// 验证客户端是否在线
+	transmitterOnline, err := s.isClientOnline(ctx, req.TransmitterClientID)
 	if err != nil {
-		global.GVA_LOG.Error("妫€鏌ヤ紶鍗＄鐘舵€佸け璐?, zap.String("clientID", req.TransmitterClientID), zap.Error(err))
-		return nil, fmt.Errorf("妫€鏌ヤ紶鍗＄鐘舵€佸け璐?)
+		global.GVA_LOG.Error("检查传卡端状态失败", zap.String("clientID", req.TransmitterClientID), zap.Error(err))
+		return nil, fmt.Errorf("检查传卡端状态失败")
 	}
 
 	receiverOnline, err := s.isClientOnline(ctx, req.ReceiverClientID)
 	if err != nil {
-		global.GVA_LOG.Error("妫€鏌ユ敹鍗＄鐘舵€佸け璐?, zap.String("clientID", req.ReceiverClientID), zap.Error(err))
-		return nil, fmt.Errorf("妫€鏌ユ敹鍗＄鐘舵€佸け璐?)
+		global.GVA_LOG.Error("检查收卡端状态失败", zap.String("clientID", req.ReceiverClientID), zap.Error(err))
+		return nil, fmt.Errorf("检查收卡端状态失败")
 	}
 
 	if !transmitterOnline {
-		return nil, fmt.Errorf("浼犲崱绔?%s 涓嶅湪绾?, req.TransmitterClientID)
+		return nil, fmt.Errorf("传卡端 %s 不在线", req.TransmitterClientID)
 	}
 	if !receiverOnline {
-		return nil, fmt.Errorf("鏀跺崱绔?%s 涓嶅湪绾?, req.ReceiverClientID)
+		return nil, fmt.Errorf("收卡端 %s 不在线", req.ReceiverClientID)
 	}
 
-	// 澶勭悊鍏冩暟鎹?	var metadata datatypes.JSON
+	// 处理元数据
+	var metadata datatypes.JSON
 	if req.Metadata != nil {
 		metadataBytes, err := json.Marshal(req.Metadata)
 		if err != nil {
-			global.GVA_LOG.Error("搴忓垪鍖栧厓鏁版嵁澶辫触", zap.Error(err))
-			return nil, fmt.Errorf("鍏冩暟鎹牸寮忛敊璇?)
+			global.GVA_LOG.Error("序列化元数据失败", zap.Error(err))
+			return nil, fmt.Errorf("元数据格式错误")
 		}
 		metadata = datatypes.JSON(metadataBytes)
 	}
 
-	// 璁＄畻杩囨湡鏃堕棿
+	// 计算过期时间
 	timeoutSeconds := req.TimeoutSeconds
 	if timeoutSeconds == 0 {
-		timeoutSeconds = 120 // 榛樿2鍒嗛挓
+		timeoutSeconds = 120 // 默认2分钟
 	}
 	expiresAt := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
 
-	// 鍒涘缓浜ゆ槗璁板綍
+	// 创建交易记录
 	transaction := &nfc_relay.NFCTransaction{
 		TransactionID:       transactionID,
 		TransmitterClientID: req.TransmitterClientID,
@@ -93,23 +95,23 @@ func (s *NFCTransactionService) CreateTransaction(ctx context.Context, req *requ
 		Metadata:            metadata,
 	}
 
-	// 寮€鍚暟鎹簱浜嬪姟
+	// 开启数据库事务
 	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
-		// 淇濆瓨浜ゆ槗璁板綍
+		// 保存交易记录
 		if err := tx.Create(transaction).Error; err != nil {
-			global.GVA_LOG.Error("鍒涘缓浜ゆ槗璁板綍澶辫触", zap.Error(err))
-			return fmt.Errorf("鍒涘缓浜ゆ槗璁板綍澶辫触: %w", err)
+			global.GVA_LOG.Error("创建交易记录失败", zap.Error(err))
+			return fmt.Errorf("创建交易记录失败: %w", err)
 		}
 
-		// 缂撳瓨浜ゆ槗鐘舵€佸埌Redis
+		// 缓存交易状态到Redis
 		if err := s.cacheTransactionStatus(ctx, transactionID, nfc_relay.StatusPending, map[string]interface{}{
 			"created_at":            transaction.CreatedAt,
 			"expires_at":            expiresAt,
 			"transmitter_client_id": req.TransmitterClientID,
 			"receiver_client_id":    req.ReceiverClientID,
 		}); err != nil {
-			global.GVA_LOG.Error("缂撳瓨浜ゆ槗鐘舵€佸け璐?, zap.Error(err))
-			// 涓嶅奖鍝嶄富娴佺▼锛屽彧璁板綍鏃ュ織
+			global.GVA_LOG.Error("缓存交易状态失败", zap.Error(err))
+			// 不影响主流程，只记录日志
 		}
 
 		return nil
@@ -119,10 +121,10 @@ func (s *NFCTransactionService) CreateTransaction(ctx context.Context, req *requ
 		return nil, err
 	}
 
-	// 鍙戝竷MQTT閫氱煡
+	// 发布MQTT通知
 	go s.notifyTransactionCreated(ctx, transaction)
 
-	// 杩斿洖鍝嶅簲
+	// 返回响应
 	return &response.CreateTransactionResponse{
 		TransactionID:       transaction.TransactionID,
 		Status:              transaction.Status,
@@ -134,25 +136,28 @@ func (s *NFCTransactionService) CreateTransaction(ctx context.Context, req *requ
 	}, nil
 }
 
-// UpdateTransactionStatus 鏇存柊浜ゆ槗鐘舵€?func (s *NFCTransactionService) UpdateTransactionStatus(ctx context.Context, req *request.UpdateTransactionStatusRequest, userID uuid.UUID) (*response.UpdateTransactionStatusResponse, error) {
-	// 鑾峰彇鐜版湁浜ゆ槗
+// UpdateTransactionStatus 更新交易状态
+func (s *NFCTransactionService) UpdateTransactionStatus(ctx context.Context, req *request.UpdateTransactionStatusRequest, userID uuid.UUID) (*response.UpdateTransactionStatusResponse, error) {
+	// 获取现有交易
 	var transaction nfc_relay.NFCTransaction
 	if err := global.GVA_DB.Where("transaction_id = ?", req.TransactionID).First(&transaction).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("浜ゆ槗涓嶅瓨鍦?)
+			return nil, fmt.Errorf("交易不存在")
 		}
-		global.GVA_LOG.Error("鏌ヨ浜ゆ槗澶辫触", zap.String("transactionID", req.TransactionID), zap.Error(err))
-		return nil, fmt.Errorf("鏌ヨ浜ゆ槗澶辫触")
+		global.GVA_LOG.Error("查询交易失败", zap.String("transactionID", req.TransactionID), zap.Error(err))
+		return nil, fmt.Errorf("查询交易失败")
 	}
 
-	// 楠岃瘉鐘舵€佽浆鎹?	if !nfc_relay.IsValidStatusTransition(transaction.Status, req.Status) {
-		return nil, fmt.Errorf("鏃犳晥鐨勭姸鎬佽浆鎹? %s -> %s", transaction.Status, req.Status)
+	// 验证状态转换
+	if !nfc_relay.IsValidStatusTransition(transaction.Status, req.Status) {
+		return nil, fmt.Errorf("无效的状态转换: %s -> %s", transaction.Status, req.Status)
 	}
 
 	previousStatus := transaction.Status
 	now := time.Now()
 
-	// 鏇存柊鐘舵€佺浉鍏冲瓧娈?	updates := map[string]interface{}{
+	// 更新状态相关字段
+	updates := map[string]interface{}{
 		"status":     req.Status,
 		"updated_by": userID,
 		"updated_at": now,
@@ -165,41 +170,44 @@ func (s *NFCTransactionService) CreateTransaction(ctx context.Context, req *requ
 		updates["error_msg"] = req.ErrorMsg
 	}
 
-	// 鏍规嵁鐘舵€佽缃椂闂村瓧娈?	switch req.Status {
+	// 根据状态设置时间字段
+	switch req.Status {
 	case nfc_relay.StatusActive:
 		updates["started_at"] = now
 	case nfc_relay.StatusCompleted, nfc_relay.StatusFailed, nfc_relay.StatusCancelled, nfc_relay.StatusTimeout:
 		updates["completed_at"] = now
 	}
 
-	// 澶勭悊鎵╁睍鍏冩暟鎹?	if req.Metadata != nil {
+	// 处理扩展元数据
+	if req.Metadata != nil {
 		metadataBytes, err := json.Marshal(req.Metadata)
 		if err != nil {
-			global.GVA_LOG.Error("搴忓垪鍖栧厓鏁版嵁澶辫触", zap.Error(err))
-			return nil, fmt.Errorf("鍏冩暟鎹牸寮忛敊璇?)
+			global.GVA_LOG.Error("序列化元数据失败", zap.Error(err))
+			return nil, fmt.Errorf("元数据格式错误")
 		}
 		updates["metadata"] = datatypes.JSON(metadataBytes)
 	}
 
-	// 鏇存柊鏁版嵁搴?	if err := global.GVA_DB.Model(&transaction).Updates(updates).Error; err != nil {
-		global.GVA_LOG.Error("鏇存柊浜ゆ槗鐘舵€佸け璐?, zap.String("transactionID", req.TransactionID), zap.Error(err))
-		return nil, fmt.Errorf("鏇存柊浜ゆ槗鐘舵€佸け璐?)
+	// 更新数据库
+	if err := global.GVA_DB.Model(&transaction).Updates(updates).Error; err != nil {
+		global.GVA_LOG.Error("更新交易状态失败", zap.String("transactionID", req.TransactionID), zap.Error(err))
+		return nil, fmt.Errorf("更新交易状态失败")
 	}
 
-	// 鏇存柊Redis缂撳瓨
+	// 更新Redis缓存
 	if err := s.cacheTransactionStatus(ctx, req.TransactionID, req.Status, map[string]interface{}{
 		"updated_at":      now,
 		"previous_status": previousStatus,
 		"reason":          req.Reason,
 	}); err != nil {
-		global.GVA_LOG.Error("鏇存柊浜ゆ槗鐘舵€佺紦瀛樺け璐?, zap.Error(err))
-		// 涓嶅奖鍝嶄富娴佺▼
+		global.GVA_LOG.Error("更新交易状态缓存失败", zap.Error(err))
+		// 不影响主流程
 	}
 
-	// 鍙戝竷MQTT鐘舵€佹洿鏂伴€氱煡
+	// 发布MQTT状态更新通知
 	go s.notifyTransactionStatusUpdate(ctx, &transaction, req.Status, previousStatus, req.Reason)
 
-	// 濡傛灉鏄粓鎬侊紝鎵ц鍚庣画澶勭悊
+	// 如果是终态，执行后续处理
 	if req.Status == nfc_relay.StatusCompleted || req.Status == nfc_relay.StatusFailed ||
 		req.Status == nfc_relay.StatusCancelled || req.Status == nfc_relay.StatusTimeout {
 		go s.handleTransactionCompletion(ctx, &transaction)
@@ -214,13 +222,13 @@ func (s *NFCTransactionService) CreateTransaction(ctx context.Context, req *requ
 	}, nil
 }
 
-// GetTransaction 鑾峰彇浜ゆ槗璇︽儏
+// GetTransaction 获取交易详情
 func (s *NFCTransactionService) GetTransaction(ctx context.Context, req *request.GetTransactionRequest, userID uuid.UUID) (*response.TransactionDetailResponse, error) {
 	var transaction nfc_relay.NFCTransaction
 
 	query := global.GVA_DB.Where("transaction_id = ?", req.TransactionID)
 
-	// 鍖呭惈APDU娑堟伅
+	// 包含APDU消息
 	if req.IncludeAPDU {
 		query = query.Preload("APDUMessages", func(db *gorm.DB) *gorm.DB {
 			return db.Order("sequence_number ASC")
@@ -229,28 +237,30 @@ func (s *NFCTransactionService) GetTransaction(ctx context.Context, req *request
 
 	if err := query.First(&transaction).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("浜ゆ槗涓嶅瓨鍦?)
+			return nil, fmt.Errorf("交易不存在")
 		}
-		global.GVA_LOG.Error("鏌ヨ浜ゆ槗澶辫触", zap.String("transactionID", req.TransactionID), zap.Error(err))
-		return nil, fmt.Errorf("鏌ヨ浜ゆ槗澶辫触")
+		global.GVA_LOG.Error("查询交易失败", zap.String("transactionID", req.TransactionID), zap.Error(err))
+		return nil, fmt.Errorf("查询交易失败")
 	}
 
-	// 鏉冮檺妫€鏌ワ紙鍙互鏌ョ湅鑷繁鍒涘缓鐨勪氦鏄擄級
+	// 权限检查（可以查看自己创建的交易）
 	if transaction.CreatedBy != userID {
-		// 杩欓噷鍙互娣诲姞鏇村鏉傜殑鏉冮檺閫昏緫锛屾瘮濡傜鐞嗗憳鍙互鏌ョ湅鎵€鏈変氦鏄?		return nil, fmt.Errorf("鏃犳潈璁块棶姝や氦鏄?)
+		// 这里可以添加更复杂的权限逻辑，比如管理员可以查看所有交易
+		return nil, fmt.Errorf("无权访问此交易")
 	}
 
-	// 鑾峰彇缁熻淇℃伅
+	// 获取统计信息
 	statistics, err := s.getTransactionStatistics(ctx, req.TransactionID)
 	if err != nil {
-		global.GVA_LOG.Error("鑾峰彇浜ゆ槗缁熻澶辫触", zap.Error(err))
-		// 缁熻淇℃伅鑾峰彇澶辫触涓嶅奖鍝嶄富娴佺▼
+		global.GVA_LOG.Error("获取交易统计失败", zap.Error(err))
+		// 统计信息获取失败不影响主流程
 		statistics = response.TransactionStatistics{}
 	}
 
-	// 鑾峰彇鏃堕棿绾?	timeline, err := s.getTransactionTimeline(ctx, req.TransactionID)
+	// 获取时间线
+	timeline, err := s.getTransactionTimeline(ctx, req.TransactionID)
 	if err != nil {
-		global.GVA_LOG.Error("鑾峰彇浜ゆ槗鏃堕棿绾垮け璐?, zap.Error(err))
+		global.GVA_LOG.Error("获取交易时间线失败", zap.Error(err))
 		timeline = []response.TransactionEvent{}
 	}
 
@@ -261,33 +271,36 @@ func (s *NFCTransactionService) GetTransaction(ctx context.Context, req *request
 	}, nil
 }
 
-// generateTransactionID 鐢熸垚浜ゆ槗ID
+// generateTransactionID 生成交易ID
 func (s *NFCTransactionService) generateTransactionID() (string, error) {
 	bytes := make([]byte, 16)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
 
-	// 鏍煎紡: txn_YYYYMMDD_HEX
+	// 格式: txn_YYYYMMDD_HEX
 	timestamp := time.Now().Format("20060102")
 	hexStr := hex.EncodeToString(bytes)[:16]
 	return fmt.Sprintf("txn_%s_%s", timestamp, hexStr), nil
 }
 
-// acquireUserLock 鑾峰彇鐢ㄦ埛閿侊紙鏀硅繘鐗堟湰锛屾敮鎸侀珮鍙敤锛?func (s *NFCTransactionService) acquireUserLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+// acquireUserLock 获取用户锁（改进版本，支持高可用）
+func (s *NFCTransactionService) acquireUserLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	lockKey := fmt.Sprintf("lock:%s", key)
 	identifier := s.generateLockIdentifier()
 
-	// 浣跨敤Lua鑴氭湰纭繚鍘熷瓙鎬ф搷浣?	script := `
-		-- 妫€鏌ラ攣鏄惁瀛樺湪
+	// 使用Lua脚本确保原子性操作
+	script := `
+		-- 检查锁是否存在
 		local existing = redis.call("GET", KEYS[1])
 		if existing == false then
-			-- 閿佷笉瀛樺湪锛屽彲浠ヨ幏鍙?			redis.call("SET", KEYS[1], ARGV[1], "PX", ARGV[2])
+			-- 锁不存在，可以获取
+			redis.call("SET", KEYS[1], ARGV[1], "PX", ARGV[2])
 			return 1
 		else
-			-- 閿佸凡瀛樺湪锛屾鏌ユ槸鍚︽槸鍚屼竴涓寔鏈夎€咃紙鏀寔鍙噸鍏ワ級
+			-- 锁已存在，检查是否是同一个持有者（支持可重入）
 			if existing == ARGV[1] then
-				-- 寤堕暱閿佺殑杩囨湡鏃堕棿
+				-- 延长锁的过期时间
 				redis.call("PEXPIRE", KEYS[1], ARGV[2])
 				return 1
 			else
@@ -298,21 +311,21 @@ func (s *NFCTransactionService) generateTransactionID() (string, error) {
 
 	result, err := global.GVA_REDIS.Eval(ctx, script, []string{lockKey}, identifier, int64(ttl/time.Millisecond)).Result()
 	if err != nil {
-		global.GVA_LOG.Error("鑾峰彇鍒嗗竷寮忛攣澶辫触",
+		global.GVA_LOG.Error("获取分布式锁失败",
 			zap.String("lockKey", lockKey),
 			zap.Duration("ttl", ttl),
 			zap.Error(err))
-		return false, fmt.Errorf("鑾峰彇鍒嗗竷寮忛攣澶辫触: %w", err)
+		return false, fmt.Errorf("获取分布式锁失败: %w", err)
 	}
 
 	success := result.(int64) == 1
 	if success {
-		global.GVA_LOG.Debug("鑾峰彇鍒嗗竷寮忛攣鎴愬姛",
+		global.GVA_LOG.Debug("获取分布式锁成功",
 			zap.String("lockKey", lockKey),
 			zap.String("identifier", identifier),
 			zap.Duration("ttl", ttl))
 
-		// 鍦≧edis涓瓨鍌ㄩ攣鐨勫厓鏁版嵁锛屼究浜庣洃鎺у拰璋冭瘯
+		// 在Redis中存储锁的元数据，便于监控和调试
 		metaKey := fmt.Sprintf("lock_meta:%s", key)
 		metadata := map[string]interface{}{
 			"identifier":  identifier,
@@ -322,23 +335,27 @@ func (s *NFCTransactionService) generateTransactionID() (string, error) {
 			"service":     "nfc_transaction",
 		}
 		global.GVA_REDIS.HMSet(ctx, metaKey, metadata).Err()
-		global.GVA_REDIS.Expire(ctx, metaKey, ttl+time.Minute).Err() // 鍏冩暟鎹瘮閿佸淇濈暀1鍒嗛挓
+		global.GVA_REDIS.Expire(ctx, metaKey, ttl+time.Minute).Err() // 元数据比锁多保留1分钟
 	}
 
 	return success, nil
 }
 
-// releaseUserLock 閲婃斁鐢ㄦ埛閿侊紙鏀硅繘鐗堟湰锛?func (s *NFCTransactionService) releaseUserLock(ctx context.Context, key string) error {
+// releaseUserLock 释放用户锁（改进版本）
+func (s *NFCTransactionService) releaseUserLock(ctx context.Context, key string) error {
 	lockKey := fmt.Sprintf("lock:%s", key)
 	metaKey := fmt.Sprintf("lock_meta:%s", key)
 
-	// 浣跨敤Lua鑴氭湰纭繚鍘熷瓙鎬ч噴鏀?	script := `
-		-- 鑾峰彇褰撳墠閿佺殑鍊?		local current = redis.call("GET", KEYS[1])
+	// 使用Lua脚本确保原子性释放
+	script := `
+		-- 获取当前锁的值
+		local current = redis.call("GET", KEYS[1])
 		if current == false then
-			-- 閿佷笉瀛樺湪
+			-- 锁不存在
 			return 0
 		else
-			-- 鍒犻櫎閿佸拰鍏冩暟鎹?			redis.call("DEL", KEYS[1])
+			-- 删除锁和元数据
+			redis.call("DEL", KEYS[1])
 			redis.call("DEL", KEYS[2])
 			return 1
 		end
@@ -346,23 +363,23 @@ func (s *NFCTransactionService) generateTransactionID() (string, error) {
 
 	result, err := global.GVA_REDIS.Eval(ctx, script, []string{lockKey, metaKey}).Result()
 	if err != nil {
-		global.GVA_LOG.Error("閲婃斁鍒嗗竷寮忛攣澶辫触",
+		global.GVA_LOG.Error("释放分布式锁失败",
 			zap.String("lockKey", lockKey),
 			zap.Error(err))
-		return fmt.Errorf("閲婃斁鍒嗗竷寮忛攣澶辫触: %w", err)
+		return fmt.Errorf("释放分布式锁失败: %w", err)
 	}
 
 	released := result.(int64) == 1
 	if released {
-		global.GVA_LOG.Debug("閲婃斁鍒嗗竷寮忛攣鎴愬姛", zap.String("lockKey", lockKey))
+		global.GVA_LOG.Debug("释放分布式锁成功", zap.String("lockKey", lockKey))
 	} else {
-		global.GVA_LOG.Warn("灏濊瘯閲婃斁涓嶅瓨鍦ㄧ殑閿?, zap.String("lockKey", lockKey))
+		global.GVA_LOG.Warn("尝试释放不存在的锁", zap.String("lockKey", lockKey))
 	}
 
 	return nil
 }
 
-// generateLockIdentifier 鐢熸垚閿佹爣璇嗙
+// generateLockIdentifier 生成锁标识符
 func (s *NFCTransactionService) generateLockIdentifier() string {
 	return fmt.Sprintf("%d-%d-%s",
 		os.Getpid(),
@@ -370,24 +387,24 @@ func (s *NFCTransactionService) generateLockIdentifier() string {
 		uuid.New().String()[:8])
 }
 
-// isClientOnline 妫€鏌ュ鎴风鏄惁鍦ㄧ嚎锛堟敼杩涚増鏈級
+// isClientOnline 检查客户端是否在线（改进版本）
 func (s *NFCTransactionService) isClientOnline(ctx context.Context, clientID string) (bool, error) {
 	if clientID == "" {
-		return false, fmt.Errorf("瀹㈡埛绔疘D涓嶈兘涓虹┖")
+		return false, fmt.Errorf("客户端ID不能为空")
 	}
 
 	key := fmt.Sprintf("client_heartbeat:%s", clientID)
 
-	// 鑾峰彇蹇冭烦淇℃伅
+	// 获取心跳信息
 	heartbeatData, err := global.GVA_REDIS.HGetAll(ctx, key).Result()
 	if err != nil {
 		if err.Error() == "redis: nil" {
 			return false, nil
 		}
-		global.GVA_LOG.Error("妫€鏌ュ鎴风鍦ㄧ嚎鐘舵€佸け璐?,
+		global.GVA_LOG.Error("检查客户端在线状态失败",
 			zap.String("clientID", clientID),
 			zap.Error(err))
-		return false, fmt.Errorf("妫€鏌ュ鎴风鍦ㄧ嚎鐘舵€佸け璐? %w", err)
+		return false, fmt.Errorf("检查客户端在线状态失败: %w", err)
 	}
 
 	if len(heartbeatData) == 0 {
@@ -401,17 +418,18 @@ func (s *NFCTransactionService) isClientOnline(ctx context.Context, clientID str
 
 	lastSeenTime, err := time.Parse(time.RFC3339, lastSeenStr)
 	if err != nil {
-		global.GVA_LOG.Error("瑙ｆ瀽瀹㈡埛绔渶鍚庢椿璺冩椂闂村け璐?,
+		global.GVA_LOG.Error("解析客户端最后活跃时间失败",
 			zap.String("clientID", clientID),
 			zap.String("lastSeen", lastSeenStr),
 			zap.Error(err))
 		return false, nil
 	}
 
-	// 妫€鏌ュ績璺宠秴鏃讹紙60绉掑唴鏈夊績璺宠涓哄湪绾匡級
+	// 检查心跳超时（60秒内有心跳认为在线）
 	isOnline := time.Since(lastSeenTime) < 60*time.Second
 
-	// 璁板綍瀹㈡埛绔姸鎬佹鏌?	global.GVA_LOG.Debug("瀹㈡埛绔湪绾跨姸鎬佹鏌?,
+	// 记录客户端状态检查
+	global.GVA_LOG.Debug("客户端在线状态检查",
 		zap.String("clientID", clientID),
 		zap.Bool("isOnline", isOnline),
 		zap.Time("lastSeen", lastSeenTime),
@@ -420,15 +438,16 @@ func (s *NFCTransactionService) isClientOnline(ctx context.Context, clientID str
 	return isOnline, nil
 }
 
-// cacheTransactionStatus 缂撳瓨浜ゆ槗鐘舵€侊紙鏀硅繘鐗堟湰锛?func (s *NFCTransactionService) cacheTransactionStatus(ctx context.Context, transactionID, status string, metadata map[string]interface{}) error {
+// cacheTransactionStatus 缓存交易状态（改进版本）
+func (s *NFCTransactionService) cacheTransactionStatus(ctx context.Context, transactionID, status string, metadata map[string]interface{}) error {
 	if transactionID == "" || status == "" {
-		return fmt.Errorf("浜ゆ槗ID鍜岀姸鎬佷笉鑳戒负绌?)
+		return fmt.Errorf("交易ID和状态不能为空")
 	}
 
 	key := fmt.Sprintf("transaction:%s:status", transactionID)
 	now := time.Now()
 
-	// 鏋勫缓缂撳瓨鏁版嵁
+	// 构建缓存数据
 	data := map[string]interface{}{
 		"transaction_id": transactionID,
 		"status":         status,
@@ -436,31 +455,33 @@ func (s *NFCTransactionService) isClientOnline(ctx context.Context, clientID str
 		"cached_at":      now.Format(time.RFC3339),
 	}
 
-	// 娣诲姞鍏冩暟鎹?	for k, v := range metadata {
+	// 添加元数据
+	for k, v := range metadata {
 		data[k] = v
 	}
 
-	// 浣跨敤Pipeline鎻愰珮鎬ц兘
+	// 使用Pipeline提高性能
 	pipe := global.GVA_REDIS.Pipeline()
 	pipe.HMSet(ctx, key, data)
-	pipe.Expire(ctx, key, 3600*time.Second) // 1灏忔椂杩囨湡
+	pipe.Expire(ctx, key, 3600*time.Second) // 1小时过期
 
-	// 鍚屾椂缁存姢浜ゆ槗绱㈠紩锛屼究浜庢煡璇㈢敤鎴风殑鎵€鏈変氦鏄?	if userID, ok := metadata["created_by"]; ok {
+	// 同时维护交易索引，便于查询用户的所有交易
+	if userID, ok := metadata["created_by"]; ok {
 		userIndexKey := fmt.Sprintf("user_transactions:%v", userID)
 		pipe.SAdd(ctx, userIndexKey, transactionID)
-		pipe.Expire(ctx, userIndexKey, 86400*time.Second) // 24灏忔椂杩囨湡
+		pipe.Expire(ctx, userIndexKey, 86400*time.Second) // 24小时过期
 	}
 
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		global.GVA_LOG.Error("缂撳瓨浜ゆ槗鐘舵€佸け璐?,
+		global.GVA_LOG.Error("缓存交易状态失败",
 			zap.String("transactionID", transactionID),
 			zap.String("status", status),
 			zap.Error(err))
-		return fmt.Errorf("缂撳瓨浜ゆ槗鐘舵€佸け璐? %w", err)
+		return fmt.Errorf("缓存交易状态失败: %w", err)
 	}
 
-	// 鍙戝竷鐘舵€佸彉鏇翠簨浠跺埌Redis棰戦亾
+	// 发布状态变更事件到Redis频道
 	publishData := map[string]interface{}{
 		"transaction_id": transactionID,
 		"status":         status,
@@ -471,7 +492,7 @@ func (s *NFCTransactionService) isClientOnline(ctx context.Context, clientID str
 	publishJSON, _ := json.Marshal(publishData)
 	global.GVA_REDIS.Publish(ctx, "transaction:status_changed", publishJSON).Err()
 
-	global.GVA_LOG.Debug("浜ゆ槗鐘舵€佺紦瀛樻垚鍔?,
+	global.GVA_LOG.Debug("交易状态缓存成功",
 		zap.String("transactionID", transactionID),
 		zap.String("status", status),
 		zap.Any("metadata", metadata))
@@ -479,9 +500,9 @@ func (s *NFCTransactionService) isClientOnline(ctx context.Context, clientID str
 	return nil
 }
 
-// notifyTransactionCreated 閫氱煡浜ゆ槗鍒涘缓锛堝畬鍠勭増鏈級
+// notifyTransactionCreated 通知交易创建（完善版本）
 func (s *NFCTransactionService) notifyTransactionCreated(ctx context.Context, transaction *nfc_relay.NFCTransaction) {
-	// WebSocket瀹炴椂閫氱煡
+	// WebSocket实时通知
 	NotifyTransactionStatus(transaction.CreatedBy.String(), map[string]interface{}{
 		"transaction_id":        transaction.TransactionID,
 		"status":                transaction.Status,
@@ -494,16 +515,17 @@ func (s *NFCTransactionService) notifyTransactionCreated(ctx context.Context, tr
 		"expires_at":            transaction.ExpiresAt,
 	})
 
-	// MQTT閫氱煡 - 閫氱煡浼犲崱绔?	mqttService := GetMQTTService()
+	// MQTT通知 - 通知传卡端
+	mqttService := GetMQTTService()
 	if err := mqttService.PublishTransactionCreated(ctx, transaction); err != nil {
-		global.GVA_LOG.Error("MQTT閫氱煡浼犲崱绔け璐?,
+		global.GVA_LOG.Error("MQTT通知传卡端失败",
 			zap.String("transactionID", transaction.TransactionID),
 			zap.String("transmitterClientID", transaction.TransmitterClientID),
 			zap.Error(err))
 	}
 
-	// 璁板綍鎿嶄綔鏃ュ織
-	global.GVA_LOG.Info("浜ゆ槗鍒涘缓閫氱煡宸插彂閫?,
+	// 记录操作日志
+	global.GVA_LOG.Info("交易创建通知已发送",
 		zap.String("transactionID", transaction.TransactionID),
 		zap.String("transmitterClientID", transaction.TransmitterClientID),
 		zap.String("receiverClientID", transaction.ReceiverClientID),
@@ -511,8 +533,9 @@ func (s *NFCTransactionService) notifyTransactionCreated(ctx context.Context, tr
 		zap.String("cardType", transaction.CardType))
 }
 
-// notifyTransactionStatusUpdate 閫氱煡浜ゆ槗鐘舵€佹洿鏂帮紙瀹屽杽鐗堟湰锛?func (s *NFCTransactionService) notifyTransactionStatusUpdate(ctx context.Context, transaction *nfc_relay.NFCTransaction, newStatus, oldStatus, reason string) {
-	// WebSocket瀹炴椂閫氱煡
+// notifyTransactionStatusUpdate 通知交易状态更新（完善版本）
+func (s *NFCTransactionService) notifyTransactionStatusUpdate(ctx context.Context, transaction *nfc_relay.NFCTransaction, newStatus, oldStatus, reason string) {
+	// WebSocket实时通知
 	NotifyTransactionStatus(transaction.CreatedBy.String(), map[string]interface{}{
 		"transaction_id":        transaction.TransactionID,
 		"status":                newStatus,
@@ -524,64 +547,69 @@ func (s *NFCTransactionService) notifyTransactionCreated(ctx context.Context, tr
 		"receiver_client_id":    transaction.ReceiverClientID,
 	})
 
-	// MQTT閫氱煡 - 閫氱煡鐩稿叧瀹㈡埛绔姸鎬佸彉鏇?	mqttService := GetMQTTService()
+	// MQTT通知 - 通知相关客户端状态变更
+	mqttService := GetMQTTService()
 
-	// 閫氱煡浼犲崱绔?	if err := mqttService.PublishTransactionStatusUpdate(ctx,
+	// 通知传卡端
+	if err := mqttService.PublishTransactionStatusUpdate(ctx,
 		transaction.TransactionID,
 		transaction.TransmitterClientID,
 		newStatus, oldStatus, reason); err != nil {
-		global.GVA_LOG.Error("MQTT閫氱煡浼犲崱绔姸鎬佹洿鏂板け璐?,
+		global.GVA_LOG.Error("MQTT通知传卡端状态更新失败",
 			zap.String("transactionID", transaction.TransactionID),
 			zap.String("clientID", transaction.TransmitterClientID),
 			zap.Error(err))
 	}
 
-	// 閫氱煡鏀跺崱绔?	if err := mqttService.PublishTransactionStatusUpdate(ctx,
+	// 通知收卡端
+	if err := mqttService.PublishTransactionStatusUpdate(ctx,
 		transaction.TransactionID,
 		transaction.ReceiverClientID,
 		newStatus, oldStatus, reason); err != nil {
-		global.GVA_LOG.Error("MQTT閫氱煡鏀跺崱绔姸鎬佹洿鏂板け璐?,
+		global.GVA_LOG.Error("MQTT通知收卡端状态更新失败",
 			zap.String("transactionID", transaction.TransactionID),
 			zap.String("clientID", transaction.ReceiverClientID),
 			zap.Error(err))
 	}
 
-	// 濡傛灉浜ゆ槗瀹屾垚锛屽彂閫佸畬鎴愪簨浠?	if newStatus == nfc_relay.StatusCompleted ||
+	// 如果交易完成，发送完成事件
+	if newStatus == nfc_relay.StatusCompleted ||
 		newStatus == nfc_relay.StatusFailed ||
 		newStatus == nfc_relay.StatusCancelled ||
 		newStatus == nfc_relay.StatusTimeout {
 		go s.handleTransactionCompletion(ctx, transaction)
 	}
 
-	global.GVA_LOG.Info("浜ゆ槗鐘舵€佹洿鏂伴€氱煡宸插彂閫?,
+	global.GVA_LOG.Info("交易状态更新通知已发送",
 		zap.String("transactionID", transaction.TransactionID),
 		zap.String("oldStatus", oldStatus),
 		zap.String("newStatus", newStatus),
 		zap.String("reason", reason))
 }
 
-// handleTransactionCompletion 澶勭悊浜ゆ槗瀹屾垚锛堝畬鍠勭増鏈級
+// handleTransactionCompletion 处理交易完成（完善版本）
 func (s *NFCTransactionService) handleTransactionCompletion(ctx context.Context, transaction *nfc_relay.NFCTransaction) {
-	// 娓呯悊Redis缂撳瓨
+	// 清理Redis缓存
 	lockKey := fmt.Sprintf("user_transaction:%s", transaction.CreatedBy.String())
 	s.releaseUserLock(ctx, lockKey)
 
-	// 娓呯悊浜ゆ槗鐘舵€佺紦瀛?	statusKey := fmt.Sprintf("transaction:%s:status", transaction.TransactionID)
+	// 清理交易状态缓存
+	statusKey := fmt.Sprintf("transaction:%s:status", transaction.TransactionID)
 	global.GVA_REDIS.Del(ctx, statusKey).Err()
 
-	// 鏇存柊缁熻鏁版嵁
+	// 更新统计数据
 	go s.updateDailyStatistics(ctx, transaction)
 
-	// 璁板綍瀹¤鏃ュ織
+	// 记录审计日志
 	s.logTransactionCompletion(transaction)
 
-	global.GVA_LOG.Info("浜ゆ槗瀹屾垚澶勭悊",
+	global.GVA_LOG.Info("交易完成处理",
 		zap.String("transactionID", transaction.TransactionID),
 		zap.String("status", transaction.Status),
 		zap.String("endReason", transaction.EndReason))
 }
 
-// updateDailyStatistics 鏇存柊姣忔棩缁熻鏁版嵁
+// updateDailyStatistics 更新每日统计数据
 func (s *NFCTransactionService) updateDailyStatistics(ctx context.Context, transaction *nfc_relay.NFCTransaction) {
 	today := time.Now().Format("2006-01-02")
 	date, _ := time.Parse("2006-01-02", today)
@@ -590,17 +618,17 @@ func (s *NFCTransactionService) updateDailyStatistics(ctx context.Context, trans
 	err := global.GVA_DB.Where("date = ?", date).First(&stats).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// 鍒涘缓鏂扮殑缁熻璁板綍
+			// 创建新的统计记录
 			stats = nfc_relay.NFCTransactionStatistics{
 				Date: date,
 			}
 		} else {
-			global.GVA_LOG.Error("鏌ヨ缁熻鏁版嵁澶辫触", zap.Error(err))
+			global.GVA_LOG.Error("查询统计数据失败", zap.Error(err))
 			return
 		}
 	}
 
-	// 鏇存柊缁熻鏁版嵁
+	// 更新统计数据
 	stats.TotalTransactions++
 	switch transaction.Status {
 	case nfc_relay.StatusCompleted:
@@ -613,15 +641,16 @@ func (s *NFCTransactionService) updateDailyStatistics(ctx context.Context, trans
 		stats.CancelledTransactions++
 	}
 
-	// 鏇存柊APDU娑堟伅缁熻
+	// 更新APDU消息统计
 	stats.TotalAPDUMessages += transaction.APDUCount
 
-	// 鏇存柊澶勭悊鏃堕棿缁熻
+	// 更新处理时间统计
 	if transaction.TotalProcessingTimeMs > 0 {
 		if stats.TotalTransactions == 1 {
 			stats.AverageProcessingTimeMs = float64(transaction.TotalProcessingTimeMs)
 		} else {
-			// 璁＄畻鏂扮殑骞冲潎鍊?			totalTime := (stats.AverageProcessingTimeMs * float64(stats.TotalTransactions-1)) + float64(transaction.TotalProcessingTimeMs)
+			// 计算新的平均值
+			totalTime := (stats.AverageProcessingTimeMs * float64(stats.TotalTransactions-1)) + float64(transaction.TotalProcessingTimeMs)
 			stats.AverageProcessingTimeMs = totalTime / float64(stats.TotalTransactions)
 		}
 
@@ -633,13 +662,13 @@ func (s *NFCTransactionService) updateDailyStatistics(ctx context.Context, trans
 		}
 	}
 
-	// 淇濆瓨缁熻鏁版嵁
+	// 保存统计数据
 	if err := global.GVA_DB.Save(&stats).Error; err != nil {
-		global.GVA_LOG.Error("淇濆瓨缁熻鏁版嵁澶辫触", zap.Error(err))
+		global.GVA_LOG.Error("保存统计数据失败", zap.Error(err))
 	}
 }
 
-// logTransactionCompletion 璁板綍浜ゆ槗瀹屾垚瀹¤鏃ュ織
+// logTransactionCompletion 记录交易完成审计日志
 func (s *NFCTransactionService) logTransactionCompletion(transaction *nfc_relay.NFCTransaction) {
 	auditData := map[string]interface{}{
 		"transaction_id":        transaction.TransactionID,
@@ -657,14 +686,14 @@ func (s *NFCTransactionService) logTransactionCompletion(transaction *nfc_relay.
 	}
 
 	auditJSON, _ := json.Marshal(auditData)
-	global.GVA_LOG.Info("浜ゆ槗瀹屾垚瀹¤鏃ュ織", zap.String("audit", string(auditJSON)))
+	global.GVA_LOG.Info("交易完成审计日志", zap.String("audit", string(auditJSON)))
 }
 
-// getTransactionStatistics 鑾峰彇浜ゆ槗缁熻
+// getTransactionStatistics 获取交易统计
 func (s *NFCTransactionService) getTransactionStatistics(ctx context.Context, transactionID string) (response.TransactionStatistics, error) {
 	var stats response.TransactionStatistics
 
-	// 鏌ヨAPDU娑堟伅缁熻
+	// 查询APDU消息统计
 	var apduCount int64
 	if err := global.GVA_DB.Model(&nfc_relay.NFCAPDUMessage{}).
 		Where("transaction_id = ?", transactionID).
@@ -674,26 +703,29 @@ func (s *NFCTransactionService) getTransactionStatistics(ctx context.Context, tr
 
 	stats.APDUMessageCount = int(apduCount)
 
-	// 鍙互娣诲姞鏇村缁熻閫昏緫
+	// 可以添加更多统计逻辑
 	return stats, nil
 }
 
-// getTransactionTimeline 鑾峰彇浜ゆ槗鏃堕棿绾?func (s *NFCTransactionService) getTransactionTimeline(ctx context.Context, transactionID string) ([]response.TransactionEvent, error) {
+// getTransactionTimeline 获取交易时间线
+func (s *NFCTransactionService) getTransactionTimeline(ctx context.Context, transactionID string) ([]response.TransactionEvent, error) {
 	var events []response.TransactionEvent
 
-	// 杩欓噷鍙互浠庢暟鎹簱鎴栨棩蹇椾腑鑾峰彇浜嬩欢鏃堕棿绾?	// 绠€鍖栧疄鐜帮紝杩斿洖绌烘暟缁?	return events, nil
+	// 这里可以从数据库或日志中获取事件时间线
+	// 简化实现，返回空数组
+	return events, nil
 }
 
-// GetTransactionList 鑾峰彇浜ゆ槗鍒楄〃
+// GetTransactionList 获取交易列表
 func (s *NFCTransactionService) GetTransactionList(ctx context.Context, req *request.GetTransactionListRequest, userID uuid.UUID) (*response.TransactionListResponse, error) {
-	// 鏋勫缓鏌ヨ鏉′欢
+	// 构建查询条件
 	query := global.GVA_DB.Model(&nfc_relay.NFCTransaction{})
 
-	// 鏉冮檺杩囨护锛氬彧鑳芥煡鐪嬭嚜宸卞垱寤虹殑浜ゆ槗锛堢鐞嗗憳鍙互鏌ョ湅鎵€鏈夛級
-	// TODO: 杩欓噷鍙互鏍规嵁鐢ㄦ埛瑙掕壊杩涜鏇寸簿缁嗙殑鏉冮檺鎺у埗
+	// 权限过滤：只能查看自己创建的交易（管理员可以查看所有）
+	// TODO: 这里可以根据用户角色进行更精细的权限控制
 	query = query.Where("created_by = ?", userID)
 
-	// 娣诲姞杩囨护鏉′欢
+	// 添加过滤条件
 	if req.TransmitterClientID != "" {
 		query = query.Where("transmitter_client_id LIKE ?", "%"+req.TransmitterClientID+"%")
 	}
@@ -707,7 +739,7 @@ func (s *NFCTransactionService) GetTransactionList(ctx context.Context, req *req
 		query = query.Where("card_type = ?", req.CardType)
 	}
 
-	// 鏃堕棿鑼冨洿杩囨护
+	// 时间范围过滤
 	if req.StartTime != "" {
 		if startTime, err := time.Parse("2006-01-02 15:04:05", req.StartTime); err == nil {
 			query = query.Where("created_at >= ?", startTime)
@@ -719,19 +751,20 @@ func (s *NFCTransactionService) GetTransactionList(ctx context.Context, req *req
 		}
 	}
 
-	// 鍏抽敭璇嶆悳绱?	if req.Keyword != "" {
+	// 关键词搜索
+	if req.Keyword != "" {
 		keyword := "%" + req.Keyword + "%"
 		query = query.Where("description LIKE ? OR tags LIKE ? OR transaction_id LIKE ?", keyword, keyword, keyword)
 	}
 
-	// 鑾峰彇鎬绘暟
+	// 获取总数
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		global.GVA_LOG.Error("鏌ヨ浜ゆ槗鎬绘暟澶辫触", zap.Error(err))
-		return nil, fmt.Errorf("鏌ヨ浜ゆ槗鎬绘暟澶辫触: %w", err)
+		global.GVA_LOG.Error("查询交易总数失败", zap.Error(err))
+		return nil, fmt.Errorf("查询交易总数失败: %w", err)
 	}
 
-	// 鎺掑簭
+	// 排序
 	orderBy := req.OrderBy
 	if orderBy == "" {
 		orderBy = "created_at"
@@ -742,15 +775,16 @@ func (s *NFCTransactionService) GetTransactionList(ctx context.Context, req *req
 	}
 	query = query.Order(fmt.Sprintf("%s %s", orderBy, order))
 
-	// 鍒嗛〉鏌ヨ
+	// 分页查询
 	offset := (req.Page - 1) * req.PageSize
 	var transactions []nfc_relay.NFCTransaction
 	if err := query.Offset(offset).Limit(req.PageSize).Find(&transactions).Error; err != nil {
-		global.GVA_LOG.Error("鏌ヨ浜ゆ槗鍒楄〃澶辫触", zap.Error(err))
-		return nil, fmt.Errorf("鏌ヨ浜ゆ槗鍒楄〃澶辫触: %w", err)
+		global.GVA_LOG.Error("查询交易列表失败", zap.Error(err))
+		return nil, fmt.Errorf("查询交易列表失败: %w", err)
 	}
 
-	// 杞崲涓哄搷搴旀牸寮?	list := make([]response.TransactionListItem, len(transactions))
+	// 转换为响应格式
+	list := make([]response.TransactionListItem, len(transactions))
 	for i, tx := range transactions {
 		list[i] = response.TransactionListItem{
 			ID:                    tx.ID,
@@ -771,7 +805,8 @@ func (s *NFCTransactionService) GetTransactionList(ctx context.Context, req *req
 		}
 	}
 
-	// 璁＄畻姹囨€讳俊鎭?	summary := s.calculateSummary(transactions)
+	// 计算汇总信息
+	summary := s.calculateSummary(transactions)
 
 	return &response.TransactionListResponse{
 		List:     list,
@@ -782,7 +817,8 @@ func (s *NFCTransactionService) GetTransactionList(ctx context.Context, req *req
 	}, nil
 }
 
-// calculateSummary 璁＄畻浜ゆ槗姹囨€讳俊鎭?func (s *NFCTransactionService) calculateSummary(transactions []nfc_relay.NFCTransaction) response.TransactionSummary {
+// calculateSummary 计算交易汇总信息
+func (s *NFCTransactionService) calculateSummary(transactions []nfc_relay.NFCTransaction) response.TransactionSummary {
 	summary := response.TransactionSummary{
 		TotalCount: len(transactions),
 	}
@@ -808,11 +844,12 @@ func (s *NFCTransactionService) GetTransactionList(ctx context.Context, req *req
 		}
 	}
 
-	// 璁＄畻鎴愬姛鐜?	if summary.TotalCount > 0 {
+	// 计算成功率
+	if summary.TotalCount > 0 {
 		summary.SuccessRate = float64(summary.CompletedCount) / float64(summary.TotalCount) * 100
 	}
 
-	// 璁＄畻骞冲潎澶勭悊鏃堕棿
+	// 计算平均处理时间
 	if processedCount > 0 {
 		summary.AverageProcessingMs = float64(totalProcessingTime) / float64(processedCount)
 	}
@@ -820,46 +857,49 @@ func (s *NFCTransactionService) GetTransactionList(ctx context.Context, req *req
 	return summary
 }
 
-// DeleteTransaction 鍒犻櫎浜ゆ槗
+// DeleteTransaction 删除交易
 func (s *NFCTransactionService) DeleteTransaction(ctx context.Context, req *request.DeleteTransactionRequest, userID uuid.UUID) error {
-	// 鏌ヨ浜ゆ槗
+	// 查询交易
 	var transaction nfc_relay.NFCTransaction
 	if err := global.GVA_DB.Where("transaction_id = ?", req.TransactionID).First(&transaction).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("浜ゆ槗涓嶅瓨鍦?)
+			return fmt.Errorf("交易不存在")
 		}
-		return fmt.Errorf("鏌ヨ浜ゆ槗澶辫触: %w", err)
+		return fmt.Errorf("查询交易失败: %w", err)
 	}
 
-	// 鏉冮檺妫€鏌?	if transaction.CreatedBy != userID {
-		return fmt.Errorf("鏃犳潈鍒犻櫎姝や氦鏄?)
+	// 权限检查
+	if transaction.CreatedBy != userID {
+		return fmt.Errorf("无权删除此交易")
 	}
 
-	// 妫€鏌ヤ氦鏄撶姸鎬?	if !req.Force {
+	// 检查交易状态
+	if !req.Force {
 		if transaction.Status == nfc_relay.StatusActive || transaction.Status == nfc_relay.StatusProcessing {
-			return fmt.Errorf("鏃犳硶鍒犻櫎娲昏穬鐘舵€佺殑浜ゆ槗锛岃鍏堝彇娑堜氦鏄撴垨浣跨敤寮哄埗鍒犻櫎")
+			return fmt.Errorf("无法删除活跃状态的交易，请先取消交易或使用强制删除")
 		}
 	}
 
-	// 寮€鍚簨鍔″垹闄?	return global.GVA_DB.Transaction(func(tx *gorm.DB) error {
-		// 鍒犻櫎鍏宠仈鐨凙PDU娑堟伅
+	// 开启事务删除
+	return global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		// 删除关联的APDU消息
 		if err := tx.Where("transaction_id = ?", req.TransactionID).Delete(&nfc_relay.NFCAPDUMessage{}).Error; err != nil {
-			return fmt.Errorf("鍒犻櫎APDU娑堟伅澶辫触: %w", err)
+			return fmt.Errorf("删除APDU消息失败: %w", err)
 		}
 
-		// 鍒犻櫎浜ゆ槗璁板綍
+		// 删除交易记录
 		if err := tx.Delete(&transaction).Error; err != nil {
-			return fmt.Errorf("鍒犻櫎浜ゆ槗澶辫触: %w", err)
+			return fmt.Errorf("删除交易失败: %w", err)
 		}
 
-		// 娓呯悊Redis缂撳瓨
+		// 清理Redis缓存
 		s.cleanupTransactionCache(ctx, req.TransactionID, userID)
 
 		return nil
 	})
 }
 
-// cleanupTransactionCache 娓呯悊浜ゆ槗鐩稿叧鐨凴edis缂撳瓨
+// cleanupTransactionCache 清理交易相关的Redis缓存
 func (s *NFCTransactionService) cleanupTransactionCache(ctx context.Context, transactionID string, userID uuid.UUID) {
 	keys := []string{
 		fmt.Sprintf("transaction:%s:status", transactionID),
@@ -872,26 +912,28 @@ func (s *NFCTransactionService) cleanupTransactionCache(ctx context.Context, tra
 	}
 }
 
-// SendAPDU 鍙戦€丄PDU娑堟伅
+// SendAPDU 发送APDU消息
 func (s *NFCTransactionService) SendAPDU(ctx context.Context, req *request.SendAPDURequest, userID uuid.UUID) (*response.SendAPDUResponse, error) {
-	// 楠岃瘉浜ゆ槗
+	// 验证交易
 	var transaction nfc_relay.NFCTransaction
 	if err := global.GVA_DB.Where("transaction_id = ?", req.TransactionID).First(&transaction).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("浜ゆ槗涓嶅瓨鍦?)
+			return nil, fmt.Errorf("交易不存在")
 		}
-		return nil, fmt.Errorf("鏌ヨ浜ゆ槗澶辫触: %w", err)
+		return nil, fmt.Errorf("查询交易失败: %w", err)
 	}
 
-	// 鏉冮檺妫€鏌?	if transaction.CreatedBy != userID {
-		return nil, fmt.Errorf("鏃犳潈鎿嶄綔姝や氦鏄?)
+	// 权限检查
+	if transaction.CreatedBy != userID {
+		return nil, fmt.Errorf("无权操作此交易")
 	}
 
-	// 鐘舵€佹鏌?	if transaction.Status != nfc_relay.StatusActive && transaction.Status != nfc_relay.StatusProcessing {
-		return nil, fmt.Errorf("浜ゆ槗鐘舵€佷笉鏀寔鍙戦€丄PDU娑堟伅: %s", transaction.Status)
+	// 状态检查
+	if transaction.Status != nfc_relay.StatusActive && transaction.Status != nfc_relay.StatusProcessing {
+		return nil, fmt.Errorf("交易状态不支持发送APDU消息: %s", transaction.Status)
 	}
 
-	// 鍒涘缓APDU娑堟伅璁板綍
+	// 创建APDU消息记录
 	now := time.Now()
 	apduMessage := &nfc_relay.NFCAPDUMessage{
 		TransactionID:  req.TransactionID,
@@ -904,18 +946,20 @@ func (s *NFCTransactionService) SendAPDU(ctx context.Context, req *request.SendA
 		SentAt:         &now,
 	}
 
-	// 澶勭悊鍏冩暟鎹?	if req.Metadata != nil {
+	// 处理元数据
+	if req.Metadata != nil {
 		if metadataJSON, err := json.Marshal(req.Metadata); err == nil {
 			apduMessage.Metadata = datatypes.JSON(metadataJSON)
 		}
 	}
 
-	// 淇濆瓨鍒版暟鎹簱
+	// 保存到数据库
 	if err := global.GVA_DB.Create(apduMessage).Error; err != nil {
-		return nil, fmt.Errorf("淇濆瓨APDU娑堟伅澶辫触: %w", err)
+		return nil, fmt.Errorf("保存APDU消息失败: %w", err)
 	}
 
-	// 閫氳繃MQTT鍙戦€佸埌瀹㈡埛绔?	mqttService := GetMQTTService()
+	// 通过MQTT发送到客户端
+	mqttService := GetMQTTService()
 	mqttMsg := APDUMessage{
 		TransactionID:  req.TransactionID,
 		SequenceNumber: req.SequenceNumber,
@@ -923,9 +967,11 @@ func (s *NFCTransactionService) SendAPDU(ctx context.Context, req *request.SendA
 		APDUHex:        req.APDUHex,
 		Priority:       req.Priority,
 		MessageType:    req.MessageType,
-		Timeout:        30, // 榛樿30绉掕秴鏃?	}
+		Timeout:        30, // 默认30秒超时
+	}
 
-	// 纭畾鐩爣瀹㈡埛绔?	var targetClientID string
+	// 确定目标客户端
+	var targetClientID string
 	if req.Direction == nfc_relay.DirectionToReceiver {
 		targetClientID = transaction.ReceiverClientID
 	} else {
@@ -933,14 +979,15 @@ func (s *NFCTransactionService) SendAPDU(ctx context.Context, req *request.SendA
 	}
 
 	if err := mqttService.SendAPDUToClient(ctx, targetClientID, mqttMsg); err != nil {
-		// 鏇存柊娑堟伅鐘舵€佷负澶辫触
+		// 更新消息状态为失败
 		global.GVA_DB.Model(apduMessage).Update("status", nfc_relay.MessageStatusFailed)
-		return nil, fmt.Errorf("鍙戦€丄PDU娑堟伅鍒板鎴风澶辫触: %w", err)
+		return nil, fmt.Errorf("发送APDU消息到客户端失败: %w", err)
 	}
 
-	// 鏇存柊娑堟伅鐘舵€佷负宸插彂閫?	global.GVA_DB.Model(apduMessage).Update("status", nfc_relay.MessageStatusSent)
+	// 更新消息状态为已发送
+	global.GVA_DB.Model(apduMessage).Update("status", nfc_relay.MessageStatusSent)
 
-	// 鏇存柊浜ゆ槗鐨凙PDU璁℃暟
+	// 更新交易的APDU计数
 	global.GVA_DB.Model(&transaction).UpdateColumn("apdu_count", gorm.Expr("apdu_count + ?", 1))
 
 	return &response.SendAPDUResponse{
@@ -953,25 +1000,25 @@ func (s *NFCTransactionService) SendAPDU(ctx context.Context, req *request.SendA
 	}, nil
 }
 
-// GetAPDUList 鑾峰彇APDU娑堟伅鍒楄〃
+// GetAPDUList 获取APDU消息列表
 func (s *NFCTransactionService) GetAPDUList(ctx context.Context, req *request.GetAPDUListRequest, userID uuid.UUID) (*response.APDUMessageListResponse, error) {
-	// 楠岃瘉浜ゆ槗鏉冮檺
+	// 验证交易权限
 	var transaction nfc_relay.NFCTransaction
 	if err := global.GVA_DB.Where("transaction_id = ?", req.TransactionID).First(&transaction).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("浜ゆ槗涓嶅瓨鍦?)
+			return nil, fmt.Errorf("交易不存在")
 		}
-		return nil, fmt.Errorf("鏌ヨ浜ゆ槗澶辫触: %w", err)
+		return nil, fmt.Errorf("查询交易失败: %w", err)
 	}
 
 	if transaction.CreatedBy != userID {
-		return nil, fmt.Errorf("鏃犳潈璁块棶姝や氦鏄撶殑APDU娑堟伅")
+		return nil, fmt.Errorf("无权访问此交易的APDU消息")
 	}
 
-	// 鏋勫缓鏌ヨ
+	// 构建查询
 	query := global.GVA_DB.Model(&nfc_relay.NFCAPDUMessage{}).Where("transaction_id = ?", req.TransactionID)
 
-	// 杩囨护鏉′欢
+	// 过滤条件
 	if req.Direction != "" {
 		query = query.Where("direction = ?", req.Direction)
 	}
@@ -982,7 +1029,7 @@ func (s *NFCTransactionService) GetAPDUList(ctx context.Context, req *request.Ge
 		query = query.Where("priority = ?", req.Priority)
 	}
 
-	// 鏃堕棿鑼冨洿
+	// 时间范围
 	if req.StartTime != "" {
 		if startTime, err := time.Parse("2006-01-02 15:04:05", req.StartTime); err == nil {
 			query = query.Where("created_at >= ?", startTime)
@@ -994,20 +1041,21 @@ func (s *NFCTransactionService) GetAPDUList(ctx context.Context, req *request.Ge
 		}
 	}
 
-	// 鑾峰彇鎬绘暟
+	// 获取总数
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, fmt.Errorf("鏌ヨAPDU娑堟伅鎬绘暟澶辫触: %w", err)
+		return nil, fmt.Errorf("查询APDU消息总数失败: %w", err)
 	}
 
-	// 鍒嗛〉鏌ヨ
+	// 分页查询
 	offset := (req.Page - 1) * req.PageSize
 	var messages []nfc_relay.NFCAPDUMessage
 	if err := query.Order("sequence_number ASC").Offset(offset).Limit(req.PageSize).Find(&messages).Error; err != nil {
-		return nil, fmt.Errorf("鏌ヨAPDU娑堟伅鍒楄〃澶辫触: %w", err)
+		return nil, fmt.Errorf("查询APDU消息列表失败: %w", err)
 	}
 
-	// 杞崲涓哄搷搴旀牸寮?	list := make([]response.APDUMessageItem, len(messages))
+	// 转换为响应格式
+	list := make([]response.APDUMessageItem, len(messages))
 	for i, msg := range messages {
 		list[i] = response.APDUMessageItem{
 			ID:             msg.ID,
@@ -1034,28 +1082,28 @@ func (s *NFCTransactionService) GetAPDUList(ctx context.Context, req *request.Ge
 	}, nil
 }
 
-// GetStatistics 鑾峰彇缁熻淇℃伅
+// GetStatistics 获取统计信息
 func (s *NFCTransactionService) GetStatistics(ctx context.Context, req *request.GetStatisticsRequest, userID uuid.UUID) (*response.TransactionStatisticsResponse, error) {
-	// 瑙ｆ瀽鏃ユ湡鑼冨洿
+	// 解析日期范围
 	startDate, err := time.Parse("2006-01-02", req.StartDate)
 	if err != nil {
-		return nil, fmt.Errorf("鏃犳晥鐨勫紑濮嬫棩鏈熸牸寮? %w", err)
+		return nil, fmt.Errorf("无效的开始日期格式: %w", err)
 	}
 
 	endDate, err := time.Parse("2006-01-02", req.EndDate)
 	if err != nil {
-		return nil, fmt.Errorf("鏃犳晥鐨勭粨鏉熸棩鏈熸牸寮? %w", err)
+		return nil, fmt.Errorf("无效的结束日期格式: %w", err)
 	}
 
-	// 纭繚缁撴潫鏃ユ湡鍖呭惈鏁村ぉ
+	// 确保结束日期包含整天
 	endDate = endDate.Add(24 * time.Hour).Add(-1 * time.Second)
 
-	// 鏋勫缓鍩虹鏌ヨ
+	// 构建基础查询
 	baseQuery := global.GVA_DB.Model(&nfc_relay.NFCTransaction{}).
 		Where("created_by = ?", userID).
 		Where("created_at BETWEEN ? AND ?", startDate, endDate)
 
-	// 娣诲姞杩囨护鏉′欢
+	// 添加过滤条件
 	if req.CardType != "" {
 		baseQuery = baseQuery.Where("card_type = ?", req.CardType)
 	}
@@ -1063,29 +1111,31 @@ func (s *NFCTransactionService) GetStatistics(ctx context.Context, req *request.
 		baseQuery = baseQuery.Where("status = ?", req.Status)
 	}
 
-	// 鑾峰彇姹囨€荤粺璁?	summary, err := s.calculateStatisticsSummary(baseQuery)
+	// 获取汇总统计
+	summary, err := s.calculateStatisticsSummary(baseQuery)
 	if err != nil {
-		return nil, fmt.Errorf("璁＄畻缁熻姹囨€诲け璐? %w", err)
+		return nil, fmt.Errorf("计算统计汇总失败: %w", err)
 	}
 
-	// 鑾峰彇姣忔棩缁熻
+	// 获取每日统计
 	dailyStats, err := s.calculateDailyStatistics(baseQuery, startDate, endDate, req.GroupBy)
 	if err != nil {
-		return nil, fmt.Errorf("璁＄畻姣忔棩缁熻澶辫触: %w", err)
+		return nil, fmt.Errorf("计算每日统计失败: %w", err)
 	}
 
-	// 鐢熸垚鍥捐〃鏁版嵁
+	// 生成图表数据
 	chartData := s.generateChartData(dailyStats)
 
-	// 鑾峰彇瀹㈡埛绔粺璁?	topClients, err := s.getTopClientsStatistics(baseQuery)
+	// 获取客户端统计
+	topClients, err := s.getTopClientsStatistics(baseQuery)
 	if err != nil {
-		return nil, fmt.Errorf("鑾峰彇瀹㈡埛绔粺璁″け璐? %w", err)
+		return nil, fmt.Errorf("获取客户端统计失败: %w", err)
 	}
 
-	// 閿欒鍒嗘瀽
+	// 错误分析
 	errorAnalysis, err := s.getErrorAnalysis(baseQuery)
 	if err != nil {
-		return nil, fmt.Errorf("鑾峰彇閿欒鍒嗘瀽澶辫触: %w", err)
+		return nil, fmt.Errorf("获取错误分析失败: %w", err)
 	}
 
 	return &response.TransactionStatisticsResponse{
@@ -1102,16 +1152,18 @@ func (s *NFCTransactionService) GetStatistics(ctx context.Context, req *request.
 	}, nil
 }
 
-// calculateStatisticsSummary 璁＄畻缁熻姹囨€?func (s *NFCTransactionService) calculateStatisticsSummary(query *gorm.DB) (response.StatisticsSummary, error) {
+// calculateStatisticsSummary 计算统计汇总
+func (s *NFCTransactionService) calculateStatisticsSummary(query *gorm.DB) (response.StatisticsSummary, error) {
 	var summary response.StatisticsSummary
 
-	// 鎬讳氦鏄撴暟 - 淇绫诲瀷涓嶅尮閰嶉棶棰?	var totalTransactions int64
+	// 总交易数 - 修复类型不匹配问题
+	var totalTransactions int64
 	if err := query.Count(&totalTransactions).Error; err != nil {
 		return summary, err
 	}
 	summary.TotalTransactions = int(totalTransactions)
 
-	// 鍚勭姸鎬佷氦鏄撴暟
+	// 各状态交易数
 	statusCounts := make(map[string]int64)
 	var results []struct {
 		Status string
@@ -1132,11 +1184,13 @@ func (s *NFCTransactionService) GetStatistics(ctx context.Context, req *request.
 		}
 	}
 
-	// 璁＄畻鎴愬姛鐜?	if summary.TotalTransactions > 0 {
+	// 计算成功率
+	if summary.TotalTransactions > 0 {
 		summary.SuccessRate = float64(summary.SuccessfulTransactions) / float64(summary.TotalTransactions) * 100
 	}
 
-	// APDU娑堟伅鎬绘暟鍜屽钩鍧囧鐞嗘椂闂?	var aggregates struct {
+	// APDU消息总数和平均处理时间
+	var aggregates struct {
 		TotalAPDU int64   `gorm:"column:total_apdu"`
 		AvgTime   float64 `gorm:"column:avg_time"`
 		TotalTime int64   `gorm:"column:total_time"`
@@ -1157,7 +1211,8 @@ func (s *NFCTransactionService) GetStatistics(ctx context.Context, req *request.
 	return summary, nil
 }
 
-// calculateDailyStatistics 璁＄畻姣忔棩/姣忓皬鏃剁粺璁℃暟鎹?func (s *NFCTransactionService) calculateDailyStatistics(query *gorm.DB, startDate, endDate time.Time, groupBy string) ([]response.DailyStatistics, error) {
+// calculateDailyStatistics 计算每日/每小时统计数据
+func (s *NFCTransactionService) calculateDailyStatistics(query *gorm.DB, startDate, endDate time.Time, groupBy string) ([]response.DailyStatistics, error) {
 	var dailyStats []response.DailyStatistics
 	var selectClause, groupByClause, orderByClause string
 
@@ -1183,17 +1238,17 @@ func (s *NFCTransactionService) GetStatistics(ctx context.Context, req *request.
 		Scan(&dailyStats).Error
 
 	if err != nil {
-		global.GVA_LOG.Error("璁＄畻姣忔棩缁熻澶辫触", zap.Error(err))
-		return nil, fmt.Errorf("璁＄畻姣忔棩缁熻澶辫触: %w", err)
+		global.GVA_LOG.Error("计算每日统计失败", zap.Error(err))
+		return nil, fmt.Errorf("计算每日统计失败: %w", err)
 	}
 	return dailyStats, nil
 }
 
-// generateChartData 鐢熸垚鍥捐〃鏁版嵁
+// generateChartData 生成图表数据
 func (s *NFCTransactionService) generateChartData(dailyStats []response.DailyStatistics) response.StatisticsChartData {
 	var chartData response.StatisticsChartData
 
-	// 瓒嬪娍鏁版嵁
+	// 趋势数据
 	for _, stat := range dailyStats {
 		chartData.TransactionTrend = append(chartData.TransactionTrend, response.ChartPoint{
 			X: stat.Date,
@@ -1211,7 +1266,8 @@ func (s *NFCTransactionService) generateChartData(dailyStats []response.DailySta
 		})
 	}
 
-	// 鐘舵€佸垎甯冿紙杩欓噷绠€鍖栧鐞嗭紝瀹為檯搴旇浠庢暟鎹簱缁熻锛?	chartData.StatusDistribution = []response.PieChartItem{
+	// 状态分布（这里简化处理，实际应该从数据库统计）
+	chartData.StatusDistribution = []response.PieChartItem{
 		{Name: "completed", Value: 70, Count: 70},
 		{Name: "failed", Value: 20, Count: 20},
 		{Name: "pending", Value: 10, Count: 10},
@@ -1220,20 +1276,23 @@ func (s *NFCTransactionService) generateChartData(dailyStats []response.DailySta
 	return chartData
 }
 
-// getTopClientsStatistics 鑾峰彇瀹㈡埛绔粺璁?func (s *NFCTransactionService) getTopClientsStatistics(query *gorm.DB) ([]response.ClientStatistics, error) {
-	// 绠€鍖栧疄鐜帮紝杩斿洖绌烘暟缁?	return []response.ClientStatistics{}, nil
+// getTopClientsStatistics 获取客户端统计
+func (s *NFCTransactionService) getTopClientsStatistics(query *gorm.DB) ([]response.ClientStatistics, error) {
+	// 简化实现，返回空数组
+	return []response.ClientStatistics{}, nil
 }
 
-// getErrorAnalysis 鑾峰彇閿欒鍒嗘瀽
+// getErrorAnalysis 获取错误分析
 func (s *NFCTransactionService) getErrorAnalysis(query *gorm.DB) (response.ErrorAnalysis, error) {
 	var analysis response.ErrorAnalysis
 
-	// 缁熻閿欒鎬绘暟
+	// 统计错误总数
 	var errorCount int64
 	query.Where("status = ?", nfc_relay.StatusFailed).Count(&errorCount)
 	analysis.TotalErrors = int(errorCount)
 
-	// 璁＄畻閿欒鐜?	var totalCount int64
+	// 计算错误率
+	var totalCount int64
 	query.Count(&totalCount)
 	if totalCount > 0 {
 		analysis.ErrorRate = float64(errorCount) / float64(totalCount) * 100
@@ -1242,7 +1301,8 @@ func (s *NFCTransactionService) getErrorAnalysis(query *gorm.DB) (response.Error
 	return analysis, nil
 }
 
-// BatchUpdateTransactionStatus 鎵归噺鏇存柊浜ゆ槗鐘舵€?func (s *NFCTransactionService) BatchUpdateTransactionStatus(ctx context.Context, req *request.BatchUpdateTransactionRequest, userID uuid.UUID) (*response.BatchOperationResponse, error) {
+// BatchUpdateTransactionStatus 批量更新交易状态
+func (s *NFCTransactionService) BatchUpdateTransactionStatus(ctx context.Context, req *request.BatchUpdateTransactionRequest, userID uuid.UUID) (*response.BatchOperationResponse, error) {
 	result := &response.BatchOperationResponse{
 		Total: len(req.TransactionIDs),
 	}
