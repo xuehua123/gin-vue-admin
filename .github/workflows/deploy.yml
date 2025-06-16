@@ -84,10 +84,34 @@ jobs:
           cd /opt/gin-vue-admin
           
           echo "📥 克隆项目代码..."
-          if git clone -b ${{ github.ref_name }} https://github.com/${{ github.repository }} .; then
-            echo "✅ 代码克隆成功"
-          else
-            echo "❌ 代码克隆失败，请检查网络连接和仓库权限"
+          
+          # 定义多个Git源，按优先级尝试
+          REPO_URLS=(
+            "https://github.com/${{ github.repository }}"
+            "https://gitclone.com/github.com/${{ github.repository }}"
+            "https://hub.fastgit.xyz/${{ github.repository }}"
+            "https://github.com.cnpmjs.org/${{ github.repository }}"
+          )
+          
+          SUCCESS=false
+          for repo_url in "${REPO_URLS[@]}"; do
+            echo "🔄 尝试从 $repo_url 克隆..."
+            if timeout 60 git clone -b ${{ github.ref_name }} "$repo_url" .; then
+              echo "✅ 从 $repo_url 克隆成功"
+              SUCCESS=true
+              break
+            else
+              echo "❌ 从 $repo_url 克隆失败，尝试下一个源..."
+              rm -rf .git* || true
+            fi
+          done
+          
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ 所有源都克隆失败，请检查网络连接"
+            echo "💡 建议："
+            echo "   1. 检查服务器网络连接"
+            echo "   2. 确认仓库是公开的"
+            echo "   3. 考虑使用国内代码托管平台"
             exit 1
           fi
           
