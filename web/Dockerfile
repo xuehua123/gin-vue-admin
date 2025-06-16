@@ -1,25 +1,39 @@
-# 如果需要用 cicd ，请设置环境变量：
-# variables:
-#     DOCKER_BUILDKIT: 1
+# 构建阶段
+FROM node:18-alpine AS builder
 
-FROM node:20-slim AS base
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
-COPY . /app
+# 设置工作目录
 WORKDIR /app
 
+# 复制 package 文件
+COPY web/package*.json ./
 
-FROM base AS prod-deps
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod
+# 安装依赖
+RUN npm ci --only=production && npm cache clean --force
 
-FROM base AS build
-COPY --from=prod-deps /app/node_modules /app/node_modules
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install && pnpm run build
+# 复制源代码
+COPY web/ .
 
+# 构建应用
+RUN npm run build
 
+# 生产阶段
 FROM nginx:alpine
-LABEL MAINTAINER="bypanghu@163.com"
-COPY --from=base  /app/.docker-compose/nginx/conf.d/my.conf /etc/nginx/conf.d/my.conf
-COPY --from=build  /app/dist /usr/share/nginx/html
-RUN ls -al /usr/share/nginx/html
+
+# 维护者信息
+LABEL MAINTAINER="gin-vue-admin"
+
+# 安装时区数据
+RUN apk add --no-cache tzdata
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+RUN ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 复制构建好的文件到 nginx 静态文件目录
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 暴露端口
+EXPOSE 80
+
+# 启动 nginx
+CMD ["nginx", "-g", "daemon off;"]
