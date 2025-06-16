@@ -15,7 +15,15 @@ jobs:
       
     - name: 打包项目文件
       run: |
-        tar -czf project.tar.gz .
+        # 排除不必要的文件和目录
+        tar -czf project.tar.gz \
+          --exclude='.git' \
+          --exclude='.github' \
+          --exclude='node_modules' \
+          --exclude='*.log' \
+          --exclude='.DS_Store' \
+          --exclude='project.tar.gz' \
+          .
         
     - name: 传输文件到服务器
       uses: appleboy/scp-action@v0.1.7
