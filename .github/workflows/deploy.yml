@@ -10,6 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      
+    - name: 打包项目文件
+      run: |
+        tar -czf project.tar.gz .
+        
+    - name: 传输文件到服务器
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        password: ${{ secrets.SERVER_PASSWORD }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        source: "project.tar.gz"
+        target: "/tmp/"
+        
     - name: 部署到服务器
       uses: appleboy/ssh-action@v1.0.3
       with:
@@ -21,97 +38,58 @@ jobs:
           echo "🚀 开始部署分支: ${{ github.ref_name }}"
           echo "📦 仓库地址: ${{ github.repository }}"
           
-                      # 确保服务器有必要的工具
-            echo "🔧 检查并安装必要工具..."
-            
-            # 检测系统类型
-            if [ -f /etc/os-release ]; then
-              . /etc/os-release
-              OS=$NAME
-            elif type lsb_release >/dev/null 2>&1; then
-              OS=$(lsb_release -si)
-            else
-              OS=$(uname -s)
-            fi
-            echo "📋 检测到系统: $OS"
-            
-            # 安装 Git
-            if ! command -v git &> /dev/null; then
-              echo "❌ Git 未安装，正在安装..."
-              if command -v apt-get &> /dev/null; then
-                sudo apt-get update && sudo apt-get install -y git
-              elif command -v yum &> /dev/null; then
-                sudo yum install -y git
-              elif command -v dnf &> /dev/null; then
-                sudo dnf install -y git
-              else
-                echo "❌ 无法识别包管理器，请手动安装git"
-                exit 1
-              fi
-              echo "✅ Git 安装完成"
-            else
-              echo "✅ Git 已安装"
-            fi
-            
-            # 安装 Docker
-            if ! command -v docker &> /dev/null; then
-              echo "❌ Docker 未安装，正在安装..."
-              curl -fsSL https://get.docker.com -o get-docker.sh
-              sudo sh get-docker.sh
-              sudo systemctl start docker
-              sudo systemctl enable docker
-              sudo usermod -aG docker $USER
-              echo "✅ Docker 安装完成"
-            else
-              echo "✅ Docker 已安装"
-              sudo systemctl start docker
-            fi
-            
-            # 安装 Docker Compose
-            if ! command -v docker-compose &> /dev/null; then
-              echo "❌ Docker Compose 未安装，正在安装..."
-              sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-              sudo chmod +x /usr/local/bin/docker-compose
-              echo "✅ Docker Compose 安装完成"
-            else
-              echo "✅ Docker Compose 已安装"
-            fi
+          # 确保服务器有必要的工具
+          echo "🔧 检查并安装必要工具..."
           
-          # 清理并重新克隆项目（确保最新代码）
+          # 检测系统类型
+          if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            OS=$NAME
+          elif type lsb_release >/dev/null 2>&1; then
+            OS=$(lsb_release -si)
+          else
+            OS=$(uname -s)
+          fi
+          echo "📋 检测到系统: $OS"
+          
+          # 安装 Docker
+          if ! command -v docker &> /dev/null; then
+            echo "❌ Docker 未安装，正在安装..."
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+            sudo systemctl start docker
+            sudo systemctl enable docker
+            sudo usermod -aG docker $USER
+            echo "✅ Docker 安装完成"
+          else
+            echo "✅ Docker 已安装"
+            sudo systemctl start docker
+          fi
+          
+          # 安装 Docker Compose
+          if ! command -v docker-compose &> /dev/null; then
+            echo "❌ Docker Compose 未安装，正在安装..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            echo "✅ Docker Compose 安装完成"
+          else
+            echo "✅ Docker Compose 已安装"
+          fi
+          
+          # 准备项目目录
           echo "🗂️ 准备项目目录..."
           sudo rm -rf /opt/gin-vue-admin
           sudo mkdir -p /opt/gin-vue-admin
           cd /opt/gin-vue-admin
           
-          echo "📥 克隆项目代码..."
-          
-          # 定义多个Git源，按优先级尝试
-          REPO_URLS=(
-            "https://github.com/${{ github.repository }}"
-            "https://gitclone.com/github.com/${{ github.repository }}"
-            "https://hub.fastgit.xyz/${{ github.repository }}"
-            "https://github.com.cnpmjs.org/${{ github.repository }}"
-          )
-          
-          SUCCESS=false
-          for repo_url in "${REPO_URLS[@]}"; do
-            echo "🔄 尝试从 $repo_url 克隆..."
-            if timeout 60 git clone -b ${{ github.ref_name }} "$repo_url" .; then
-              echo "✅ 从 $repo_url 克隆成功"
-              SUCCESS=true
-              break
-            else
-              echo "❌ 从 $repo_url 克隆失败，尝试下一个源..."
-              rm -rf .git* || true
-            fi
-          done
-          
-          if [ "$SUCCESS" = false ]; then
-            echo "❌ 所有源都克隆失败，请检查网络连接"
-            echo "💡 建议："
-            echo "   1. 检查服务器网络连接"
-            echo "   2. 确认仓库是公开的"
-            echo "   3. 考虑使用国内代码托管平台"
+          # 解压传输的项目文件
+          echo "📦 解压项目文件..."
+          if [ -f "/tmp/project.tar.gz" ]; then
+            sudo tar -xzf /tmp/project.tar.gz -C /opt/gin-vue-admin
+            sudo rm -f /tmp/project.tar.gz
+            echo "✅ 项目文件解压成功"
+          else
+            echo "❌ 项目文件不存在"
             exit 1
           fi
           
