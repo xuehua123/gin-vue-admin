@@ -8,7 +8,7 @@ WORKDIR /app
 COPY web/package*.json ./
 
 # 安装依赖
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 # 复制源代码
 COPY web/ .
