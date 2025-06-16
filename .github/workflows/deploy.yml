@@ -15,10 +15,15 @@ jobs:
       
     - name: 打包项目文件
       run: |
+        # 显示当前目录内容
+        echo "📂 当前目录内容:"
+        ls -la
+        
         # 创建临时目录并复制文件
         mkdir -p /tmp/deploy-package
         
         # 复制需要的文件，排除不必要的目录
+        echo "📥 开始复制文件..."
         rsync -av \
           --exclude='.git/' \
           --exclude='.github/' \
@@ -28,17 +33,31 @@ jobs:
           --exclude='/tmp/' \
           ./ /tmp/deploy-package/
         
+        # 检查复制结果
+        echo "📋 复制后的文件:"
+        ls -la /tmp/deploy-package/
+        echo "📊 文件数量: $(find /tmp/deploy-package -type f | wc -l)"
+        
         # 从临时目录打包
+        echo "📦 开始打包..."
         cd /tmp/deploy-package
         tar -czf ../project.tar.gz .
+        
+        # 检查打包结果
+        echo "📏 压缩包信息:"
+        ls -lh /tmp/project.tar.gz
+        file /tmp/project.tar.gz
         
         # 移动到工作目录
         mv /tmp/project.tar.gz ./project.tar.gz
         
+        # 最终检查
+        echo "✅ 最终压缩包:"
+        ls -lh project.tar.gz
+        tar -tzf project.tar.gz | head -10
+        
         # 清理临时目录
         rm -rf /tmp/deploy-package
-        
-        echo "✅ 项目打包完成，大小: $(du -h project.tar.gz | cut -f1)"
         
     - name: 传输文件到服务器
       uses: appleboy/scp-action@v0.1.7
