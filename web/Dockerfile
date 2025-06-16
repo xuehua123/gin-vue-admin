@@ -6,7 +6,6 @@ WORKDIR /app
 
 # 设置Node.js环境变量优化构建性能
 ENV NODE_OPTIONS="--max-old-space-size=2048"
-ENV NODE_ENV=production
 
 # 复制 package 文件
 COPY web/package*.json ./
@@ -16,6 +15,9 @@ RUN npm install && npm cache clean --force
 
 # 复制源代码和环境配置
 COPY web/ .
+
+# 设置生产环境用于构建
+ENV NODE_ENV=production
 
 # 构建应用（设置超时和优化参数）
 RUN npm run build --timeout=600000
