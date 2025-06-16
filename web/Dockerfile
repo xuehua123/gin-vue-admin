@@ -12,7 +12,7 @@ ENV CI=true
 COPY web/package*.json ./
 
 # 安装所有依赖（包括开发依赖，构建需要）
-RUN npm ci && npm cache clean --force
+RUN npm install && npm cache clean --force
 
 # 复制源代码和环境配置
 COPY web/ .
