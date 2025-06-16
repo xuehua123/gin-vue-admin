@@ -53,11 +53,41 @@ jobs:
             echo "✅ Git 已安装"
           fi
           
-          # 安装 Docker
+          # 安装 Docker (针对 OpenCloudOS 优化)
           if ! command -v docker &> /dev/null; then
             echo "❌ Docker 未安装，正在安装..."
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sudo sh get-docker.sh
+            
+            # 检查是否为 OpenCloudOS 或类似的 RHEL 系统
+            if [[ "$OS" =~ "OpenCloudOS" ]] || [[ "$OS" =~ "Rocky" ]] || [[ "$OS" =~ "CentOS" ]] || [[ "$OS" =~ "Red Hat" ]]; then
+              echo "🔧 检测到 RHEL 系列系统，使用 dnf/yum 安装..."
+              
+              # 删除旧版本
+              sudo dnf remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine 2>/dev/null || true
+              
+              # 安装必要的包
+              sudo dnf install -y yum-utils device-mapper-persistent-data lvm2
+              
+              # 添加 Docker 官方仓库
+              sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || {
+                echo "⚠️ 官方仓库添加失败，尝试使用阿里云镜像..."
+                sudo dnf config-manager --add-repo https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+              }
+              
+              # 安装 Docker
+              sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin || {
+                echo "⚠️ 从仓库安装失败，尝试直接安装..."
+                sudo dnf install -y docker
+              }
+              
+            else
+              # 其他系统使用官方脚本
+              echo "🔧 使用官方安装脚本..."
+              curl -fsSL https://get.docker.com -o get-docker.sh
+              sudo sh get-docker.sh
+              rm -f get-docker.sh
+            fi
+            
+            # 启动并设置开机自启
             sudo systemctl start docker
             sudo systemctl enable docker
             sudo usermod -aG docker $USER
@@ -67,12 +97,30 @@ jobs:
             sudo systemctl start docker
           fi
           
-          # 安装 Docker Compose
+          # 安装 Docker Compose (修复方式)
           if ! command -v docker-compose &> /dev/null; then
             echo "❌ Docker Compose 未安装，正在安装..."
-            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
+            
+            # 尝试多种安装方式
+            if command -v dnf &> /dev/null; then
+              # 优先使用包管理器
+              sudo dnf install -y docker-compose 2>/dev/null || {
+                echo "📦 从包管理器安装失败，下载二进制文件..."
+                COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d'"' -f4)
+                sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+                sudo chmod +x /usr/local/bin/docker-compose
+                sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+              }
+            else
+              # 下载二进制文件
+              COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d'"' -f4)
+              sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+            fi
+            
             echo "✅ Docker Compose 安装完成"
+            echo "🔍 验证 Docker Compose: $(docker-compose --version)"
           else
             echo "✅ Docker Compose 已安装"
           fi
@@ -183,19 +231,37 @@ jobs:
             echo "✅ 关键文件验证通过"
           fi
           
+          # 验证 Docker 和 Docker Compose 可用性
+          echo "🔧 验证 Docker 环境..."
+          if ! docker --version; then
+            echo "❌ Docker 不可用"
+            exit 1
+          fi
+          
+          if ! docker-compose --version; then
+            echo "❌ Docker Compose 不可用"
+            exit 1
+          fi
+          
           echo "⏹️ 停止旧服务..."
-          sudo docker-compose -f deploy/docker-compose.yml down || true
+          docker-compose -f deploy/docker-compose.yml down || true
           
           echo "🔨 构建并启动新服务..."
-          sudo docker-compose -f deploy/docker-compose.yml up -d --build
+          docker-compose -f deploy/docker-compose.yml up -d --build
           
           echo "⏰ 等待服务启动..."
           sleep 30
           
           echo "📊 检查服务状态:"
-          sudo docker-compose -f deploy/docker-compose.yml ps
+          docker-compose -f deploy/docker-compose.yml ps
+          
+          echo "🔍 检查端口占用:"
+          ss -tlnp | grep -E ':(80|8888)' || echo "未检测到服务端口"
+          
+          echo "📋 查看容器日志（最后20行）:"
+          docker-compose -f deploy/docker-compose.yml logs --tail=20
           
           echo "🎉 部署完成！"
           echo "🌐 前端访问地址: http://${{ secrets.SERVER_HOST }}"
           echo "🔧 后端API地址: http://${{ secrets.SERVER_HOST }}:8888"
-          echo "📋 查看日志: sudo docker-compose -f /opt/gin-vue-admin/deploy/docker-compose.yml logs -f" 
+          echo "📋 查看完整日志: docker-compose -f /opt/gin-vue-admin/deploy/docker-compose.yml logs -f" 
