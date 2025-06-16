@@ -1,4 +1,4 @@
-package system
+﻿package system
 
 import (
 	"github.com/flipped-aurora/gin-vue-admin/server/global"

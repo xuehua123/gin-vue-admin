@@ -23,6 +23,8 @@ type ApiGroup struct {
 	AutoCodeTemplateApi
 	SysParamsApi
 	DeviceLogApi
+	RoleConflictApi
+	MqttAuthApi
 }
 
 var (
@@ -47,4 +49,5 @@ var (
 	autoCodeTemplateService = service.ServiceGroupApp.SystemServiceGroup.AutoCodeTemplate
 	userOnlineService       = service.ServiceGroupApp.SystemServiceGroup.UserOnlineService
 	deviceLogService        = service.ServiceGroupApp.SystemServiceGroup.DeviceLogService
+	roleConflictService     = service.ServiceGroupApp.SystemServiceGroup.RoleConflictService
 )

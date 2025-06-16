@@ -1,4 +1,4 @@
-package system
+﻿package system
 
 import (
 	"errors"
@@ -64,7 +64,7 @@ func (baseMenuService *BaseMenuService) DeleteBaseMenu(id int) (err error) {
 
 //@author: [piexlmax](https://github.com/piexlmax)
 //@function: UpdateBaseMenu
-//@description: 更新路由
+//@description: 鏇存柊璺敱
 //@param: menu model.SysBaseMenu
 //@return: err error
 
@@ -89,8 +89,8 @@ func (baseMenuService *BaseMenuService) UpdateBaseMenu(menu system.SysBaseMenu) 
 		tx.Where("id = ?", menu.ID).Find(&oldMenu)
 		if oldMenu.Name != menu.Name {
 			if !errors.Is(tx.Where("id <> ? AND name = ?", menu.ID, menu.Name).First(&system.SysBaseMenu{}).Error, gorm.ErrRecordNotFound) {
-				global.GVA_LOG.Debug("存在相同name修改失败")
-				return errors.New("存在相同name修改失败")
+				global.GVA_LOG.Debug("瀛樺湪鐩稿悓name淇敼澶辫触")
+				return errors.New("瀛樺湪鐩稿悓name淇敼澶辫触")
 			}
 		}
 		txErr := tx.Unscoped().Delete(&system.SysBaseMenuParameter{}, "sys_base_menu_id = ?", menu.ID).Error
@@ -137,7 +137,7 @@ func (baseMenuService *BaseMenuService) UpdateBaseMenu(menu system.SysBaseMenu) 
 
 //@author: [piexlmax](https://github.com/piexlmax)
 //@function: GetBaseMenuById
-//@description: 返回当前选中menu
+//@description: 杩斿洖褰撳墠閫変腑menu
 //@param: id float64
 //@return: menu system.SysBaseMenu, err error
 

@@ -5003,6 +5003,106 @@ const docTemplate = `{
                 }
             }
         },
+        "/role/checkConflict": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RoleConflict"
+                ],
+                "summary": "检查用户担当的角色是否存在设备冲突",
+                "parameters": [
+                    {
+                        "description": "角色冲突检测请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.CheckRoleConflictRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "检测成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/request.ConflictCheckResult"
+                                        },
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/role/generateMQTTToken": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RoleConflict"
+                ],
+                "summary": "生成用于MQTT连接的JWT Token，并处理角色冲突",
+                "parameters": [
+                    {
+                        "description": "角色分配请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.AssignRoleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "生成成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/request.MQTTTokenResponse"
+                                        },
+                                        "msg": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/sysDictionary/createSysDictionary": {
             "post": {
                 "security": [
@@ -9002,6 +9102,24 @@ const docTemplate = `{
                 }
             }
         },
+        "request.AssignRoleRequest": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "device_info": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "force_kick_existing": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
         "request.AutoCode": {
             "type": "object",
             "properties": {
@@ -9358,6 +9476,56 @@ const docTemplate = `{
                 }
             }
         },
+        "request.CheckRoleConflictRequest": {
+            "type": "object",
+            "required": [
+                "client_id",
+                "role"
+            ],
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "device_info": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "request.ConflictCheckResult": {
+            "type": "object",
+            "properties": {
+                "can_force_kick": {
+                    "type": "boolean"
+                },
+                "conflict_device": {
+                    "$ref": "#/definitions/request.ConflictDeviceInfo"
+                },
+                "has_conflict": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "request.ConflictDeviceInfo": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "connected_at": {
+                    "type": "string"
+                },
+                "device_model": {
+                    "type": "string"
+                },
+                "last_activity": {
+                    "type": "string"
+                }
+            }
+        },
         "request.CreateTransactionRequest": {
             "type": "object",
             "required": [
@@ -9657,6 +9825,20 @@ const docTemplate = `{
             "properties": {
                 "role": {
                     "description": "角色：transmitter, receiver, admin",
+                    "type": "string"
+                }
+            }
+        },
+        "request.MQTTTokenResponse": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "token": {
                     "type": "string"
                 }
             }

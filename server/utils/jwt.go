@@ -10,6 +10,7 @@ import (
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/system/request"
+	"github.com/gin-gonic/gin"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -241,6 +242,28 @@ func (j *JWT) RevokeJWT(claims *request.CustomClaims) error {
 	return nil
 }
 
+// RevokeJWTByID 直接根据userID和jti吊销JWT
+func (j *JWT) RevokeJWTByID(userID, jti string) error {
+	if userID == "" || jti == "" {
+		return errors.New("userID和jti不能为空")
+	}
+	redisKey := fmt.Sprintf("jwt:active:%s:%s", userID, jti)
+	_, err := global.GVA_REDIS.Del(context.Background(), redisKey).Result()
+	if err != nil {
+		global.GVA_LOG.Error("根据ID撤销JWT失败",
+			zap.Error(err),
+			zap.String("redisKey", redisKey))
+		return err
+	}
+
+	global.GVA_LOG.Info("JWT已成功撤销",
+		zap.String("userID", userID),
+		zap.String("jti", jti),
+		zap.String("redisKey", redisKey))
+
+	return nil
+}
+
 // RevokeAllUserJWTs 撤销用户的所有活跃JWT
 func (j *JWT) RevokeAllUserJWTs(userID string) error {
 	if userID == "" {
@@ -397,13 +420,8 @@ func (j *JWT) CreateMQTTClaims(userID, username, role string) (request.MQTTClaim
 // CreateMQTTToken 创建MQTT专用Token
 func (j *JWT) CreateMQTTToken(claims request.MQTTClaims) (string, error) {
 	if !claims.IsValid() {
-		global.GVA_LOG.Error("创建MQTT Token失败：Claims无效",
-			zap.String("userID", claims.GetUserID()),
-			zap.String("clientID", claims.GetClientID()),
-			zap.String("role", claims.Role))
 		return "", TokenClaimsInvalid
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signedToken, err := token.SignedString(j.SigningKey)
 	if err != nil {
@@ -411,17 +429,16 @@ func (j *JWT) CreateMQTTToken(claims request.MQTTClaims) (string, error) {
 		return "", err
 	}
 
-	// 存储到Redis mqtt:active机制
-	err = j.StoreMQTTActiveJWT(&claims)
-	if err != nil {
+	// 关键修复：在Token创建后，立即存储其活跃状态到Redis
+	if err := j.StoreMQTTActiveJWT(&claims); err != nil {
 		global.GVA_LOG.Error("存储MQTT JWT到Redis失败", zap.Error(err))
+		// 返回错误，确保不会发放一个无法被验证的Token
 		return "", fmt.Errorf("存储MQTT JWT状态失败: %w", err)
 	}
 
-	global.GVA_LOG.Info("MQTT JWT创建成功",
+	global.GVA_LOG.Info("MQTT JWT创建成功并已存储",
 		zap.String("userID", claims.GetUserID()),
 		zap.String("clientID", claims.GetClientID()),
-		zap.String("role", claims.Role),
 		zap.String("jti", claims.GetJTI()))
 
 	return signedToken, nil
@@ -464,41 +481,15 @@ func (j *JWT) StoreMQTTActiveJWT(claims *request.MQTTClaims) error {
 	if !claims.IsValid() {
 		return TokenClaimsInvalid
 	}
-
-	userID := claims.GetUserID()
-	jti := claims.GetJTI()
-	clientID := claims.GetClientID()
-	role := claims.Role
-
-	// 使用专门的MQTT active key格式
-	redisKey := fmt.Sprintf("mqtt:active:%s:%s", userID, clientID)
+	ctx := context.Background()
+	redisKey := fmt.Sprintf("mqtt:active:%s:%s", claims.GetUserID(), claims.GetJTI())
 	expiration := time.Unix(claims.ExpiresAt.Unix(), 0).Sub(time.Now())
 
-	// 存储更多信息
-	mqttInfo := map[string]interface{}{
-		"jti":        jti,
-		"role":       role,
-		"username":   claims.Username,
-		"sequence":   claims.Sequence,
-		"created_at": time.Now().UTC().Format(time.RFC3339),
-	}
-
-	err := global.GVA_REDIS.HMSet(context.Background(), redisKey, mqttInfo).Err()
+	err := global.GVA_REDIS.Set(ctx, redisKey, claims.GetClientID(), expiration).Err()
 	if err != nil {
+		global.GVA_LOG.Error("存储MQTT active状态失败", zap.Error(err), zap.String("key", redisKey))
 		return err
 	}
-
-	err = global.GVA_REDIS.Expire(context.Background(), redisKey, expiration).Err()
-	if err != nil {
-		return err
-	}
-
-	global.GVA_LOG.Debug("MQTT JWT active状态已存储",
-		zap.String("redisKey", redisKey),
-		zap.String("clientID", clientID),
-		zap.String("role", role),
-		zap.Duration("expiration", expiration))
-
 	return nil
 }
 
@@ -507,18 +498,21 @@ func (j *JWT) IsMQTTJWTActive(claims *request.MQTTClaims) (bool, error) {
 	if !claims.IsValid() {
 		return false, TokenClaimsInvalid
 	}
-
-	userID := claims.GetUserID()
-	clientID := claims.GetClientID()
-
-	redisKey := fmt.Sprintf("mqtt:active:%s:%s", userID, clientID)
-	exists, err := global.GVA_REDIS.Exists(context.Background(), redisKey).Result()
-
+	ctx := context.Background()
+	redisKey := fmt.Sprintf("mqtt:active:%s:%s", claims.GetUserID(), claims.GetJTI())
+	storedClientID, err := global.GVA_REDIS.Get(ctx, redisKey).Result()
 	if err != nil {
+		if err.Error() == "redis: nil" {
+			return false, TokenNotActive
+		}
 		return false, err
 	}
 
-	return exists > 0, nil
+	if storedClientID != claims.GetClientID() {
+		return false, TokenNotActive
+	}
+
+	return true, nil
 }
 
 // RevokeMQTTJWT 撤销MQTT JWT
@@ -546,4 +540,102 @@ func (j *JWT) RevokeMQTTJWT(claims *request.MQTTClaims) error {
 		zap.String("redisKey", redisKey))
 
 	return nil
+}
+
+// GetClaims 从Gin的Context中获取claims
+func GetClaims(c *gin.Context) (*request.CustomClaims, error) {
+	token, err := c.Cookie("x-token")
+	if err != nil {
+		token = c.Request.Header.Get("x-token")
+	}
+	j := NewJWT()
+	claims, err := j.ParseToken(token)
+	if err != nil {
+		global.GVA_LOG.Error("从Gin的Context中获取claims失败, 请检查token是否正确", zap.Error(err))
+	}
+	return claims, err
+}
+
+// GetUserUuid 从Gin的Context中获取从jwt解析出来的用户UUID
+func GetUserUuid(c *gin.Context) uuid.UUID {
+	if claims, exists := c.Get("claims"); !exists {
+		if cl, err := GetClaims(c); err != nil {
+			return uuid.Nil
+		} else {
+			return cl.UUID
+		}
+	} else {
+		waitUse := claims.(*request.CustomClaims)
+		return waitUse.UUID
+	}
+}
+
+// GetUserId 从Gin的Context中获取从jwt解析出来的用户ID
+func GetUserId(c *gin.Context) uint {
+	if claims, exists := c.Get("claims"); !exists {
+		if cl, err := GetClaims(c); err != nil {
+			return 0
+		} else {
+			return cl.BaseClaims.ID
+		}
+	} else {
+		waitUse := claims.(*request.CustomClaims)
+		return waitUse.BaseClaims.ID
+	}
+}
+
+// GetUserAuthorityId 从Gin的Context中获取从jwt解析出来的用户角色id
+func GetUserAuthorityId(c *gin.Context) uint {
+	if claims, exists := c.Get("claims"); !exists {
+		if cl, err := GetClaims(c); err != nil {
+			return 0
+		} else {
+			return cl.AuthorityId
+		}
+	} else {
+		waitUse := claims.(*request.CustomClaims)
+		return waitUse.AuthorityId
+	}
+}
+
+// GetUserInfo 从Gin的Context中获取从jwt解析出来的用户角色id
+func GetUserInfo(c *gin.Context) *request.CustomClaims {
+	if claims, exists := c.Get("claims"); !exists {
+		if cl, err := GetClaims(c); err != nil {
+			return nil
+		} else {
+			return cl
+		}
+	} else {
+		waitUse := claims.(*request.CustomClaims)
+		return waitUse
+	}
+}
+
+// GetToken 从Gin的Context中获取token
+func GetToken(c *gin.Context) string {
+	token := c.Request.Header.Get("x-token")
+	if token == "" {
+		token, _ = c.Cookie("x-token")
+	}
+	return token
+}
+
+// SetToken 设置token到Gin的Context中
+func SetToken(c *gin.Context, token string, maxAge int) {
+	// 同时设置到Header和Cookie
+	c.Header("x-token", token)
+	c.SetCookie("x-token", token, maxAge, "/", "", false, true)
+}
+
+// ClearToken 清除Gin的Context中的token
+func ClearToken(c *gin.Context) {
+	// 同时清除Header和Cookie
+	c.Header("x-token", "")
+	c.SetCookie("x-token", "", -1, "/", "", false, true)
+}
+
+// GetUserID 是 GetUserId 的别名，用于向后兼容
+func GetUserID(c *gin.Context) uint {
+	return GetUserId(c)
 }

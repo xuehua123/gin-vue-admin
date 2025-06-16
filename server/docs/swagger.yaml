@@ -989,6 +989,18 @@ definitions:
           $ref: '#/definitions/system.SysBaseMenu'
         type: array
     type: object
+  request.AssignRoleRequest:
+    properties:
+      device_info:
+        additionalProperties: true
+        type: object
+      force_kick_existing:
+        type: boolean
+      role:
+        type: string
+    required:
+    - role
+    type: object
   request.AutoCode:
     properties:
       abbreviation:
@@ -1249,6 +1261,39 @@ definitions:
         description: 密码
         type: string
     type: object
+  request.CheckRoleConflictRequest:
+    properties:
+      client_id:
+        type: string
+      device_info:
+        additionalProperties: true
+        type: object
+      role:
+        type: string
+    required:
+    - client_id
+    - role
+    type: object
+  request.ConflictCheckResult:
+    properties:
+      can_force_kick:
+        type: boolean
+      conflict_device:
+        $ref: '#/definitions/request.ConflictDeviceInfo'
+      has_conflict:
+        type: boolean
+    type: object
+  request.ConflictDeviceInfo:
+    properties:
+      client_id:
+        type: string
+      connected_at:
+        type: string
+      device_model:
+        type: string
+      last_activity:
+        type: string
+    type: object
   request.CreateTransactionRequest:
     properties:
       card_type:
@@ -1466,6 +1511,15 @@ definitions:
         type: string
     required:
     - role
+    type: object
+  request.MQTTTokenResponse:
+    properties:
+      client_id:
+        type: string
+      role:
+        type: string
+      token:
+        type: string
     type: object
   request.PageInfo:
     properties:
@@ -5788,6 +5842,62 @@ paths:
       summary: 更新交易状态
       tags:
       - NFCTransaction
+  /role/checkConflict:
+    post:
+      parameters:
+      - description: 角色冲突检测请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.CheckRoleConflictRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 检测成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/request.ConflictCheckResult'
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 检查用户担当的角色是否存在设备冲突
+      tags:
+      - RoleConflict
+  /role/generateMQTTToken:
+    post:
+      parameters:
+      - description: 角色分配请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.AssignRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 生成成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/request.MQTTTokenResponse'
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 生成用于MQTT连接的JWT Token，并处理角色冲突
+      tags:
+      - RoleConflict
   /sysDictionary/createSysDictionary:
     post:
       consumes:

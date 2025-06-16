@@ -19,6 +19,8 @@ type ServiceGroup struct {
 	SysParamsService
 	UserOnlineService
 	DeviceLogService
+	RoleConflictService
+	NotificationService
 	AutoCodePlugin   autoCodePlugin
 	AutoCodePackage  autoCodePackage
 	AutoCodeHistory  autoCodeHistory

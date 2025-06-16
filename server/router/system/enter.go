@@ -20,6 +20,8 @@ type RouterGroup struct {
 	SysExportTemplateRouter
 	SysParamsRouter
 	DeviceLogRouter
+	RoleConflictRouter
+	MqttRouter
 }
 
 var (
@@ -42,4 +44,6 @@ var (
 	dictionaryDetailApi = api.ApiGroupApp.SystemApiGroup.DictionaryDetailApi
 	autoCodeTemplateApi = api.ApiGroupApp.SystemApiGroup.AutoCodeTemplateApi
 	exportTemplateApi   = api.ApiGroupApp.SystemApiGroup.SysExportTemplateApi
+	roleConflictApi     = api.ApiGroupApp.SystemApiGroup.RoleConflictApi
+	mqttAuthApi         = api.ApiGroupApp.SystemApiGroup.MqttAuthApi
 )
