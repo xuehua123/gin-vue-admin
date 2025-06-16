@@ -77,23 +77,60 @@ jobs:
             echo "✅ Docker Compose 已安装"
           fi
           
-          # 配置Git使用SSH（解决网络访问问题）
-          echo "🔑 配置Git SSH访问..."
+          # 配置SSH密钥访问GitHub
+          echo "🔑 配置SSH密钥访问GitHub..."
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           
+          # 生成SSH密钥（如果不存在）
+          if [ ! -f ~/.ssh/id_rsa ]; then
+            echo "🔐 生成SSH密钥..."
+            ssh-keygen -t rsa -b 4096 -C "deploy@server" -f ~/.ssh/id_rsa -N ""
+            echo "✅ SSH密钥生成完成"
+            echo "📋 请将以下公钥添加到GitHub Deploy Keys:"
+            echo "----------------------------------------"
+            cat ~/.ssh/id_rsa.pub
+            echo "----------------------------------------"
+            echo "⚠️  如果这是首次部署，请先添加Deploy Key到GitHub仓库设置中"
+          else
+            echo "✅ SSH密钥已存在"
+          fi
+          
           # 添加GitHub主机密钥
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+          if ! grep -q "github.com" ~/.ssh/known_hosts 2>/dev/null; then
+            echo "🔗 添加GitHub主机密钥..."
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+            echo "✅ GitHub主机密钥添加完成"
+          else
+            echo "✅ GitHub主机密钥已存在"
+          fi
           
-          # 配置Git全局设置，优化网络访问
-          git config --global http.postBuffer 524288000
-          git config --global http.maxRequestBuffer 100M
-          git config --global core.compression 0
-          git config --global http.lowSpeedLimit 0
-          git config --global http.lowSpeedTime 999999
+          # 设置SSH配置
+          cat > ~/.ssh/config << EOF
+          Host github.com
+              HostName github.com
+              User git
+              IdentityFile ~/.ssh/id_rsa
+              StrictHostKeyChecking no
+          EOF
+          chmod 600 ~/.ssh/config
           
-          # 如果HTTPS失败，尝试配置Git使用更稳定的协议
-          git config --global url."https://github.com/".insteadOf git@github.com:
+          # 测试SSH连接
+          echo "🧪 测试SSH连接到GitHub..."
+          if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+            echo "✅ SSH连接测试成功"
+            USE_SSH=true
+          else
+            echo "⚠️  SSH连接失败，将使用HTTPS方式（可能不稳定）"
+            USE_SSH=false
+            
+            # 配置Git HTTPS优化设置
+            git config --global http.postBuffer 524288000
+            git config --global http.maxRequestBuffer 100M
+            git config --global core.compression 0
+            git config --global http.lowSpeedLimit 0
+            git config --global http.lowSpeedTime 999999
+          fi
           
           # 清理并重新克隆项目（确保最新代码）
           echo "🗂️ 准备项目目录..."
@@ -102,11 +139,33 @@ jobs:
           cd /opt/gin-vue-admin
           
           echo "📥 克隆项目代码..."
-          if git clone -b ${{ github.ref_name }} https://github.com/${{ github.repository }} .; then
-            echo "✅ 代码克隆成功"
+          if [ "$USE_SSH" = true ]; then
+            echo "🔑 使用SSH方式克隆（推荐）..."
+            REPO_URL="git@github.com:${{ github.repository }}.git"
           else
-            echo "❌ 代码克隆失败，请检查网络连接和仓库权限"
-            exit 1
+            echo "🌐 使用HTTPS方式克隆（备用）..."
+            REPO_URL="https://github.com/${{ github.repository }}"
+          fi
+          
+          echo "📦 仓库URL: $REPO_URL"
+          if git clone -b ${{ github.ref_name }} "$REPO_URL" .; then
+            echo "✅ 代码克隆成功"
+            echo "📋 使用的克隆方式: $(if [ "$USE_SSH" = true ]; then echo "SSH"; else echo "HTTPS"; fi)"
+          else
+            echo "❌ 代码克隆失败"
+            if [ "$USE_SSH" = true ]; then
+              echo "🔄 SSH失败，尝试HTTPS方式..."
+              git clone -b ${{ github.ref_name }} "https://github.com/${{ github.repository }}" .
+              if [ $? -eq 0 ]; then
+                echo "✅ HTTPS克隆成功"
+              else
+                echo "❌ HTTPS克隆也失败，请检查网络和权限"
+                exit 1
+              fi
+            else
+              echo "❌ 请检查网络连接和仓库权限"
+              exit 1
+            fi
           fi
           
           echo "🔍 验证克隆结果..."
