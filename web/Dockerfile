@@ -39,6 +39,9 @@ RUN ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # 复制构建好的文件到 nginx 静态文件目录
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# 复制 Nginx 配置文件
+COPY web/.docker-compose/nginx/conf.d/nginx.conf /etc/nginx/conf.d/default.conf
+
 # 暴露端口
 EXPOSE 80
 

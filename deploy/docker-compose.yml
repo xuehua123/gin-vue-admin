@@ -33,9 +33,10 @@ services:
   # 后端服务 - 修复构建路径
   backend:
     build:
-      context: ../
-      dockerfile: server/Dockerfile
-    container_name: gva-backend
+      context: ../server
+      dockerfile: Dockerfile
+    image: gin-vue-admin-backend:${TAG:-latest}
+    container_name: gin-vue-admin-backend
     restart: unless-stopped
     environment:
       GVA_DB_TYPE: mysql
@@ -63,7 +64,8 @@ services:
     build:
       context: ../
       dockerfile: web/Dockerfile
-    container_name: gva-frontend
+    image: gin-vue-admin-frontend:${TAG:-latest}
+    container_name: gin-vue-admin-frontend
     restart: unless-stopped
     ports:
       - "80:80"
