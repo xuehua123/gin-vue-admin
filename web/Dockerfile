@@ -7,8 +7,8 @@ WORKDIR /app
 # 复制 package 文件
 COPY web/package*.json ./
 
-# 安装依赖
-RUN npm install --production && npm cache clean --force
+# 安装所有依赖（包括开发依赖，构建需要）
+RUN npm install && npm cache clean --force
 
 # 复制源代码
 COPY web/ .
