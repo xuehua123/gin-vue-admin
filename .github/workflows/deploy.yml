@@ -59,6 +59,21 @@ jobs:
         # 清理临时目录
         rm -rf /tmp/deploy-package
         
+    - name: 验证打包文件
+      run: |
+        echo "🔍 验证打包文件是否存在..."
+        if [ -f "project.tar.gz" ]; then
+          echo "✅ project.tar.gz 文件存在"
+          ls -lh project.tar.gz
+          echo "📋 压缩包内容预览:"
+          tar -tzf project.tar.gz | head -20
+        else
+          echo "❌ project.tar.gz 文件不存在"
+          echo "📂 当前目录内容:"
+          ls -la
+          exit 1
+        fi
+        
     - name: 传输文件到服务器
       uses: appleboy/scp-action@v0.1.7
       with:
@@ -66,8 +81,9 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         password: ${{ secrets.SERVER_PASSWORD }}
         port: ${{ secrets.SERVER_PORT || 22 }}
-        source: "project.tar.gz"
+        source: "./project.tar.gz"
         target: "/tmp/"
+        overwrite: true
         
     - name: 部署到服务器
       uses: appleboy/ssh-action@v1.0.3
