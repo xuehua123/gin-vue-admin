@@ -287,6 +287,9 @@ jobs:
           docker-compose -f deploy/docker-compose.yml down || true
           
           echo "🔨 构建并启动新服务..."
+          # 设置Docker构建超时时间（20分钟）
+          export DOCKER_CLIENT_TIMEOUT=1200
+          export COMPOSE_HTTP_TIMEOUT=1200
           # 强制重新构建前端，清除缓存
           docker-compose -f deploy/docker-compose.yml build --no-cache frontend
           docker-compose -f deploy/docker-compose.yml up -d --build
