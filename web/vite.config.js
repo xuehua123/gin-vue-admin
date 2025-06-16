@@ -46,6 +46,9 @@ export default ({ mode }) => {
   const root = "./"
   const outDir = "dist"
 
+  // 生产环境优化配置
+  const isProduction = NODE_ENV === 'production'
+
   const config = {
     base: base, // 编译后js导入的资源路径
     root: root, // index.html文件所在位置
@@ -81,39 +84,48 @@ export default ({ mode }) => {
       }
     },
     build: {
-      minify: 'terser', // 是否进行压缩,boolean | 'terser' | 'esbuild',默认使用terser
+      minify: isProduction ? 'esbuild' : false, // esbuild更快，terser更慢但压缩更好
       manifest: false, // 是否产出manifest.json
-      sourcemap: false, // 是否产出sourcemap.json
+      sourcemap: false, // 生产环境关闭sourcemap加速构建
       outDir: outDir, // 产出目录
-      terserOptions: {
+      // 简化terser配置（如果使用terser）
+      terserOptions: isProduction ? {
         compress: {
-          //生产环境时移除console
           drop_console: true,
           drop_debugger: true
         }
-      },
-      rollupOptions
+      } : {},
+      rollupOptions,
+      // 优化构建性能
+      target: 'es2018', // 现代浏览器目标，减少编译工作
+      cssCodeSplit: true, // CSS代码分割
+      chunkSizeWarningLimit: 1000, // 提高chunk大小警告阈值
     },
-    esbuild,
+    esbuild: isProduction ? {
+      // 生产环境使用esbuild优化
+      drop: ['console', 'debugger'],
+    } : {},
     optimizeDeps,
     plugins: [
-      process.env.VITE_POSITION === 'open' &&
+      // 开发环境才启用开发工具
+      !isProduction && process.env.VITE_POSITION === 'open' &&
         vueDevTools({ launchEditor: process.env.VITE_EDITOR }),
-      legacyPlugin({
-        targets: [
-          'Android > 39',
-          'Chrome >= 60',
-          'Safari >= 10.1',
-          'iOS >= 10.3',
-          'Firefox >= 54',
-          'Edge >= 15'
-        ]
-      }),
+      // 生产环境移除legacy插件以提高构建速度
+      // legacyPlugin({
+      //   targets: [
+      //     'Android > 39',
+      //     'Chrome >= 60',
+      //     'Safari >= 10.1',
+      //     'iOS >= 10.3',
+      //     'Firefox >= 54',
+      //     'Edge >= 15'
+      //   ]
+      // }),
       vuePlugin(),
       svgBuilder(['./src/plugin/','./src/assets/icons/'],base, outDir,'assets', NODE_ENV),
       [Banner(`\n Build based on gin-vue-admin \n Time : ${timestamp}`)],
       VueFilePathPlugin('./src/pathInfo.json')
-    ]
+    ].filter(Boolean) // 过滤掉false值
   }
   return config
 }

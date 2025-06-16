@@ -5,13 +5,14 @@ FROM node:18-alpine AS builder
 WORKDIR /app
 
 # 设置Node.js环境变量优化构建性能
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV NODE_OPTIONS="--max-old-space-size=3072"
+ENV CI=true
 
 # 复制 package 文件
 COPY web/package*.json ./
 
 # 安装所有依赖（包括开发依赖，构建需要）
-RUN npm install && npm cache clean --force
+RUN npm ci && npm cache clean --force
 
 # 复制源代码和环境配置
 COPY web/ .
@@ -19,8 +20,8 @@ COPY web/ .
 # 设置生产环境用于构建
 ENV NODE_ENV=production
 
-# 构建应用（增加超时时间和优化参数）
-RUN timeout 1200 npm run build || npm run build
+# 构建应用（简化构建过程）
+RUN npm run build
 
 # 生产阶段
 FROM nginx:alpine
