@@ -21,34 +21,61 @@ jobs:
           echo "🚀 开始部署分支: ${{ github.ref_name }}"
           echo "📦 仓库地址: ${{ github.repository }}"
           
-          # 确保服务器有必要的工具
-          echo "🔧 检查并安装必要工具..."
-          
-          # 安装 Git
-          if ! command -v git &> /dev/null; then
-            echo "❌ Git 未安装，正在安装..."
-            sudo apt-get update
-            sudo apt-get install -y git
-            echo "✅ Git 安装完成"
-          fi
-          
-          # 安装 Docker
-          if ! command -v docker &> /dev/null; then
-            echo "❌ Docker 未安装，正在安装..."
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sudo sh get-docker.sh
-            sudo systemctl start docker
-            sudo systemctl enable docker
-            echo "✅ Docker 安装完成"
-          fi
-          
-          # 安装 Docker Compose
-          if ! command -v docker-compose &> /dev/null; then
-            echo "❌ Docker Compose 未安装，正在安装..."
-            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-            echo "✅ Docker Compose 安装完成"
-          fi
+                      # 确保服务器有必要的工具
+            echo "🔧 检查并安装必要工具..."
+            
+            # 检测系统类型
+            if [ -f /etc/os-release ]; then
+              . /etc/os-release
+              OS=$NAME
+            elif type lsb_release >/dev/null 2>&1; then
+              OS=$(lsb_release -si)
+            else
+              OS=$(uname -s)
+            fi
+            echo "📋 检测到系统: $OS"
+            
+            # 安装 Git
+            if ! command -v git &> /dev/null; then
+              echo "❌ Git 未安装，正在安装..."
+              if command -v apt-get &> /dev/null; then
+                sudo apt-get update && sudo apt-get install -y git
+              elif command -v yum &> /dev/null; then
+                sudo yum install -y git
+              elif command -v dnf &> /dev/null; then
+                sudo dnf install -y git
+              else
+                echo "❌ 无法识别包管理器，请手动安装git"
+                exit 1
+              fi
+              echo "✅ Git 安装完成"
+            else
+              echo "✅ Git 已安装"
+            fi
+            
+            # 安装 Docker
+            if ! command -v docker &> /dev/null; then
+              echo "❌ Docker 未安装，正在安装..."
+              curl -fsSL https://get.docker.com -o get-docker.sh
+              sudo sh get-docker.sh
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -aG docker $USER
+              echo "✅ Docker 安装完成"
+            else
+              echo "✅ Docker 已安装"
+              sudo systemctl start docker
+            fi
+            
+            # 安装 Docker Compose
+            if ! command -v docker-compose &> /dev/null; then
+              echo "❌ Docker Compose 未安装，正在安装..."
+              sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              echo "✅ Docker Compose 安装完成"
+            else
+              echo "✅ Docker Compose 已安装"
+            fi
           
           # 清理并重新克隆项目（确保最新代码）
           echo "🗂️ 准备项目目录..."
@@ -57,14 +84,27 @@ jobs:
           cd /opt/gin-vue-admin
           
           echo "📥 克隆项目代码..."
-          git clone -b ${{ github.ref_name }} https://github.com/${{ github.repository }} .
+          if git clone -b ${{ github.ref_name }} https://github.com/${{ github.repository }} .; then
+            echo "✅ 代码克隆成功"
+          else
+            echo "❌ 代码克隆失败，请检查网络连接和仓库权限"
+            exit 1
+          fi
           
           echo "🔍 验证克隆结果..."
-          ls -la
-          
           echo "📁 当前目录: $(pwd)"
           echo "📋 查看文件结构:"
           ls -la
+          
+          # 检查关键文件是否存在
+          if [ ! -f "deploy/docker-compose.yml" ]; then
+            echo "❌ 关键文件 deploy/docker-compose.yml 不存在"
+            echo "📂 deploy 目录内容:"
+            ls -la deploy/ || echo "deploy 目录不存在"
+            exit 1
+          else
+            echo "✅ 关键文件验证通过"
+          fi
           
           echo "⏹️ 停止旧服务..."
           sudo docker-compose -f deploy/docker-compose.yml down || true
