@@ -1,5 +1,19 @@
+version: '3.8'
+
+networks:
+  gva-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+  mysql-config:
+    driver: local
+
 services:
-  # MySQL 数据库
+  # MySQL 数据库服务 - 生产级配置
   mysql:
     image: mysql:8.0
     container_name: gva-mysql
@@ -9,15 +23,38 @@ services:
       MYSQL_DATABASE: gin_vue_admin
       MYSQL_USER: gva_user
       MYSQL_PASSWORD: Gva123456!
+      TZ: Asia/Shanghai
     ports:
       - "3306:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
-    command: --default-authentication-plugin=mysql_native_password
+      - mysql-data:/var/lib/mysql
+      - mysql-config:/etc/mysql/conf.d
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    command: >
+      mysqld
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max_connections=1000
+      --innodb_buffer_pool_size=512M
+      --innodb_log_file_size=256M
+      --innodb_flush_log_at_trx_commit=2
+      --innodb_flush_method=O_DIRECT
+      --slow_query_log=1
+      --slow_query_log_file=/var/lib/mysql/slow.log
+      --long_query_time=2
+      --log-error=/var/lib/mysql/error.log
+      --general_log=0
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     networks:
       - gva-network
 
-  # Redis 缓存
+  # Redis 缓存服务 - 生产级配置
   redis:
     image: redis:7-alpine
     container_name: gva-redis
@@ -25,12 +62,30 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
-    command: redis-server --requirepass Gva123456!
+      - redis-data:/data
+      - ./redis/redis.conf:/etc/redis/redis.conf
+    command: >
+      redis-server
+      --requirepass "Gva123456!"
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --timeout 300
+      --tcp-keepalive 60
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - gva-network
 
-  # 后端服务 - 修复构建路径
+  # 后端服务
   backend:
     build:
       context: ../server
@@ -39,27 +94,16 @@ services:
     container_name: gin-vue-admin-backend
     restart: unless-stopped
     environment:
-      GVA_DB_TYPE: mysql
-      GVA_DB_HOST: mysql
-      GVA_DB_PORT: 3306
-      GVA_DB_NAME: gin_vue_admin
-      GVA_DB_USERNAME: gva_user
-      GVA_DB_PASSWORD: Gva123456!
-      GVA_REDIS_ADDR: redis:6379
-      GVA_REDIS_PASSWORD: Gva123456!
-      GVA_JWT_SIGNING_KEY: gin-vue-admin-secret-key-2024
-    ports:
-      - "8888:8888"
-    volumes:
-      - ../uploads:/go/src/github.com/flipped-aurora/gin-vue-admin/server/uploads
-      - ../logs:/go/src/github.com/flipped-aurora/gin-vue-admin/server/log
+      TZ: Asia/Shanghai
     depends_on:
-      - mysql
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - gva-network
 
-  # 前端服务 - 修复构建路径
+  # 前端服务
   frontend:
     build:
       context: ../
@@ -72,14 +116,4 @@ services:
     depends_on:
       - backend
     networks:
-      - gva-network
-
-volumes:
-  mysql_data:
-    driver: local
-  redis_data:
-    driver: local
-
-networks:
-  gva-network:
-    driver: bridge 
+      - gva-network 

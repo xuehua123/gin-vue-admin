@@ -286,27 +286,101 @@ jobs:
           echo "⏹️ 停止旧服务..."
           docker-compose -f deploy/docker-compose.yml down || true
           
-          echo "🔨 构建并启动新服务..."
+          echo "🧹 清理旧的数据卷（如需要）..."
+          # 注意：这会删除数据库数据，生产环境请谨慎
+          # docker volume prune -f || true
+          
+          echo "🔨 构建并启动基础服务 (MySQL & Redis)..."
           # 设置Docker构建超时时间（20分钟）
           export DOCKER_CLIENT_TIMEOUT=1200
           export COMPOSE_HTTP_TIMEOUT=1200
-          # 强制重新构建前端，清除缓存
-          docker-compose -f deploy/docker-compose.yml build --no-cache frontend
-          docker-compose -f deploy/docker-compose.yml up -d --build
           
-          echo "⏰ 等待服务启动..."
-          sleep 30
+          # 首先启动数据库服务
+          docker-compose -f deploy/docker-compose.yml up -d mysql redis
+          
+          echo "⏰ 等待数据库服务启动..."
+          
+          # 等待 MySQL 启动
+          echo "🔄 等待 MySQL 服务启动..."
+          for i in {1..60}; do
+              if docker-compose -f deploy/docker-compose.yml exec -T mysql mysqladmin ping -h "localhost" -u root -p"Gva123456!" --silent 2>/dev/null; then
+                  echo "✅ MySQL 服务已启动"
+                  break
+              fi
+              if [ $i -eq 60 ]; then
+                  echo "❌ MySQL 启动超时，查看日志："
+                  docker-compose -f deploy/docker-compose.yml logs mysql
+                  exit 1
+              fi
+              echo "⏳ 等待 MySQL 启动... ($i/60)"
+              sleep 2
+          done
+          
+          # 等待 Redis 启动
+          echo "🔄 等待 Redis 服务启动..."
+          for i in {1..30}; do
+              if docker-compose -f deploy/docker-compose.yml exec -T redis redis-cli -a "Gva123456!" ping 2>/dev/null | grep -q PONG; then
+                  echo "✅ Redis 服务已启动"
+                  break
+              fi
+              if [ $i -eq 30 ]; then
+                  echo "❌ Redis 启动超时，查看日志："
+                  docker-compose -f deploy/docker-compose.yml logs redis
+                  exit 1
+              fi
+              echo "⏳ 等待 Redis 启动... ($i/30)"
+              sleep 2
+          done
+          
+          echo "🔨 构建并启动应用服务..."
+          # 现在启动前端和后端
+          docker-compose -f deploy/docker-compose.yml up -d --build frontend backend
+          
+          echo "⏰ 等待应用服务启动..."
+          sleep 45
           
           echo "📊 检查服务状态:"
           docker-compose -f deploy/docker-compose.yml ps
           
           echo "🔍 检查端口占用:"
-          ss -tlnp | grep -E ':(80|8888)' || echo "未检测到服务端口"
+          ss -tlnp | grep -E ':(80|3306|6379|8888)' || echo "未检测到服务端口"
           
-          echo "📋 查看容器日志（最后20行）:"
-          docker-compose -f deploy/docker-compose.yml logs --tail=20
+          echo "🏥 服务健康检查:"
+          
+          # 检查前端服务
+          if curl -f -s http://localhost:80 > /dev/null; then
+              echo "✅ 前端服务正常"
+          else
+              echo "❌ 前端服务异常"
+              docker-compose -f deploy/docker-compose.yml logs --tail=10 frontend
+          fi
+          
+          # 检查后端服务（可能需要时间初始化数据库）
+          echo "⏳ 等待后端服务完全启动..."
+          for i in {1..30}; do
+              if curl -f -s http://localhost:8888/api/health > /dev/null 2>&1; then
+                  echo "✅ 后端服务正常"
+                  break
+              fi
+              if [ $i -eq 30 ]; then
+                  echo "⚠️ 后端服务未响应，查看日志："
+                  docker-compose -f deploy/docker-compose.yml logs --tail=20 backend
+              fi
+              echo "⏳ 检查后端服务... ($i/30)"
+              sleep 3
+          done
+          
+          echo "📋 查看最新服务日志:"
+          docker-compose -f deploy/docker-compose.yml logs --tail=10
           
           echo "🎉 部署完成！"
-          echo "🌐 前端访问地址: http://${{ secrets.SERVER_HOST }}"
-          echo "🔧 后端API地址: http://${{ secrets.SERVER_HOST }}:8888"
-          echo "📋 查看完整日志: docker-compose -f /opt/gin-vue-admin/deploy/docker-compose.yml logs -f" 
+          echo ""
+          echo "🌍 服务访问地址:"
+          echo "📱 前端地址: http://${{ secrets.SERVER_HOST }}"
+          echo "🔧 后端 API: http://${{ secrets.SERVER_HOST }}/api"
+          echo "📊 API 文档: http://${{ secrets.SERVER_HOST }}/api/swagger/index.html"
+          echo ""
+          echo "🔧 管理命令:"
+          echo "查看日志: cd /opt/gin-vue-admin && docker-compose -f deploy/docker-compose.yml logs -f"
+          echo "重启服务: cd /opt/gin-vue-admin && docker-compose -f deploy/docker-compose.yml restart"
+          echo "停止服务: cd /opt/gin-vue-admin && docker-compose -f deploy/docker-compose.yml down" 

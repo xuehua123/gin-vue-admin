@@ -2,15 +2,15 @@
 
 # jwt configuration
 jwt:
-  signing-key: qmPlus
+  signing-key: GvaJwtStrong2024!@#
   expires-time: 7d
   buffer-time: 1d
-  issuer: qmPlus
+  issuer: gin-vue-admin
 # zap logger configuration
 zap:
   level: info
   format: console
-  prefix: "[github.com/flipped-aurora/gin-vue-admin/server]"
+  prefix: "[gin-vue-admin]"
   director: log
   show-line: true
   encode-level: LowercaseColorLevelEncoder
@@ -20,8 +20,8 @@ zap:
 # redis configuration
 redis:
   db: 0
-  addr: 177.7.0.14:6379
-  password: ""
+  addr: redis:6379
+  password: "Gva123456!"
 
 # mongo configuration
 mongo:
@@ -55,7 +55,7 @@ system:
   addr: 8888
   db-type: mysql
   oss-type: local    # 控制oss选择走本地还是 七牛等其他仓 自行增加其他oss仓可以在 server/utils/upload/upload.go 中 NewOss函数配置
-  use-redis: false     # 使用redis
+  use-redis: true     # 启用redis
   use-mongo: false     # 使用mongo
   use-multipoint: false
   # IP限制次数 一个小时15000次
@@ -74,15 +74,15 @@ captcha:
 # mysql connect configuration
 # 未初始化之前请勿手动修改数据库信息！！！如果一定要手动初始化请看（https://gin-vue-admin.com/docs/first_master）
 mysql:
-  path: ""
-  port: ""
-  config: ""
-  db-name: ""
-  username: ""
-  password: ""
+  path: mysql:3306
+  port: "3306"
+  config: charset=utf8mb4&parseTime=True&loc=Local
+  db-name: gin_vue_admin
+  username: gva_user
+  password: "Gva123456!"
   max-idle-conns: 10
   max-open-conns: 100
-  log-mode: ""
+  log-mode: error
   log-zap: false
 
 # pgsql connect configuration
