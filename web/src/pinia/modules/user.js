@@ -1,6 +1,5 @@
 import { login, getUserInfo } from '@/api/user'
 import { jsonInBlacklist } from '@/api/jwt'
-import router from '@/router/index'
 import { ElLoading, ElMessage } from 'element-plus'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -37,6 +36,7 @@ export const useUserStore = defineStore('user', () => {
 
   const NeedInit = async () => {
     await ClearStorage()
+    const router = (await import('@/router/index')).default
     await router.push({ name: 'Init', replace: true })
   }
 
@@ -75,7 +75,7 @@ export const useUserStore = defineStore('user', () => {
       const routerStore = useRouterStore()
       await routerStore.SetAsyncRouter()
       const asyncRouters = routerStore.asyncRouters
-
+      const router = (await import('@/router/index')).default
       // 注册到路由表里
       asyncRouters.forEach((asyncRouter) => {
         router.addRoute(asyncRouter)
@@ -114,7 +114,7 @@ export const useUserStore = defineStore('user', () => {
     }
 
     await ClearStorage()
-
+    const router = (await import('@/router/index')).default
     // 把路由定向到登录页，无需等待直接reload
     router.push({ name: 'Login', replace: true })
     window.location.reload()
