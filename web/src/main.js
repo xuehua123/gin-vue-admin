@@ -8,7 +8,7 @@ import 'element-plus/dist/index.css'
 import './core/gin-vue-admin'
 // 引入封装的router
 import router from '@/router/index'
-import '@/permission'
+import { setupPermissions } from '@/permission'
 import run from '@/core/gin-vue-admin.js'
 import auth from '@/directive/auth'
 import { store } from '@/pinia'
@@ -17,5 +17,15 @@ import App from './App.vue'
 const app = createApp(App)
 app.config.productionTip = false
 
-app.use(run).use(ElementPlus).use(store).use(auth).use(router).mount('#app')
+app
+  .use(run)
+  .use(ElementPlus)
+  .use(store)
+  .use(auth)
+  .use(router)
+
+setupPermissions()
+
+app.mount('#app')
+
 export default app
