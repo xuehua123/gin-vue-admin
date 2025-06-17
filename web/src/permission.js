@@ -1,5 +1,3 @@
-import { useUserStore } from '@/pinia/modules/user'
-import { useRouterStore } from '@/pinia/modules/router'
 import getPageTitle from '@/utils/page'
 import router from '@/router'
 import Nprogress from 'nprogress'
@@ -19,6 +17,8 @@ export function setupPermissions() {
 
   // 处理路由加载
   const setupRouter = async () => {
+    const { useRouterStore } = await import('@/pinia/modules/router')
+    const { useUserStore } = await import('@/pinia/modules/user')
     const routerStore = useRouterStore()
     const userStore = useUserStore()
     await Promise.all([routerStore.SetAsyncRouter(), userStore.GetUserInfo()])
@@ -55,6 +55,8 @@ export function setupPermissions() {
 
   // 路由守卫
   router.beforeEach(async (to, from, next) => {
+    const { useUserStore } = await import('@/pinia/modules/user')
+    const { useRouterStore } = await import('@/pinia/modules/router')
     const userStore = useUserStore()
     const routerStore = useRouterStore()
     to.meta.matched = [...to.matched]

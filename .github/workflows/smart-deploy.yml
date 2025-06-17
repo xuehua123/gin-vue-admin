@@ -89,10 +89,13 @@ jobs:
             sudo swapon --show
 
             # 拉取最新代码
-            echo "�� 获取最新代码并强制覆盖本地..."
+            echo "📥 获取最新代码并强制覆盖本地..."
             git fetch origin
             git reset --hard origin/dev-mqtt
             
+            # 清理Docker构建缓存
+            docker builder prune -f || true
+
             # 确保依赖服务运行
             echo "🔍 检查依赖服务状态..."
             docker-compose -f deploy/docker-compose.yml up -d mysql redis
@@ -165,10 +168,13 @@ jobs:
             sudo swapon --show
 
             # 拉取最新代码
-            echo "�� 获取最新代码并强制覆盖本地..."
+            echo "📥 获取最新代码并强制覆盖本地..."
             git fetch origin
             git reset --hard origin/dev-mqtt
             
+            # 清理Docker构建缓存
+            docker builder prune -f || true
+
             # 创建前端环境配置文件
             echo "📝 创建前端生产环境配置..."
             cat > web/.env.production << EOF
@@ -197,7 +203,7 @@ jobs:
             
             # 只重建前端服务
             echo "🔨 重建前端镜像..."
-            docker-compose -f deploy/docker-compose.yml build frontend
+            docker-compose -f deploy/docker-compose.yml build --no-cache frontend
             
             # 重启前端服务
             echo "🔄 重启前端服务..."
@@ -251,10 +257,13 @@ jobs:
             sudo swapon --show
 
             # 拉取最新代码
-            echo "�� 获取最新代码并强制覆盖本地..."
+            echo "📥 获取最新代码并强制覆盖本地..."
             git fetch origin
             git reset --hard origin/dev-mqtt
             
+            # 清理Docker构建缓存
+            docker builder prune -f || true
+
             # 创建前端环境配置文件
             echo "📝 创建前端生产环境配置..."
             cat > web/.env.production << EOF
@@ -272,7 +281,7 @@ jobs:
             
             # 重建并启动所有服务
             echo "🔨 重建并启动所有服务..."
-            docker-compose -f deploy/docker-compose.yml up -d --build
+            docker-compose -f deploy/docker-compose.yml up -d --build --no-cache
             
             # 全面健康检查
             echo "🏥 全面服务健康检查..."
