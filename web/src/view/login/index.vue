@@ -129,14 +129,18 @@
   import BottomInfo from '@/components/bottomInfo/bottomInfo.vue'
   import { reactive, ref } from 'vue'
   import { ElMessage } from 'element-plus'
-  import { useRouter } from 'vue-router'
+  import { useRouter, useRoute } from 'vue-router'
   import { useUserStore } from '@/pinia/modules/user'
+  import { useRouterStore } from '@/pinia/modules/router'
 
   defineOptions({
     name: 'Login'
   })
 
   const router = useRouter()
+  const route = useRoute()
+  const userStore = useUserStore()
+  const routerStore = useRouterStore()
   // 验证函数
   const checkUsername = (rule, value, callback) => {
     if (value.length < 5) {
@@ -189,13 +193,23 @@
     ]
   })
 
-  const userStore = useUserStore()
   const login = async () => {
-    return await userStore.LoginIn(loginFormData)
-  }
-  const submitForm = () => {
     loginForm.value.validate(async (v) => {
-      if (!v) {
+      if (v) {
+        const res = await userStore.LoginIn(loginFormData)
+        if (res.success) {
+          const asyncRouters = routerStore.asyncRouters
+          asyncRouters.forEach(asyncRouter => {
+            router.addRoute(asyncRouter)
+          })
+
+          if (route.query.redirect) {
+            await router.replace({ path: route.query.redirect })
+          } else {
+            await router.replace({ name: res.defaultRouter })
+          }
+        }
+      } else {
         // 未通过前端静态验证
         ElMessage({
           type: 'error',
@@ -205,18 +219,6 @@
         await loginVerify()
         return false
       }
-
-      // 通过验证，请求登陆
-      const flag = await login()
-
-      // 登陆失败，刷新验证码
-      if (!flag) {
-        await loginVerify()
-        return false
-      }
-
-      // 登陆成功
-      return true
     })
   }
 

@@ -91,7 +91,7 @@
             <el-dropdown-item icon="avatar" @click="toPerson">
               个人信息
             </el-dropdown-item>
-            <el-dropdown-item icon="reading-lamp" @click="userStore.LoginOut">
+            <el-dropdown-item icon="SwitchButton" @click="loginOut">
               登 出
             </el-dropdown-item>
           </el-dropdown-menu>
@@ -134,6 +134,12 @@
       window.sessionStorage.setItem('needToHome', 'true')
       window.location.reload()
     }
+  }
+
+  const loginOut = async() => {
+    await userStore.LoginOut()
+    router.push({ name: 'Login', replace: true })
+    window.location.reload()
   }
 </script>
 

@@ -1,6 +1,5 @@
 import { login, getUserInfo } from '@/api/user'
 import { jsonInBlacklist } from '@/api/jwt'
-import router from '@/router/index'
 import { ElLoading, ElMessage } from 'element-plus'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -37,7 +36,7 @@ export const useUserStore = defineStore('user', () => {
 
   const NeedInit = async () => {
     await ClearStorage()
-    await router.push({ name: 'Init', replace: true })
+    return true
   }
 
   const ResetUserInfo = (value = {}) => {
@@ -71,35 +70,15 @@ export const useUserStore = defineStore('user', () => {
       setUserInfo(res.data.user)
       setToken(res.data.token)
 
-      // 初始化路由信息
       const routerStore = useRouterStore()
       await routerStore.SetAsyncRouter()
-      const asyncRouters = routerStore.asyncRouters
 
-      // 注册到路由表里
-      asyncRouters.forEach((asyncRouter) => {
-        router.addRoute(asyncRouter)
-      })
-
-      if(router.currentRoute.value.query.redirect) {
-        await router.replace(router.currentRoute.value.query.redirect)
-        return true
-      }
-
-      if (!router.hasRoute(userInfo.value.authority.defaultRouter)) {
-        ElMessage.error('请联系管理员进行授权')
-      } else {
-        await router.replace({ name: userInfo.value.authority.defaultRouter })
-      }
-
-      const isWindows = /windows/i.test(navigator.userAgent)
-      window.localStorage.setItem('osType', isWindows ? 'WIN' : 'MAC')
-
-      // 全部操作均结束，关闭loading并返回
-      return true
+      // 移除所有路由操作，只返回成功状态和目标路由
+      const defaultRouter = userInfo.value.authority.defaultRouter
+      return { success: true, defaultRouter }
     } catch (error) {
       console.error('LoginIn error:', error)
-      return false
+      return { success: false }
     } finally {
       loadingInstance.value?.close()
     }
@@ -107,15 +86,11 @@ export const useUserStore = defineStore('user', () => {
   /* 登出*/
   const LoginOut = async () => {
     const res = await jsonInBlacklist()
-
-    // 登出失败
     if (res.code !== 0) {
-      return
+      // 即使登出失败，也应该清理前端状态
+      console.error('jsonInBlacklist fail', res)
     }
-
     await ClearStorage()
-    router.push({ name: 'Login', replace: true })
-    window.location.reload()
   }
   /* 清理数据 */
   const ClearStorage = async () => {
