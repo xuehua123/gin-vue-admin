@@ -4,7 +4,6 @@ import { asyncMenu } from '@/api/menu'
 import { defineStore } from 'pinia'
 import { ref, watchEffect } from 'vue'
 import pathInfo from '@/pathInfo.json'
-import {useRoute} from "vue-router";
 
 const notLayoutRouterArr = []
 const keepAliveRoutersArr = []
@@ -60,6 +59,16 @@ export const useRouterStore = defineStore('router', () => {
     keepAliveRouters.value = Array.from(new Set(keepArrTemp))
   }
 
+  // 动态导入useRoute，避免循环依赖
+  let currentRoute = null
+  const getCurrentRoute = async () => {
+    if (!currentRoute) {
+      const { useRoute } = await import('vue-router')
+      currentRoute = useRoute()
+    }
+    return currentRoute
+  }
+
   emitter.on('setKeepAlive', setKeepAliveRouters)
 
   const asyncRouters = ref([])
@@ -96,8 +105,7 @@ export const useRouterStore = defineStore('router', () => {
     return null;
   };
 
-  watchEffect(() => {
-    const route = useRoute()
+  watchEffect(async () => {
     let topActive = sessionStorage.getItem('topActive')
     // 初始化菜单内容，防止重复添加
     topMenu.value = [];
@@ -107,6 +115,7 @@ export const useRouterStore = defineStore('router', () => {
       topMenu.value.push({ ...item, children: [] })
     })
     if (!topActive || topActive === 'undefined' || topActive === 'null') {
+      const route = await getCurrentRoute()
       topActive = findTopActive(menuMap, route.name);
     }
     setLeftMenu(topActive)
