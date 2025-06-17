@@ -74,8 +74,22 @@ jobs:
             echo "🔧 智能部署后端服务..."
             cd /opt/gin-vue-admin
             
+            # 检查并创建/启用 Swap 交换空间
+            if [ "$(sudo swapon --show | wc -l)" -lt 2 ]; then
+              echo "🤔 未发现Swap, 正在创建4GB Swap空间..."
+              sudo fallocate -l 4G /swapfile
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile
+              echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+              echo "✅ Swap创建并启用成功!"
+            else
+              echo "✅ Swap已存在."
+            fi
+            sudo swapon --show
+
             # 拉取最新代码
-            echo "🚚 获取最新代码并强制覆盖本地..."
+            echo "�� 获取最新代码并强制覆盖本地..."
             git fetch origin
             git reset --hard origin/dev-mqtt
             
@@ -136,8 +150,22 @@ jobs:
             echo "🎨 智能部署前端服务..."
             cd /opt/gin-vue-admin
             
+            # 检查并创建/启用 Swap 交换空间
+            if [ "$(sudo swapon --show | wc -l)" -lt 2 ]; then
+              echo "🤔 未发现Swap, 正在创建4GB Swap空间..."
+              sudo fallocate -l 4G /swapfile
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile
+              echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+              echo "✅ Swap创建并启用成功!"
+            else
+              echo "✅ Swap已存在."
+            fi
+            sudo swapon --show
+
             # 拉取最新代码
-            echo "🚚 获取最新代码并强制覆盖本地..."
+            echo "�� 获取最新代码并强制覆盖本地..."
             git fetch origin
             git reset --hard origin/dev-mqtt
             
@@ -208,8 +236,22 @@ jobs:
             echo "🚀 全量部署所有服务..."
             cd /opt/gin-vue-admin
             
+            # 检查并创建/启用 Swap 交换空间
+            if [ "$(sudo swapon --show | wc -l)" -lt 2 ]; then
+              echo "🤔 未发现Swap, 正在创建4GB Swap空间..."
+              sudo fallocate -l 4G /swapfile
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile
+              echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+              echo "✅ Swap创建并启用成功!"
+            else
+              echo "✅ Swap已存在."
+            fi
+            sudo swapon --show
+
             # 拉取最新代码
-            echo "🚚 获取最新代码并强制覆盖本地..."
+            echo "�� 获取最新代码并强制覆盖本地..."
             git fetch origin
             git reset --hard origin/dev-mqtt
             
