@@ -1,32 +1,35 @@
-name: 🔧 Emergency Frontend Fix - 紧急修复前端配置
+name: 🚀 Deploy All Services - 全量部署
 
 on:
   workflow_dispatch:
     inputs:
       description:
-        description: '修复描述'
+        description: '部署描述'
         required: false
-        default: '修复前端环境配置问题'
+        default: '全量部署所有服务'
 
 jobs:
-  fix-frontend:
+  deploy-all:
     runs-on: ubuntu-latest
     steps:
-      - name: 🔧 紧急修复前端配置
+      - name: 🚀 执行全量部署
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.PASSWORD }}
-          port: ${{ secrets.PORT }}
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          password: ${{ secrets.PROD_PASSWORD }}
+          port: ${{ secrets.PROD_PORT }}
           script: |
-            echo "🚨 紧急修复前端配置问题..."
+            echo "🚀 开始全量部署所有服务..."
             cd /opt/gin-vue-admin
-            
-            # 拉取最新代码
-            git pull origin dev-mqtt
-            
-            echo "📝 创建前端生产环境配置文件..."
+
+            # 步骤 1: 拉取最新代码
+            echo "🚚 [1/5] 获取最新代码并重置本地分支..."
+            git fetch origin
+            git reset --hard origin/dev-mqtt
+
+            # 步骤 2: 创建前端环境配置文件
+            echo "📝 [2/5] 创建前端生产环境配置..."
             cat > web/.env.production << 'EOF'
             VITE_CLI_PORT = 80
             VITE_SERVER_PORT = 8888
@@ -35,51 +38,36 @@ jobs:
             VITE_EDITOR = vscode
             VITE_POSITION = open
             EOF
-            
-            echo "📝 创建前端开发环境配置文件..."
-            cat > web/.env.development << 'EOF'
-            VITE_CLI_PORT = 3000
-            VITE_SERVER_PORT = 8888
-            VITE_BASE_API = '/api'
-            VITE_BASE_PATH = 'http://localhost'
-            VITE_EDITOR = vscode
-            VITE_POSITION = open
-            EOF
-            
-            echo "🔍 验证配置文件..."
-            echo "生产环境配置："
-            cat web/.env.production
-            echo -e "\n开发环境配置："
-            cat web/.env.development
-            
-            echo "🔨 重建前端服务..."
-            docker-compose -f deploy/docker-compose.yml build frontend
-            
-            echo "🔄 重启前端服务..."
-            docker-compose -f deploy/docker-compose.yml stop frontend
-            docker-compose -f deploy/docker-compose.yml up -d frontend
-            
-            echo "⏰ 等待前端服务启动..."
-            sleep 30
-            
-            echo "🏥 前端服务健康检查..."
-            for i in {1..20}; do
-                if curl -f -s http://localhost:80 > /dev/null 2>&1; then
-                    echo "✅ 前端服务修复成功！"
-                    echo "📱 访问地址: http://43.165.186.134"
-                    break
-                fi
-                if [ $i -eq 20 ]; then
-                    echo "❌ 前端服务仍有问题，查看日志："
-                    docker-compose -f deploy/docker-compose.yml logs --tail=30 frontend
-                    echo "🔍 检查nginx配置："
-                    docker exec gin-vue-admin-frontend cat /etc/nginx/conf.d/default.conf
-                    exit 1
-                fi
-                echo "⏳ 等待前端服务... ($i/20)"
-                sleep 3
-            done
-            
-            echo "🎉 前端配置修复完成！"
+
+            # 步骤 3: 停止并移除旧服务
+            echo "⏹️ [3/5] 停止并移除所有旧服务..."
+            docker-compose -f deploy/docker-compose.yml down
+
+            # 步骤 4: 重建并启动所有服务
+            echo "🔨 [4/5] 重建并启动所有服务..."
+            docker-compose -f deploy/docker-compose.yml up -d --build
+
+            # 步骤 5: 全面健康检查
+            echo "🏥 [5/5] 执行全面服务健康检查..."
+            echo "⏰ 等待服务稳定启动 (60秒)..."
+            sleep 60
+
+            # 检查前端
+            if curl -f -s http://localhost:80 > /dev/null; then
+                echo "✅ 前端服务正常"
+            else
+                echo "❌ 前端服务异常"
+                docker-compose -f deploy/docker-compose.yml logs --tail=50 frontend
+            fi
+
+            # 检查后端
+            if curl -f -s http://localhost:8888/health > /dev/null; then
+                echo "✅ 后端服务正常"
+            else
+                echo "❌ 后端服务异常"
+                docker-compose -f deploy/docker-compose.yml logs --tail=50 backend
+            fi
+
+            echo "🎉 部署流程执行完毕！"
             echo "📊 最终服务状态："
             docker-compose -f deploy/docker-compose.yml ps 
