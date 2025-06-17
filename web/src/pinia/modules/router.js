@@ -60,8 +60,6 @@ export const useRouterStore = defineStore('router', () => {
     keepAliveRouters.value = Array.from(new Set(keepArrTemp))
   }
 
-  const route = useRoute()
-
   emitter.on('setKeepAlive', setKeepAliveRouters)
 
   const asyncRouters = ref([])
@@ -99,6 +97,7 @@ export const useRouterStore = defineStore('router', () => {
   };
 
   watchEffect(() => {
+    const route = useRoute()
     let topActive = sessionStorage.getItem('topActive')
     // 初始化菜单内容，防止重复添加
     topMenu.value = [];
