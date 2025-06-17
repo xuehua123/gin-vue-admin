@@ -31,8 +31,9 @@ jobs:
             cd /opt/gin-vue-admin
             
             # 拉取最新修复代码
-            echo "📥 拉取最新修复代码..."
-            git pull origin dev-mqtt
+            echo "📥 拉取最新修复代码并强制覆盖..."
+            git fetch origin
+            git reset --hard origin/dev-mqtt
             
             # 创建完整的前端环境配置
             echo "📝 创建前端环境配置..."

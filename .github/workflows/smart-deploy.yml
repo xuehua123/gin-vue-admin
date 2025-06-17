@@ -75,7 +75,9 @@ jobs:
             cd /opt/gin-vue-admin
             
             # 拉取最新代码
-            git pull origin dev-mqtt
+            echo "🚚 获取最新代码并强制覆盖本地..."
+            git fetch origin
+            git reset --hard origin/dev-mqtt
             
             # 确保依赖服务运行
             echo "🔍 检查依赖服务状态..."
@@ -135,7 +137,9 @@ jobs:
             cd /opt/gin-vue-admin
             
             # 拉取最新代码
-            git pull origin dev-mqtt
+            echo "🚚 获取最新代码并强制覆盖本地..."
+            git fetch origin
+            git reset --hard origin/dev-mqtt
             
             # 创建前端环境配置文件
             echo "📝 创建前端生产环境配置..."
@@ -205,7 +209,9 @@ jobs:
             cd /opt/gin-vue-admin
             
             # 拉取最新代码
-            git pull origin dev-mqtt
+            echo "🚚 获取最新代码并强制覆盖本地..."
+            git fetch origin
+            git reset --hard origin/dev-mqtt
             
             # 创建前端环境配置文件
             echo "📝 创建前端生产环境配置..."
