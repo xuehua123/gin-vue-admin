@@ -124,12 +124,11 @@ export default ({ mode }) => {
       sourcemap: false, // 生产环境关闭sourcemap加速构建
       outDir: outDir, // 产出目录
       reportCompressedSize: false, // 禁用 gzip 大小计算以节省内存
-      rollupOptions,
       // 优化构建性能，减少内存占用
       target: 'es2018', // 现代浏览器目标，减少编译工作
       cssCodeSplit: false, // 禁用CSS代码分割以减少内存使用
       chunkSizeWarningLimit: 5000, // 提高chunk大小警告阈值
-      // 限制并发构建进程
+      // 合并和优化rollupOptions配置
       rollupOptions: {
         ...rollupOptions,
         maxParallelFileOps: 2, // 限制并发文件操作数

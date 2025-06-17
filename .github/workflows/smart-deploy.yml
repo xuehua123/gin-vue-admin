@@ -61,7 +61,7 @@ jobs:
   deploy-backend:
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend_changed == 'true' || needs.detect-changes.outputs.deploy_all == 'true'
+    if: needs.detect-changes.outputs.backend_changed == 'true' && needs.detect-changes.outputs.deploy_all == 'false'
     steps:
       - name: 🚀 部署后端服务
         uses: appleboy/ssh-action@v1.0.3
@@ -76,6 +76,22 @@ jobs:
             
             # 拉取最新代码
             git pull origin dev-mqtt
+            
+            # 确保依赖服务运行
+            echo "🔍 检查依赖服务状态..."
+            docker-compose -f deploy/docker-compose.yml up -d mysql redis
+            
+            # 等待依赖服务健康
+            echo "⏰ 等待依赖服务健康..."
+            for i in {1..30}; do
+                if docker-compose -f deploy/docker-compose.yml ps mysql | grep -q "healthy" && \
+                   docker-compose -f deploy/docker-compose.yml ps redis | grep -q "healthy"; then
+                    echo "✅ 依赖服务健康"
+                    break
+                fi
+                echo "⏳ 等待依赖服务健康... ($i/30)"
+                sleep 2
+            done
             
             # 只重建后端服务
             echo "🔨 重建后端镜像..."
@@ -105,7 +121,7 @@ jobs:
   deploy-frontend:
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend_changed == 'true' || needs.detect-changes.outputs.deploy_all == 'true'
+    if: needs.detect-changes.outputs.frontend_changed == 'true' && needs.detect-changes.outputs.deploy_all == 'false'
     steps:
       - name: 🚀 部署前端服务
         uses: appleboy/ssh-action@v1.0.3
@@ -131,6 +147,21 @@ jobs:
             VITE_EDITOR = vscode
             VITE_POSITION = open
             EOF
+            
+            # 确保后端服务运行
+            echo "🔍 检查后端服务状态..."
+            docker-compose -f deploy/docker-compose.yml up -d mysql redis backend
+            
+            # 等待后端服务健康
+            echo "⏰ 等待后端服务健康..."
+            for i in {1..20}; do
+                if curl -f -s http://localhost:8888/health > /dev/null 2>&1; then
+                    echo "✅ 后端服务健康"
+                    break
+                fi
+                echo "⏳ 等待后端服务健康... ($i/20)"
+                sleep 3
+            done
             
             # 只重建前端服务
             echo "🔨 重建前端镜像..."
