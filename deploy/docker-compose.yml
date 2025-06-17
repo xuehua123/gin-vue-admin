@@ -102,6 +102,10 @@ services:
         condition: service_healthy
     networks:
       - gva-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
   # 前端服务
   frontend:
@@ -117,3 +121,7 @@ services:
       - backend
     networks:
       - gva-network
+    deploy:
+      resources:
+        limits:
+          memory: 6G

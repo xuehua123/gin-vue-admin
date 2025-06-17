@@ -38,7 +38,24 @@ export default ({ mode }) => {
     output: {
       entryFileNames: 'assets/087AC4D233B64EB0[name].[hash].js',
       chunkFileNames: 'assets/087AC4D233B64EB0[name].[hash].js',
-      assetFileNames: 'assets/087AC4D233B64EB0[name].[hash].[ext]'
+      assetFileNames: 'assets/087AC4D233B64EB0[name].[hash].[ext]',
+      manualChunks(id) {
+        if (id.includes('node_modules')) {
+          // 将所有 node_modules 的依赖项打包到一个单独的 vendor chunk 中
+          return 'vendor'
+        }
+        // 对特定的大型组件或库进行代码分割
+        const largeComponents = [
+          'src/view/systemTools/richEdit/index.vue',
+          'src/view/systemTools/autoCode/previewCodeDialog.vue',
+          'src/components/selectImage/index.vue',
+          'src/view/systemTools/autoCode/index.vue',
+          'src/view/systemTools/formCreate/index.vue'
+        ]
+        if (largeComponents.some(comp => id.includes(comp))) {
+          return 'large-components'
+        }
+      }
     }
   }
 
