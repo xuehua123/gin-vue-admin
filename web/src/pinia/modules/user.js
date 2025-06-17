@@ -8,10 +8,16 @@ import { useRouterStore } from './router'
 import { useCookies } from '@vueuse/integrations/useCookies'
 import { useStorage } from '@vueuse/core'
 
-import { useAppStore } from '@/pinia'
-
 export const useUserStore = defineStore('user', () => {
-  const appStore = useAppStore()
+  // 延迟加载appStore以避免循环依赖
+  let appStore = null
+  const getAppStore = () => {
+    if (!appStore) {
+      const { useAppStore } = require('@/pinia/modules/app')
+      appStore = useAppStore()
+    }
+    return appStore
+  }
   const loadingInstance = ref(null)
 
   const userInfo = ref({
@@ -27,13 +33,14 @@ export const useUserStore = defineStore('user', () => {
   const setUserInfo = (val) => {
     userInfo.value = val
     if (val.originSetting) {
+      const appStore = getAppStore()
       Object.keys(appStore.config).forEach((key) => {
         if (val.originSetting[key] !== undefined) {
           appStore.config[key] = val.originSetting[key]
         }
       })
+      console.log(appStore.config)
     }
-    console.log(appStore.config)
   }
 
   const setToken = (val) => {

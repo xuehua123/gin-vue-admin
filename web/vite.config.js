@@ -42,8 +42,12 @@ export default ({ mode }) => {
       manualChunks(id) {
         if (id.includes('node_modules')) {
           // 将不同类型的依赖分别打包
-          if (id.includes('vue') || id.includes('pinia') || id.includes('@vue')) {
+          if (id.includes('vue') || id.includes('@vue')) {
             return 'vue-vendor'
+          }
+          // 单独处理pinia，避免和其他store模块混合
+          if (id.includes('pinia')) {
+            return 'pinia-vendor'
           }
           if (id.includes('element-plus') || id.includes('@element-plus')) {
             return 'element-vendor'
@@ -53,6 +57,10 @@ export default ({ mode }) => {
           }
           // 其他依赖打包到通用 vendor
           return 'common-vendor'
+        }
+        // 将pinia store模块保持在一起，避免循环依赖问题
+        if (id.includes('src/pinia/')) {
+          return 'pinia-stores'
         }
         // 对特定的大型组件或库进行代码分割
         const largeComponents = [
@@ -128,6 +136,11 @@ export default ({ mode }) => {
       target: 'es2018', // 现代浏览器目标，减少编译工作
       cssCodeSplit: true, // CSS代码分割
       chunkSizeWarningLimit: 2000, // 提高chunk大小警告阈值，减少内存压力
+      // 增强模块解析，避免循环依赖问题
+      commonjsOptions: {
+        include: [/node_modules/],
+        transformMixedEsModules: true
+      }
     },
     esbuild: isProduction ? {
       // 生产环境使用esbuild优化
