@@ -1,0 +1,254 @@
+name: 🚀 Smart Deployment - 智能化增量部署
+
+on:
+  push:
+    branches: [ dev-mqtt, main ]
+  workflow_dispatch:
+    inputs:
+      force_deploy_all:
+        description: '强制部署所有服务'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  IMAGE_PREFIX: gva
+
+jobs:
+  # 检测变化的文件和服务
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_changed: ${{ steps.changes.outputs.backend }}
+      frontend_changed: ${{ steps.changes.outputs.frontend }}
+      docker_changed: ${{ steps.changes.outputs.docker }}
+      deploy_all: ${{ github.event.inputs.force_deploy_all == 'true' || steps.force-all.outputs.force }}
+    steps:
+      - name: 🔍 检查代码变化
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: 🔄 检测服务变化
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            backend:
+              - 'server/**'
+              - 'deploy/docker-compose.yml'
+              - 'deploy/mysql/**'
+              - 'deploy/redis/**'
+            frontend:
+              - 'web/**'
+              - '!web/node_modules/**'
+            docker:
+              - 'deploy/**'
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+      
+      - name: 🎯 检查是否需要强制全量部署
+        id: force-all
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ steps.changes.outputs.docker }}" == "true" ]]; then
+            echo "force=true" >> $GITHUB_OUTPUT
+          else
+            echo "force=false" >> $GITHUB_OUTPUT
+          fi
+
+  # 智能部署后端服务
+  deploy-backend:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend_changed == 'true' || needs.detect-changes.outputs.deploy_all == 'true'
+    steps:
+      - name: 🚀 部署后端服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          script: |
+            echo "🔧 智能部署后端服务..."
+            cd /opt/gin-vue-admin
+            
+            # 拉取最新代码
+            git pull origin dev-mqtt
+            
+            # 只重建后端服务
+            echo "🔨 重建后端镜像..."
+            docker-compose -f deploy/docker-compose.yml build backend
+            
+            # 重启后端服务
+            echo "🔄 重启后端服务..."
+            docker-compose -f deploy/docker-compose.yml up -d backend
+            
+            # 健康检查
+            echo "🏥 后端服务健康检查..."
+            for i in {1..30}; do
+                if curl -f -s http://localhost:8888/health > /dev/null 2>&1; then
+                    echo "✅ 后端服务重启成功"
+                    break
+                fi
+                if [ $i -eq 30 ]; then
+                    echo "❌ 后端服务重启失败"
+                    docker-compose -f deploy/docker-compose.yml logs --tail=20 backend
+                    exit 1
+                fi
+                echo "⏳ 等待后端服务... ($i/30)"
+                sleep 3
+            done
+
+  # 智能部署前端服务
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend_changed == 'true' || needs.detect-changes.outputs.deploy_all == 'true'
+    steps:
+      - name: 🚀 部署前端服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          script: |
+            echo "🎨 智能部署前端服务..."
+            cd /opt/gin-vue-admin
+            
+            # 拉取最新代码
+            git pull origin dev-mqtt
+            
+            # 创建前端环境配置文件
+            echo "📝 创建前端生产环境配置..."
+            cat > web/.env.production << EOF
+            VITE_CLI_PORT = 80
+            VITE_SERVER_PORT = 8888
+            VITE_BASE_API = '/api'
+            VITE_BASE_PATH = ''
+            VITE_EDITOR = vscode
+            VITE_POSITION = open
+            EOF
+            
+            # 只重建前端服务
+            echo "🔨 重建前端镜像..."
+            docker-compose -f deploy/docker-compose.yml build frontend
+            
+            # 重启前端服务
+            echo "🔄 重启前端服务..."
+            docker-compose -f deploy/docker-compose.yml up -d frontend
+            
+            # 健康检查
+            echo "🏥 前端服务健康检查..."
+            for i in {1..15}; do
+                if curl -f -s http://localhost:80 > /dev/null 2>&1; then
+                    echo "✅ 前端服务重启成功"
+                    break
+                fi
+                if [ $i -eq 15 ]; then
+                    echo "❌ 前端服务重启失败"
+                    docker-compose -f deploy/docker-compose.yml logs --tail=20 frontend
+                    exit 1
+                fi
+                echo "⏳ 等待前端服务... ($i/15)"
+                sleep 2
+            done
+
+  # 全量部署（备用）
+  deploy-all:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.deploy_all == 'true' && (needs.detect-changes.outputs.docker_changed == 'true' || github.event.inputs.force_deploy_all == 'true')
+    steps:
+      - name: 🚀 全量部署所有服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          script: |
+            echo "🚀 全量部署所有服务..."
+            cd /opt/gin-vue-admin
+            
+            # 拉取最新代码
+            git pull origin dev-mqtt
+            
+            # 创建前端环境配置文件
+            echo "📝 创建前端生产环境配置..."
+            cat > web/.env.production << EOF
+            VITE_CLI_PORT = 80
+            VITE_SERVER_PORT = 8888
+            VITE_BASE_API = '/api'
+            VITE_BASE_PATH = ''
+            VITE_EDITOR = vscode
+            VITE_POSITION = open
+            EOF
+            
+            # 停止所有服务
+            echo "⏹️ 停止旧服务..."
+            docker-compose -f deploy/docker-compose.yml down
+            
+            # 重建并启动所有服务
+            echo "🔨 重建并启动所有服务..."
+            docker-compose -f deploy/docker-compose.yml up -d --build
+            
+            # 全面健康检查
+            echo "🏥 全面服务健康检查..."
+            sleep 60
+            
+            # 检查前端
+            if curl -f -s http://localhost:80 > /dev/null; then
+                echo "✅ 前端服务正常"
+            else
+                echo "❌ 前端服务异常"
+            fi
+            
+            # 检查后端
+            if curl -f -s http://localhost:8888/health > /dev/null; then
+                echo "✅ 后端服务正常"
+            else
+                echo "❌ 后端服务异常"
+            fi
+
+  # 部署状态通知
+  notify:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, deploy-backend, deploy-frontend, deploy-all]
+    if: always()
+    steps:
+      - name: 📢 部署结果通知
+        run: |
+          echo "🎯 智能部署完成！"
+          echo "📋 变化检测结果："
+          echo "  - 后端变化: ${{ needs.detect-changes.outputs.backend_changed }}"
+          echo "  - 前端变化: ${{ needs.detect-changes.outputs.frontend_changed }}"
+          echo "  - Docker变化: ${{ needs.detect-changes.outputs.docker_changed }}"
+          echo "  - 全量部署: ${{ needs.detect-changes.outputs.deploy_all }}"
+          
+          echo "🚀 部署执行情况："
+          if [[ "${{ needs.deploy-backend.result }}" == "success" ]]; then
+            echo "  ✅ 后端服务部署成功"
+          elif [[ "${{ needs.deploy-backend.result }}" == "skipped" ]]; then
+            echo "  ⏭️ 后端服务跳过部署（无变化）"
+          elif [[ "${{ needs.deploy-backend.result }}" == "failure" ]]; then
+            echo "  ❌ 后端服务部署失败"
+          fi
+          
+          if [[ "${{ needs.deploy-frontend.result }}" == "success" ]]; then
+            echo "  ✅ 前端服务部署成功"
+          elif [[ "${{ needs.deploy-frontend.result }}" == "skipped" ]]; then
+            echo "  ⏭️ 前端服务跳过部署（无变化）"
+          elif [[ "${{ needs.deploy-frontend.result }}" == "failure" ]]; then
+            echo "  ❌ 前端服务部署失败"
+          fi
+          
+          if [[ "${{ needs.deploy-all.result }}" == "success" ]]; then
+            echo "  ✅ 全量部署成功"
+          elif [[ "${{ needs.deploy-all.result }}" == "skipped" ]]; then
+            echo "  ⏭️ 全量部署跳过"
+          elif [[ "${{ needs.deploy-all.result }}" == "failure" ]]; then
+            echo "  ❌ 全量部署失败"
+          fi 
