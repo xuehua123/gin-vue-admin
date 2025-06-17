@@ -116,4 +116,4 @@ services:
     depends_on:
       - backend
     networks:
-      - gva-network 
+      - gva-network

@@ -74,10 +74,10 @@ captcha:
 # mysql connect configuration
 # 未初始化之前请勿手动修改数据库信息！！！如果一定要手动初始化请看（https://gin-vue-admin.com/docs/first_master）
 mysql:
-  path: mysql
+  path: "mysql"
   port: "3306"
-  config: charset=utf8mb4&parseTime=True&loc=Local
-  db-name: gin_vue_admin
+  config: "charset=utf8mb4&parseTime=True&loc=Local" # 高级配置
+  db-name: "gin_vue_admin" # 数据库名
   username: gva_user
   password: "Gva123456!"
   max-idle-conns: 10
