@@ -1,11 +1,11 @@
 # 构建阶段
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # 设置工作目录
 WORKDIR /app
 
 # 设置Node.js环境变量优化构建性能
-ENV NODE_OPTIONS="--max-old-space-size=3072"
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 ENV CI=true
 
 # 复制 package 文件
