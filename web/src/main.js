@@ -11,7 +11,7 @@ import router from '@/router/index'
 import { setupPermissions } from '@/permission'
 import run from '@/core/gin-vue-admin.js'
 import auth from '@/directive/auth'
-import { store } from '@/pinia'
+import { store } from '@/pinia/store'
 import App from './App.vue'
 
 const app = createApp(App)

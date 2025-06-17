@@ -1,8 +1,9 @@
-import { createPinia } from 'pinia'
-import { useAppStore } from '@/pinia/modules/app'
-import { useUserStore } from '@/pinia/modules/user'
-import { useDictionaryStore } from '@/pinia/modules/dictionary'
+// Pinia stores 的统一导出
+// 注意：为了避免循环依赖，这个文件不再导入createPinia
+// pinia实例从 @/pinia/store 导入
 
-const store = createPinia()
-
-export { store, useAppStore, useUserStore, useDictionaryStore }
+export { useAppStore } from '@/pinia/modules/app'
+export { useUserStore } from '@/pinia/modules/user'
+export { useDictionaryStore } from '@/pinia/modules/dictionary'
+export { useRouterStore } from '@/pinia/modules/router'
+export { useParamsStore } from '@/pinia/modules/params'

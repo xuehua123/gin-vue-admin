@@ -1,4 +1,5 @@
-import { useUserStore } from '@/pinia/modules/user'
+// 移除直接导入
+// import { useUserStore } from '@/pinia/modules/user'
 
 class WebSocketManager {
   constructor() {
@@ -19,12 +20,14 @@ class WebSocketManager {
    * @param {string} options.userId 用户ID
    * @param {string} options.clientId 客户端ID
    */
-  connect(options = {}) {
+  async connect(options = {}) {
     if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.CONNECTING)) {
       return
     }
 
     this.isConnecting = true
+    // 动态导入useUserStore，避免循环依赖
+    const { useUserStore } = await import('@/pinia/modules/user')
     const userStore = useUserStore()
     
     const wsUrl = options.url || this.getWebSocketURL()

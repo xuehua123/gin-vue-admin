@@ -1,11 +1,14 @@
 // 权限按钮展示指令
-import { useUserStore } from '@/pinia/modules/user'
+// 移除直接导入
+// import { useUserStore } from '@/pinia/modules/user'
 export default {
   install: (app) => {
-    const userStore = useUserStore()
     app.directive('auth', {
       // 当被绑定的元素插入到 DOM 中时……
-      mounted: function (el, binding) {
+      mounted: async function (el, binding) {
+        // 动态导入useUserStore，避免循环依赖
+        const { useUserStore } = await import('@/pinia/modules/user')
+        const userStore = useUserStore()
         const userInfo = userStore.userInfo
         let type = ''
         switch (Object.prototype.toString.call(binding.value)) {
