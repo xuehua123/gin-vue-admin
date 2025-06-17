@@ -193,7 +193,7 @@
     ]
   })
 
-  const login = async () => {
+  const submitForm = async () => {
     loginForm.value.validate(async (v) => {
       if (v) {
         const res = await userStore.LoginIn(loginFormData)

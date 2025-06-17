@@ -64,7 +64,7 @@ export const useUserStore = defineStore('user', () => {
       const res = await login(loginInfo)
 
       if (res.code !== 0) {
-        return false
+        return { success: false }
       }
       // 登陆成功，设置用户信息和权限相关信息
       setUserInfo(res.data.user)
@@ -85,10 +85,10 @@ export const useUserStore = defineStore('user', () => {
   }
   /* 登出*/
   const LoginOut = async () => {
-    const res = await jsonInBlacklist()
-    if (res.code !== 0) {
-      // 即使登出失败，也应该清理前端状态
-      console.error('jsonInBlacklist fail', res)
+    try {
+      await jsonInBlacklist()
+    } catch (error) {
+      console.error('jsonInBlacklist fail', error)
     }
     await ClearStorage()
   }
