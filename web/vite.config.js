@@ -41,8 +41,18 @@ export default ({ mode }) => {
       assetFileNames: 'assets/087AC4D233B64EB0[name].[hash].[ext]',
       manualChunks(id) {
         if (id.includes('node_modules')) {
-          // 将所有 node_modules 的依赖项打包到一个单独的 vendor chunk 中
-          return 'vendor'
+          // 将不同类型的依赖分别打包
+          if (id.includes('vue') || id.includes('pinia') || id.includes('@vue')) {
+            return 'vue-vendor'
+          }
+          if (id.includes('element-plus') || id.includes('@element-plus')) {
+            return 'element-vendor'
+          }
+          if (id.includes('echarts') || id.includes('codemirror') || id.includes('monaco')) {
+            return 'editor-vendor'
+          }
+          // 其他依赖打包到通用 vendor
+          return 'common-vendor'
         }
         // 对特定的大型组件或库进行代码分割
         const largeComponents = [
@@ -105,6 +115,7 @@ export default ({ mode }) => {
       manifest: false, // 是否产出manifest.json
       sourcemap: false, // 生产环境关闭sourcemap加速构建
       outDir: outDir, // 产出目录
+      reportCompressedSize: false, // 禁用 gzip 大小计算以节省内存
       // 简化terser配置（如果使用terser）
       terserOptions: isProduction ? {
         compress: {
@@ -116,7 +127,7 @@ export default ({ mode }) => {
       // 优化构建性能
       target: 'es2018', // 现代浏览器目标，减少编译工作
       cssCodeSplit: true, // CSS代码分割
-      chunkSizeWarningLimit: 1000, // 提高chunk大小警告阈值
+      chunkSizeWarningLimit: 2000, // 提高chunk大小警告阈值，减少内存压力
     },
     esbuild: isProduction ? {
       // 生产环境使用esbuild优化
