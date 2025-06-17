@@ -26,19 +26,6 @@ jobs:
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
             echo "🚨 开始紧急修复..."
-            
-            # 确保 Docker 环境是最新版本
-            echo "🐳 检查并更新 Docker 环境..."
-            if ! command -v docker &> /dev/null || ! docker compose version &> /dev/null; then
-              echo "🚀 Docker 或 Docker Compose V2 未安装，开始自动安装/更新..."
-              curl -fsSL https://get.docker.com -o get-docker.sh
-              sudo sh get-docker.sh
-              sudo usermod -aG docker $USER
-              echo "✅ Docker 环境更新完成"
-            else
-              echo "✅ Docker 环境已是最新或已安装 Compose V2."
-            fi
-
             echo "🔧 修复类型: ${{ github.event.inputs.fix_type }}"
             
             cd /opt/gin-vue-admin
@@ -65,7 +52,7 @@ jobs:
               echo "🎨 修复前端服务..."
               
               # 停止前端服务
-              docker compose -f deploy/docker-compose.yml stop frontend || true
+              docker-compose -f deploy/docker-compose.yml stop frontend || true
               
               # 删除前端镜像和容器
               docker rmi gin-vue-admin-frontend:latest || true
@@ -80,11 +67,11 @@ jobs:
               
               # 重新构建前端（限制内存使用）
               echo "🔨 重新构建前端镜像（优化内存使用）..."
-              docker compose -f deploy/docker-compose.yml build --no-cache frontend
+              docker-compose -f deploy/docker-compose.yml build --no-cache frontend
               
               # 启动前端服务
               echo "🚀 启动前端服务..."
-              docker compose -f deploy/docker-compose.yml up -d frontend
+              docker-compose -f deploy/docker-compose.yml up -d frontend
               
               # 前端健康检查
               echo "🏥 前端服务健康检查..."
@@ -95,7 +82,7 @@ jobs:
                   fi
                   if [ $i -eq 20 ]; then
                       echo "❌ 前端服务仍有问题"
-                      docker compose -f deploy/docker-compose.yml logs --tail=30 frontend
+                      docker-compose -f deploy/docker-compose.yml logs --tail=30 frontend
                   fi
                   echo "⏳ 等待前端服务... ($i/20)"
                   sleep 3
@@ -106,15 +93,15 @@ jobs:
               echo "🔧 修复后端服务..."
               
               # 停止后端服务
-              docker compose -f deploy/docker-compose.yml stop backend || true
+              docker-compose -f deploy/docker-compose.yml stop backend || true
               
               # 重新构建后端
               echo "🔨 重新构建后端镜像..."
-              docker compose -f deploy/docker-compose.yml build --no-cache backend
+              docker-compose -f deploy/docker-compose.yml build --no-cache backend
               
               # 启动后端服务
               echo "🚀 启动后端服务..."
-              docker compose -f deploy/docker-compose.yml up -d backend
+              docker-compose -f deploy/docker-compose.yml up -d backend
               
               # 后端健康检查
               echo "🏥 后端服务健康检查..."
@@ -125,7 +112,7 @@ jobs:
                   fi
                   if [ $i -eq 30 ]; then
                       echo "❌ 后端服务仍有问题"
-                      docker compose -f deploy/docker-compose.yml logs --tail=30 backend
+                      docker-compose -f deploy/docker-compose.yml logs --tail=30 backend
                   fi
                   echo "⏳ 等待后端服务... ($i/30)"
                   sleep 3
@@ -133,7 +120,7 @@ jobs:
             fi
             
             echo "📊 最终服务状态："
-            docker compose -f deploy/docker-compose.yml ps
+            docker-compose -f deploy/docker-compose.yml ps
             
             echo "🎉 紧急修复完成！"
             echo "📱 前端地址: http://43.165.186.134"

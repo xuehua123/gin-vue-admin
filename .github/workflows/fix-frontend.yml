@@ -21,19 +21,6 @@ jobs:
           port: ${{ secrets.PROD_PORT }}
           script: |
             echo "🚀 开始全量部署所有服务..."
-            
-            # 确保 Docker 环境是最新版本
-            echo "🐳 检查并更新 Docker 环境..."
-            if ! command -v docker &> /dev/null || ! docker compose version &> /dev/null; then
-              echo "🚀 Docker 或 Docker Compose V2 未安装，开始自动安装/更新..."
-              curl -fsSL https://get.docker.com -o get-docker.sh
-              sudo sh get-docker.sh
-              sudo usermod -aG docker $USER
-              echo "✅ Docker 环境更新完成"
-            else
-              echo "✅ Docker 环境已是最新或已安装 Compose V2."
-            fi
-
             cd /opt/gin-vue-admin
 
             # 步骤 1: 强制拉取最新代码
@@ -54,11 +41,12 @@ jobs:
 
             # 步骤 3: 停止并移除旧服务
             echo "⏹️ [3/5] 停止并移除所有旧服务..."
-            docker compose -f deploy/docker-compose.yml down --remove-orphans
+            docker-compose -f deploy/docker-compose.yml down --remove-orphans
 
             # 步骤 4: 重建并启动所有服务
             echo "🔨 [4/5] 重建并启动所有服务..."
-            docker compose -f deploy/docker-compose.yml up -d --build --no-cache
+            docker-compose -f deploy/docker-compose.yml build --no-cache
+            docker-compose -f deploy/docker-compose.yml up -d
 
             # 步骤 5: 全面健康检查
             echo "🏥 [5/5] 执行全面服务健康检查..."
@@ -71,7 +59,7 @@ jobs:
             else
                 echo "❌ 前端服务异常"
                 echo "--- 前端服务日志 ---"
-                docker compose -f deploy/docker-compose.yml logs --tail=50 frontend
+                docker-compose -f deploy/docker-compose.yml logs --tail=50 frontend
             fi
 
             # 检查后端
@@ -80,9 +68,9 @@ jobs:
             else
                 echo "❌ 后端服务异常"
                 echo "--- 后端服务日志 ---"
-                docker compose -f deploy/docker-compose.yml logs --tail=50 backend
+                docker-compose -f deploy/docker-compose.yml logs --tail=50 backend
             fi
 
             echo "🎉 部署流程执行完毕！"
             echo "📊 最终服务状态："
-            docker compose -f deploy/docker-compose.yml ps 
+            docker-compose -f deploy/docker-compose.yml ps 
