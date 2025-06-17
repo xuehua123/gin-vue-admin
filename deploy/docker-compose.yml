@@ -95,6 +95,8 @@ services:
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
+    ports:
+      - "8888:8888"  # 添加端口映射
     depends_on:
       mysql:
         condition: service_healthy

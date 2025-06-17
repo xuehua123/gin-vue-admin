@@ -358,7 +358,7 @@ jobs:
           # 检查后端服务（可能需要时间初始化数据库）
           echo "⏳ 等待后端服务完全启动..."
           for i in {1..30}; do
-              if curl -f -s http://localhost:8888/api/health > /dev/null 2>&1; then
+              if curl -f -s http://localhost:8888/health > /dev/null 2>&1; then
                   echo "✅ 后端服务正常"
                   break
               fi
