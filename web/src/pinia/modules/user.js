@@ -3,7 +3,6 @@ import { jsonInBlacklist } from '@/api/jwt'
 import { ElLoading, ElMessage } from 'element-plus'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { useRouterStore } from './router'
 import { useCookies } from '@vueuse/integrations/useCookies'
 import { useStorage } from '@vueuse/core'
 import { emitter } from '@/utils/bus.js'
@@ -70,6 +69,8 @@ export const useUserStore = defineStore('user', () => {
       setUserInfo(res.data.user)
       setToken(res.data.token)
 
+      // 动态导入useRouterStore，避免循环依赖
+      const { useRouterStore } = await import('./router')
       const routerStore = useRouterStore()
       await routerStore.SetAsyncRouter()
 

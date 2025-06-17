@@ -1,7 +1,5 @@
 import axios from 'axios' // 引入axios
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useUserStore } from '@/pinia/modules/user'
-import router from '@/router/index'
 import { ElLoading } from 'element-plus'
 
 // 添加一个状态变量，用于跟踪是否已有错误弹窗显示
@@ -41,10 +39,12 @@ const closeLoading = () => {
 }
 // http request 拦截器
 service.interceptors.request.use(
-  (config) => {
+  async (config) => {
     if (!config.donNotShowLoading) {
       showLoading(config.loadingOption)
     }
+    // 动态导入useUserStore，避免循环依赖
+    const { useUserStore } = await import('@/pinia/modules/user')
     const userStore = useUserStore()
     config.headers = {
       'Content-Type': 'application/json',
@@ -69,7 +69,9 @@ service.interceptors.request.use(
 
 // http response 拦截器
 service.interceptors.response.use(
-  (response) => {
+  async (response) => {
+    // 动态导入useUserStore，避免循环依赖
+    const { useUserStore } = await import('@/pinia/modules/user')
     const userStore = useUserStore()
     if (!response.config.donNotShowLoading) {
       closeLoading()
@@ -91,7 +93,7 @@ service.interceptors.response.use(
       return response.data.msg ? response.data : response
     }
   },
-  (error) => {
+  async (error) => {
     if (!error.config.donNotShowLoading) {
       closeLoading()
     }
@@ -121,6 +123,10 @@ service.interceptors.response.use(
       })
       return
     }
+
+    // 动态导入依赖，避免循环依赖
+    const { useUserStore } = await import('@/pinia/modules/user')
+    const router = (await import('@/router/index')).default
 
     switch (error.response.status) {
       case 500:
