@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, watchEffect, reactive } from 'vue'
 import { setBodyPrimaryColor } from '@/utils/format'
 import { useDark, usePreferredDark } from '@vueuse/core'
+import { emitter } from '@/utils/bus.js'
 
 export const useAppStore = defineStore('app', () => {
   const device = ref('')
@@ -120,6 +121,18 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  // 更新用户设置到配置
+  const updateConfigFromUserSetting = (originSetting) => {
+    if (originSetting) {
+      Object.keys(config).forEach((key) => {
+        if (originSetting[key] !== undefined) {
+          config[key] = originSetting[key]
+        }
+      })
+      console.log(config)
+    }
+  }
+
   // 监听色弱模式和灰色模式
   watchEffect(() => {
     document.documentElement.classList.toggle('html-weakenss', config.weakness)
@@ -130,6 +143,9 @@ export const useAppStore = defineStore('app', () => {
   watchEffect(() => {
     setBodyPrimaryColor(config.primaryColor, isDark.value ? 'dark' : 'light')
   })
+
+  // 监听用户设置更新事件
+  emitter.on('updateUserSettings', updateConfigFromUserSetting)
 
   return {
     isDark,
@@ -150,6 +166,7 @@ export const useAppStore = defineStore('app', () => {
     toggleConfigWatermark,
     toggleSideMode,
     toggleTransition,
-    resetConfig
+    resetConfig,
+    updateConfigFromUserSetting
   }
 })

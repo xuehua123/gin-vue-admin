@@ -7,17 +7,9 @@ import { ref, computed } from 'vue'
 import { useRouterStore } from './router'
 import { useCookies } from '@vueuse/integrations/useCookies'
 import { useStorage } from '@vueuse/core'
+import { emitter } from '@/utils/bus.js'
 
 export const useUserStore = defineStore('user', () => {
-  // 延迟加载appStore以避免循环依赖
-  let appStore = null
-  const getAppStore = () => {
-    if (!appStore) {
-      const { useAppStore } = require('@/pinia/modules/app')
-      appStore = useAppStore()
-    }
-    return appStore
-  }
   const loadingInstance = ref(null)
 
   const userInfo = ref({
@@ -32,14 +24,9 @@ export const useUserStore = defineStore('user', () => {
 
   const setUserInfo = (val) => {
     userInfo.value = val
+    // 通过事件总线通知app store更新配置，避免循环依赖
     if (val.originSetting) {
-      const appStore = getAppStore()
-      Object.keys(appStore.config).forEach((key) => {
-        if (val.originSetting[key] !== undefined) {
-          appStore.config[key] = val.originSetting[key]
-        }
-      })
-      console.log(appStore.config)
+      emitter.emit('updateUserSettings', val.originSetting)
     }
   }
 
