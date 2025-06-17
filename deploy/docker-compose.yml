@@ -114,9 +114,14 @@ services:
     build:
       context: ../
       dockerfile: web/Dockerfile
+      args:
+        # 增加构建时的内存分配
+        BUILDKIT_INLINE_CACHE: 1
     image: gin-vue-admin-frontend:${TAG:-latest}
     container_name: gin-vue-admin-frontend
     restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
     ports:
       - "80:80"
     depends_on:
@@ -126,4 +131,6 @@ services:
     deploy:
       resources:
         limits:
-          memory: 6G
+          memory: 8G  # 进一步增加内存限制
+        reservations:
+          memory: 2G

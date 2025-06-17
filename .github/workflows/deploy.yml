@@ -1,15 +1,28 @@
-name: 自动部署到服务器
+name: 🚫 Legacy Deploy (DISABLED) - 旧版全量部署 (已禁用)
 
 on:
-  push:
-    branches: [ main, dev-mqtt]
+  # push:
+  #   branches: [ main, dev-mqtt]  # 已禁用，使用智能部署替代
   workflow_dispatch:
+    inputs:
+      force_legacy_deploy:
+        description: '强制使用旧版全量部署 (仅紧急情况)'
+        required: true
+        default: 'false'
+        type: boolean
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: github.event.inputs.force_legacy_deploy == 'true'  # 只有明确指定才运行
     
     steps:
+    - name: ⚠️ 使用旧版全量部署 (Legacy Deploy)
+      run: |
+        echo "🚨 警告：您正在使用旧版全量部署！"
+        echo "📋 建议使用智能增量部署: .github/workflows/smart-deploy.yml"
+        echo "⚠️ 此部署将重新构建所有服务，耗时较长"
+        
     - name: 部署到服务器
       uses: appleboy/ssh-action@v1.0.3
       with:

@@ -119,23 +119,22 @@ export default ({ mode }) => {
       }
     },
     build: {
-      minify: isProduction ? 'esbuild' : false, // esbuild更快，terser更慢但压缩更好
+      minify: isProduction ? 'esbuild' : false, // esbuild更快，内存占用更少
       manifest: false, // 是否产出manifest.json
       sourcemap: false, // 生产环境关闭sourcemap加速构建
       outDir: outDir, // 产出目录
       reportCompressedSize: false, // 禁用 gzip 大小计算以节省内存
-      // 简化terser配置（如果使用terser）
-      terserOptions: isProduction ? {
-        compress: {
-          drop_console: true,
-          drop_debugger: true
-        }
-      } : {},
       rollupOptions,
-      // 优化构建性能
+      // 优化构建性能，减少内存占用
       target: 'es2018', // 现代浏览器目标，减少编译工作
-      cssCodeSplit: true, // CSS代码分割
-      chunkSizeWarningLimit: 2000, // 提高chunk大小警告阈值，减少内存压力
+      cssCodeSplit: false, // 禁用CSS代码分割以减少内存使用
+      chunkSizeWarningLimit: 5000, // 提高chunk大小警告阈值
+      // 限制并发构建进程
+      rollupOptions: {
+        ...rollupOptions,
+        maxParallelFileOps: 2, // 限制并发文件操作数
+        cache: false // 禁用构建缓存以减少内存使用
+      },
       // 增强模块解析，避免循环依赖问题
       commonjsOptions: {
         include: [/node_modules/],
