@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端调试页面</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-item { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .loading { background-color: #fff3cd; border-color: #ffeeba; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🔧 前端调试页面</h1>
+    <p>当前时间: <span id="current-time"></span></p>
+    
+    <div id="test-results">
+        <div id="env-test" class="test-item loading">
+            <h3>📋 环境变量测试</h3>
+            <div id="env-result">正在检测...</div>
+        </div>
+        
+        <div id="api-test" class="test-item loading">
+            <h3>🔗 API连接测试</h3>
+            <div id="api-result">正在测试...</div>
+        </div>
+        
+        <div id="cors-test" class="test-item loading">
+            <h3>🌐 跨域测试</h3>
+            <div id="cors-result">正在测试...</div>
+        </div>
+    </div>
+    
+    <div style="margin-top: 20px;">
+        <button onclick="runAllTests()">🔄 重新运行所有测试</button>
+        <button onclick="testLogin()">🔐 测试登录接口</button>
+        <button onclick="clearResults()">🧹 清除结果</button>
+    </div>
+
+    <script>
+        // 更新当前时间
+        function updateTime() {
+            document.getElementById('current-time').textContent = new Date().toLocaleString();
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // 显示结果的辅助函数
+        function showResult(elementId, status, content) {
+            const element = document.getElementById(elementId);
+            element.className = `test-item ${status}`;
+            element.querySelector('div').innerHTML = content;
+        }
+
+        // 环境变量测试
+        function testEnvironment() {
+            try {
+                const envInfo = {
+                    'User Agent': navigator.userAgent,
+                    'Location': window.location.href,
+                    'Protocol': window.location.protocol,
+                    'Host': window.location.host,
+                    'Port': window.location.port || '默认端口',
+                    'Pathname': window.location.pathname
+                };
+                
+                let result = '<pre>';
+                for (const [key, value] of Object.entries(envInfo)) {
+                    result += `${key}: ${value}\n`;
+                }
+                result += '</pre>';
+                
+                showResult('env-test', 'success', result);
+            } catch (error) {
+                showResult('env-test', 'error', `环境检测失败: ${error.message}`);
+            }
+        }
+
+        // API连接测试
+        async function testAPI() {
+            try {
+                showResult('api-test', 'loading', '正在测试API连接...');
+                
+                // 测试健康检查
+                const healthResponse = await fetch('/api/health', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (healthResponse.ok) {
+                    const healthText = await healthResponse.text();
+                    showResult('api-test', 'success', `✅ 健康检查成功: ${healthText}`);
+                } else {
+                    showResult('api-test', 'error', `❌ 健康检查失败: ${healthResponse.status} ${healthResponse.statusText}`);
+                }
+            } catch (error) {
+                showResult('api-test', 'error', `❌ API连接失败: ${error.message}`);
+            }
+        }
+
+        // 跨域测试
+        async function testCORS() {
+            try {
+                showResult('cors-test', 'loading', '正在测试跨域配置...');
+                
+                // 测试验证码接口
+                const corsResponse = await fetch('/api/base/captcha', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (corsResponse.ok) {
+                    const corsData = await corsResponse.json();
+                    showResult('cors-test', 'success', `✅ 跨域配置正常，验证码接口返回: ${JSON.stringify(corsData).substring(0, 100)}...`);
+                } else {
+                    showResult('cors-test', 'error', `❌ 跨域请求失败: ${corsResponse.status} ${corsResponse.statusText}`);
+                }
+            } catch (error) {
+                showResult('cors-test', 'error', `❌ 跨域测试失败: ${error.message}`);
+            }
+        }
+
+        // 测试登录接口
+        async function testLogin() {
+            try {
+                const testData = {
+                    username: "admin",
+                    password: "123456"
+                };
+                
+                const response = await fetch('/api/base/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                const result = await response.json();
+                alert(`登录测试结果: ${JSON.stringify(result, null, 2)}`);
+            } catch (error) {
+                alert(`登录测试失败: ${error.message}`);
+            }
+        }
+
+        // 运行所有测试
+        function runAllTests() {
+            testEnvironment();
+            testAPI();
+            testCORS();
+        }
+
+        // 清除结果
+        function clearResults() {
+            const testItems = document.querySelectorAll('.test-item');
+            testItems.forEach(item => {
+                item.className = 'test-item loading';
+                item.querySelector('div').innerHTML = '等待测试...';
+            });
+        }
+
+        // 页面加载时自动运行测试
+        window.addEventListener('load', runAllTests);
+    </script>
+</body>
+</html> 
