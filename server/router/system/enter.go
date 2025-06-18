@@ -46,4 +46,5 @@ var (
 	exportTemplateApi   = api.ApiGroupApp.SystemApiGroup.SysExportTemplateApi
 	roleConflictApi     = api.ApiGroupApp.SystemApiGroup.RoleConflictApi
 	mqttAuthApi         = api.ApiGroupApp.SystemApiGroup.MqttAuthApi
+	mqttWebhookApi      = api.ApiGroupApp.SystemApiGroup.MqttWebhookApi
 )

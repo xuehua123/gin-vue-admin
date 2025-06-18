@@ -25,6 +25,7 @@ type ApiGroup struct {
 	DeviceLogApi
 	RoleConflictApi
 	MqttAuthApi
+	MqttWebhookApi
 }
 
 var (

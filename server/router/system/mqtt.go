@@ -12,4 +12,11 @@ func (s *MqttRouter) InitMqttRouter(Router *gin.RouterGroup) {
 		mqttRouter.POST("auth", mqttAuthApi.Authenticate)
 		mqttRouter.POST("acl", mqttAuthApi.CheckACL)
 	}
+
+	// MQTT Webhook路由
+	mqttHooksRouter := Router.Group("mqtt/hooks")
+	{
+		mqttHooksRouter.POST("role_request", mqttWebhookApi.RoleRequestHook)
+		mqttHooksRouter.POST("connection_status", mqttWebhookApi.ConnectionStatusHook)
+	}
 }
