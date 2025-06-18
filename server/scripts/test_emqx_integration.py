@@ -26,7 +26,7 @@ EMQX_PORTS = {
 
 TEST_USER = {
     "username": "admin",
-    "password": "123456"
+    "password": "xuehua123"
 }
 
 class EMQXIntegrationTester:
@@ -37,9 +37,33 @@ class EMQXIntegrationTester:
         self.mqtt_clients = {}
         self.received_messages = {}
         
+    def get_captcha(self):
+        """获取验证码"""
+        print("🖼️ 获取验证码...")
+        try:
+            response = self.session.post(f"{SERVER_BASE}/base/captcha", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == 0:
+                    print("✅ 验证码获取成功")
+                    return data["data"]["captchaId"]
+                else:
+                    print(f"❌ 获取验证码失败: {data.get('msg')}")
+                    return None
+            else:
+                print(f"❌ 获取验证码请求失败: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"❌ 获取验证码异常: {e}")
+            return None
+        
     def login_to_server(self):
         """登录到服务器获取JWT Token"""
         print("🔐 登录到服务器...")
+        
+        captcha_id = self.get_captcha()
+        if not captcha_id:
+            return False
         
         try:
             response = self.session.post(
@@ -47,8 +71,8 @@ class EMQXIntegrationTester:
                 json={
                     "username": TEST_USER["username"],
                     "password": TEST_USER["password"],
-                    "captcha": "",
-                    "captchaId": ""
+                    "captcha": "1234", # 随便填一个值，因为我们不校验
+                    "captchaId": captcha_id
                 },
                 timeout=10
             )
@@ -63,20 +87,25 @@ class EMQXIntegrationTester:
                     })
                     print("✅ 服务器登录成功")
                     return True
+                else:
+                    error_message = data.get("msg", "未知错误")
+                    print(f"❌ 服务器返回登录失败: {error_message} (完整响应: {data})")
+                    return False
+            else:
+                print(f"❌ 服务器请求失败: 状态码 {response.status_code}, 响应: {response.text}")
+                return False
                     
         except Exception as e:
-            print(f"❌ 服务器登录失败: {e}")
+            print(f"❌ 服务器登录请求异常: {e}")
             return False
         
-        return False
-    
     def get_mqtt_token(self, role, force_kick=False):
         """从服务器获取MQTT Token"""
         print(f"🎫 获取MQTT Token (角色: {role})...")
         
         try:
             response = self.session.post(
-                f"{SERVER_BASE}/jwt/generateMQTTToken",
+                f"{SERVER_BASE}/role/generateMQTTToken",
                 json={
                     "role": role,
                     "force_kick_existing": force_kick
@@ -114,7 +143,7 @@ class EMQXIntegrationTester:
                 f"{SERVER_BASE}/mqtt/auth",
                 json={
                     "clientid": token_info["client_id"],
-                    "username": token_info["client_id"],
+                    "username": "admin",
                     "password": token_info["token"]
                 },
                 timeout=10
@@ -182,15 +211,17 @@ class EMQXIntegrationTester:
         
         return all_passed
     
-    def connect_mqtt_client(self, role):
+    def connect_mqtt_client(self, role, token_info_override=None):
         """连接MQTT客户端"""
         print(f"🔌 连接MQTT客户端 (角色: {role})...")
         
-        if role not in self.mqtt_tokens:
-            print(f"❌ 没有{role}角色的Token")
-            return False
-        
-        token_info = self.mqtt_tokens[role]
+        token_info = token_info_override
+        if not token_info:
+            if role not in self.mqtt_tokens:
+                print(f"❌ 没有{role}角色的Token")
+                return None
+            token_info = self.mqtt_tokens[role]
+
         client_id = token_info["client_id"]
         
         # 创建MQTT客户端
@@ -201,7 +232,7 @@ class EMQXIntegrationTester:
         
         # 设置认证信息
         client.username_pw_set(
-            username=client_id,
+            username="admin",
             password=token_info["token"]
         )
         
@@ -245,14 +276,15 @@ class EMQXIntegrationTester:
             
             if client.is_connected():
                 self.mqtt_clients[role] = client
-                return True
+                return client # 返回客户端实例
             else:
                 print(f"❌ MQTT客户端连接超时: {client_id}")
-                return False
+                client.loop_stop()
+                return None
                 
         except Exception as e:
             print(f"❌ MQTT客户端连接异常: {e}")
-            return False
+            return None
     
     def test_mqtt_messaging(self):
         """测试MQTT消息收发"""
@@ -312,47 +344,48 @@ class EMQXIntegrationTester:
     def test_role_conflict_scenario(self):
         """测试角色冲突场景"""
         print("⚔️ 测试角色冲突场景...")
-        
-        # 第一步：设备A获取transmitter角色
+
+        # 获取并连接设备A
         token_a = self.get_mqtt_token("transmitter")
-        if not token_a:
-            return False
+        if not token_a: return False
         
-        client_a_connected = self.connect_mqtt_client("transmitter")
-        if not client_a_connected:
+        client_a = self.connect_mqtt_client("transmitter")
+        if not client_a:
+            print("❌ 设备A连接失败")
             return False
-        
-        print("📱 设备A (transmitter) 连接成功")
+        print(f"📱 设备A ({token_a['client_id']}) 连接成功")
         time.sleep(2)
-        
-        # 第二步：设备B强制获取transmitter角色
+
+        # 设备B强制获取相同角色，服务器应使设备A的token失效
         print("🥊 设备B尝试强制获取transmitter角色...")
-        
-        # 先断开设备A的客户端记录
-        if "transmitter" in self.mqtt_clients:
-            old_client = self.mqtt_clients["transmitter"]
-            client_a_id = self.mqtt_tokens["transmitter"]["client_id"]
-        
         token_b = self.get_mqtt_token("transmitter", force_kick=True)
-        if not token_b:
-            return False
-        
-        # 验证是否获得了不同的ClientID
+        if not token_b: return False
+
         if token_a["client_id"] == token_b["client_id"]:
             print("⚠️ 强制挤下线但获得了相同的ClientID")
         else:
             print(f"✅ 强制挤下线成功，新ClientID: {token_b['client_id']}")
+
+        # 等待服务器处理，EMQX应断开设备A的连接
+        print("⏳ 等待EMQX断开设备A的连接...")
+        time.sleep(5) 
         
-        # 设备B连接
-        self.mqtt_tokens["transmitter"] = token_b  # 更新token
-        client_b_connected = self.connect_mqtt_client("transmitter")
-        
-        if client_b_connected:
-            print("📱 设备B (transmitter) 连接成功")
-            return True
+        if client_a.is_connected():
+            print("❌ 角色冲突后，设备A的连接未被断开")
+            client_a.disconnect()
+            return False
         else:
+            print("✅ 设备A的连接已按预期被服务器断开")
+
+        # 使用新token为设备B创建并连接一个全新的客户端
+        client_b = self.connect_mqtt_client("transmitter_b", token_b) # 使用新的role key来隔离
+        if not client_b:
             print("❌ 设备B连接失败")
             return False
+        
+        print("📱 设备B连接成功")
+        client_b.disconnect() # 测试完成，断开B
+        return True
     
     def cleanup_clients(self):
         """清理MQTT客户端连接"""
@@ -414,6 +447,8 @@ def run_emqx_integration_tests():
         print("\n" + "-"*40)
         
         # 6. 测试角色冲突场景
+        # 在运行冲突测试前，先清理主客户端，避免状态混淆
+        tester.cleanup_clients() 
         conflict = tester.test_role_conflict_scenario()
         test_results.append(("角色冲突处理", conflict))
         

@@ -353,33 +353,69 @@ func (j *JWT) GenerateMQTTClientID(username, role string, sequence int) string {
 
 // GetNextMQTTSequence 获取用户指定角色的下一个序号
 func (j *JWT) GetNextMQTTSequence(userID, username, role string) (int, error) {
-	// 查找当前用户该角色的所有活跃MQTT连接
-	pattern := fmt.Sprintf("mqtt:active:%s:%s-*", userID, role)
-	keys, err := global.GVA_REDIS.Keys(context.Background(), pattern).Result()
+	ctx := context.Background()
+
+	// 查找当前用户的所有活跃MQTT连接
+	pattern := fmt.Sprintf("mqtt:active:%s:*", userID)
+	keys, err := global.GVA_REDIS.Keys(ctx, pattern).Result()
 	if err != nil {
-		return 0, err
+		global.GVA_LOG.Error("查询用户活跃MQTT连接失败", zap.Error(err), zap.String("pattern", pattern))
+		return 1, err // 如果查询失败，返回序号1
 	}
 
-	// 找到最大序号
+	global.GVA_LOG.Debug("查找用户活跃MQTT连接",
+		zap.String("userID", userID),
+		zap.String("username", username),
+		zap.String("role", role),
+		zap.String("pattern", pattern),
+		zap.Strings("keys", keys))
+
+	// 找到当前角色的最大序号
 	maxSequence := 0
+	expectedPrefix := fmt.Sprintf("%s-%s-", username, role)
+
 	for _, key := range keys {
-		// 从Redis key中解析序号
-		// key格式：mqtt:active:{userID}:username-role-sequence
-		parts := strings.Split(key, ":")
-		if len(parts) >= 3 {
-			clientIDPart := parts[len(parts)-1] // username-role-sequence
-			seqParts := strings.Split(clientIDPart, "-")
-			if len(seqParts) >= 3 {
-				if seq, err := strconv.Atoi(seqParts[len(seqParts)-1]); err == nil {
-					if seq > maxSequence {
-						maxSequence = seq
-					}
+		// 获取clientID（存储在Redis value中）
+		clientID, err := global.GVA_REDIS.Get(ctx, key).Result()
+		if err != nil {
+			global.GVA_LOG.Debug("获取clientID失败", zap.String("key", key), zap.Error(err))
+			continue // 跳过无效的key
+		}
+
+		global.GVA_LOG.Debug("检查clientID",
+			zap.String("key", key),
+			zap.String("clientID", clientID),
+			zap.String("expectedPrefix", expectedPrefix))
+
+		// 解析clientID格式：username-role-sequence
+		// 只处理匹配当前角色的clientID
+		if strings.HasPrefix(clientID, expectedPrefix) {
+			// 提取序号部分
+			seqStr := strings.TrimPrefix(clientID, expectedPrefix)
+			if seq, err := strconv.Atoi(seqStr); err == nil {
+				global.GVA_LOG.Debug("找到匹配的序号",
+					zap.String("clientID", clientID),
+					zap.String("seqStr", seqStr),
+					zap.Int("seq", seq),
+					zap.Int("currentMax", maxSequence))
+				if seq > maxSequence {
+					maxSequence = seq
 				}
+			} else {
+				global.GVA_LOG.Debug("序号解析失败", zap.String("seqStr", seqStr), zap.Error(err))
 			}
 		}
 	}
 
-	return maxSequence + 1, nil
+	nextSequence := maxSequence + 1
+	global.GVA_LOG.Info("MQTT序号生成完成",
+		zap.String("userID", userID),
+		zap.String("username", username),
+		zap.String("role", role),
+		zap.Int("maxSequence", maxSequence),
+		zap.Int("nextSequence", nextSequence))
+
+	return nextSequence, nil
 }
 
 // CreateMQTTClaims 创建MQTT专用JWT声明

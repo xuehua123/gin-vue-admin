@@ -10,6 +10,7 @@ import (
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/system/request"
+	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -109,22 +110,24 @@ func (s *RoleConflictService) AssignRole(userID, role, clientID string, jti stri
 // handleForceKick 处理强制挤下线（在Redis事务中执行）
 func (s *RoleConflictService) handleForceKick(ctx context.Context, pipe redis.Pipeliner, userID, role, newClientID string) error {
 	// 1. 获取被挤设备的信息
-	// 注意：这里不能调用CheckRoleConflict，因为它会发起新的Redis查询，破坏事务的原子性
-	// 我们需要直接从Redis中获取旧的ClientID
 	userRoleKey := fmt.Sprintf("user:%s:roles", userID)
-	currentAssignment, err := global.GVA_REDIS.HGet(ctx, userRoleKey, role).Result() // 在事务外独立查询
+	currentAssignment, err := global.GVA_REDIS.HGet(ctx, userRoleKey, role).Result()
 	if err != nil || currentAssignment == "" {
-		// 如果查询失败或角色未分配，则无需处理
-		return nil
+		return nil // 如果查询失败或角色未分配，则无需处理
 	}
 
 	targetClientID := s.extractFromAssignment(currentAssignment, "client_id")
 	if targetClientID == "" || targetClientID == newClientID {
-		// 没有有效的旧客户端或与新客户端相同，无需处理
-		return nil
+		return nil // 没有有效的旧客户端或与新客户端相同，无需处理
 	}
 
-	// 2. 创建挤下线通知
+	// 2. 立即撤销旧JWT（不等待异步处理）
+	if err := s.revokeOldClientJWT(ctx, targetClientID); err != nil {
+		global.GVA_LOG.Error("立即撤销旧JWT失败", zap.Error(err), zap.String("targetClientID", targetClientID))
+		// 不返回错误，继续处理其他步骤
+	}
+
+	// 3. 创建挤下线通知（用于额外的清理工作）
 	kickNotification := map[string]interface{}{
 		"target_client_id": targetClientID,
 		"kicker_client_id": newClientID,
@@ -135,15 +138,53 @@ func (s *RoleConflictService) handleForceKick(ctx context.Context, pipe redis.Pi
 	notificationJSON, _ := json.Marshal(kickNotification)
 	pipe.LPush(ctx, "kick_notifications", string(notificationJSON))
 
-	// 3. 清除被挤设备的状态
+	// 4. 清除被挤设备的状态
 	pipe.HDel(ctx, "client_connections", targetClientID)
 
-	// **重要**: 我们不在这里清除 user:{userID}:roles, 因为后续的 HSet 会自动覆盖它。
-	// 也不在这里吊销JWT，这个任务由NotificationService完成。
-
-	global.GVA_LOG.Info("已将挤下线任务加入队列",
+	global.GVA_LOG.Info("已处理强制挤下线",
 		zap.String("target_client_id", targetClientID),
 		zap.String("kicker_client_id", newClientID))
+
+	return nil
+}
+
+// revokeOldClientJWT 立即撤销旧客户端的JWT
+func (s *RoleConflictService) revokeOldClientJWT(ctx context.Context, clientID string) error {
+	// 从 client_connections 中获取JTI和UserID
+	connectionInfo, err := global.GVA_REDIS.HGet(ctx, "client_connections", clientID).Result()
+	if err != nil {
+		return fmt.Errorf("获取连接信息失败: %w", err)
+	}
+
+	var jti, userID string
+	pairs := strings.Split(connectionInfo, "|")
+	for _, pair := range pairs {
+		kv := strings.SplitN(pair, ":", 2)
+		if len(kv) == 2 {
+			switch kv[0] {
+			case "jti":
+				jti = kv[1]
+			case "user":
+				userID = kv[1]
+			}
+		}
+	}
+
+	if jti == "" || userID == "" {
+		return fmt.Errorf("无法解析JTI或UserID")
+	}
+
+	// 立即撤销JWT
+	jwtUtil := utils.NewJWT()
+	err = jwtUtil.RevokeJWTByID(userID, jti)
+	if err != nil {
+		return fmt.Errorf("撤销JWT失败: %w", err)
+	}
+
+	global.GVA_LOG.Info("立即撤销旧JWT成功",
+		zap.String("clientID", clientID),
+		zap.String("userID", userID),
+		zap.String("jti", jti))
 
 	return nil
 }
