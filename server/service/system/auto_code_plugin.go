@@ -1,4 +1,4 @@
-﻿package system
+package system
 
 import (
 	"bytes"
@@ -170,7 +170,7 @@ func (s *autoCodePlugin) PubPlug(plugName string) (zipPath string, err error) {
 	// (compression is not required; you could use Tar directly)
 	format := archives.CompressedArchive{
 		//Compression: archives.Gz{},
-		Archival:    archives.Zip{},
+		Archival: archives.Zip{},
 	}
 
 	// create the archive

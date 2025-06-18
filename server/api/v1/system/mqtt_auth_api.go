@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
+	"github.com/flipped-aurora/gin-vue-admin/server/model/system/request"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -16,11 +17,7 @@ type MqttAuthApi struct{}
 // Authenticate MQTT客户端认证
 // Webhook for EMQX: /mqtt/auth
 func (a *MqttAuthApi) Authenticate(c *gin.Context) {
-	var req struct {
-		ClientID string `json:"clientid"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var req request.MqttAuthRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"result": "deny"})
@@ -60,7 +57,7 @@ func (a *MqttAuthApi) Authenticate(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"result": "deny"})
 		return
 	}
-	
+
 	// TODO: 后续可在此处更新客户端的连接状态，例如记录last_ping
 
 	global.GVA_LOG.Info("MQTT客户端认证成功", zap.String("clientID", req.ClientID), zap.String("username", req.Username))
@@ -73,12 +70,7 @@ func (a *MqttAuthApi) Authenticate(c *gin.Context) {
 // CheckACL MQTT权限控制
 // Webhook for EMQX: /mqtt/acl
 func (a *MqttAuthApi) CheckACL(c *gin.Context) {
-	var req struct {
-		ClientID string `json:"clientid"`
-		Username string `json:"username"`
-		Topic    string `json:"topic"`
-		Action   string `json:"action"` // "publish" or "subscribe"
-	}
+	var req request.MqttAuthRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"result": "deny"})
@@ -120,7 +112,7 @@ func checkTopicPermission(clientID, topic, action string) bool {
 	if action == "publish" && strings.Contains(topic, "/sync/") {
 		return true
 	}
-	
+
 	// 规则4: 允许订阅用户级别的主题
 	// user/{userID}/...
 	// 需要从 clientID 解析出 userID，并与topic中的userID进行匹配
@@ -130,7 +122,6 @@ func checkTopicPermission(clientID, topic, action string) bool {
 		return true
 	}
 
-
 	// 默认拒绝
 	return false
-} 
+}

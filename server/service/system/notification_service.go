@@ -63,7 +63,7 @@ func (s *NotificationService) processKickNotifications() {
 		if targetClientID == "" {
 			continue
 		}
-		
+
 		global.GVA_LOG.Info("接收到挤下线通知", zap.Any("notification", notification))
 
 		// 1. 发送MQTT通知 (目前为伪代码，待MQTTPublisher实现)
@@ -138,7 +138,7 @@ func (s *NotificationService) cleanupExpiredConnections() {
 		}
 
 		now := time.Now().Unix()
-		
+
 		pipe := global.GVA_REDIS.TxPipeline()
 		cleanedCount := 0
 
@@ -147,7 +147,7 @@ func (s *NotificationService) cleanupExpiredConnections() {
 			if lastPingStr == "" {
 				continue
 			}
-			
+
 			lastPing, err := strconv.ParseInt(lastPingStr, 10, 64)
 			if err != nil {
 				continue
@@ -189,7 +189,7 @@ func (s *NotificationService) clearRoleAssignmentForClient(ctx context.Context, 
 	// 为避免复杂化，这里简化处理：直接清除。更好的做法是使用WATCH或Lua脚本。
 	roleAssignmentKey := fmt.Sprintf("role_assignments:%s", role)
 	pipe.HDel(ctx, roleAssignmentKey, "current_user", "client_id", "assigned_at")
-	
+
 	global.GVA_LOG.Info("已将角色清理任务加入队列", zap.String("userID", userID), zap.String("role", role))
 }
 
@@ -203,4 +203,4 @@ func extractFromConnection(connection, key string) string {
 		}
 	}
 	return ""
-} 
+}

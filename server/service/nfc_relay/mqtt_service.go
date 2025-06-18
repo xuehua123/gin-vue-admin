@@ -7,10 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay/request"
+	systemReq "github.com/flipped-aurora/gin-vue-admin/server/model/system/request"
 	"go.uber.org/zap"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -623,10 +626,43 @@ func (s *MQTTService) IsConnected() bool {
 func (s *MQTTService) Disconnect() {
 	if s.client != nil && s.client.IsConnected() {
 		s.client.Disconnect(250)
-		global.GVA_LOG.Info("MQTT连接已断开")
+		global.GVA_LOG.Info("MQTT客户端已断开")
+	}
+}
+
+// HandleRoleRequestWebhook 处理角色请求的Webhook
+func (s *MQTTService) HandleRoleRequestWebhook(c *gin.Context) {
+	var req systemReq.MqttAuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		global.GVA_LOG.Error("角色请求Webhook绑定参数失败", zap.Error(err))
+		c.JSON(400, gin.H{"result": "deny"})
+		return
 	}
 
-	s.mu.Lock()
-	s.isConnected = false
-	s.mu.Unlock()
+	global.GVA_LOG.Info("收到角色请求Webhook",
+		zap.String("clientid", req.ClientID),
+		zap.String("username", req.Username),
+		zap.String("topic", req.Topic),
+		zap.String("action", req.Action),
+	)
+
+	// TODO: 根据实际业务逻辑判断角色权限
+	// 示例：默认允许所有角色请求
+	c.JSON(200, gin.H{"result": "allow"})
+}
+
+// HandleConnectionStatusWebhook 处理连接状态的Webhook
+func (s *MQTTService) HandleConnectionStatusWebhook(c *gin.Context) {
+	var payload map[string]interface{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		global.GVA_LOG.Error("连接状态Webhook绑定参数失败", zap.Error(err))
+		c.Status(400)
+		return
+	}
+
+	global.GVA_LOG.Info("收到连接状态Webhook", zap.Any("payload", payload))
+
+	// TODO: 可根据连接状态（如断开连接）执行清理任务
+
+	c.Status(200)
 }
