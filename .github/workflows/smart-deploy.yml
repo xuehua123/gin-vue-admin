@@ -8,12 +8,72 @@ on:
       force_deploy_all:
         description: '强制部署所有服务'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 env:
   REGISTRY: registry.cn-hangzhou.aliyuncs.com
   IMAGE_PREFIX: gva
+  # 通用部署脚本段
+  DEPLOY_COMMON_SCRIPT: |
+    # 通用初始化函数
+    init_deployment() {
+      echo "🔧 初始化部署环境..."
+      
+      # 检查并创建/启用 Swap 交换空间（仅在需要时）
+      if [ "$(free | grep Swap | awk '{print $2}')" -eq 0 ]; then
+        echo "🤔 未发现Swap, 正在创建4GB Swap空间..."
+        sudo fallocate -l 4G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+        echo "✅ Swap创建并启用成功!"
+      else
+        echo "✅ Swap已存在."
+      fi
+
+      # 拉取最新代码
+      echo "📥 获取最新代码并强制覆盖本地..."
+      git fetch origin
+      git reset --hard origin/dev-mqtt
+      
+      # 清理Docker构建缓存（有选择性的清理）
+      docker builder prune -f --filter="until=168h" || true
+    }
+
+    # 等待服务健康的通用函数
+    wait_for_service() {
+      local service_name=$1
+      local check_command=$2
+      local max_attempts=${3:-30}
+      local wait_time=${4:-3}
+      
+      echo "⏰ 等待 $service_name 服务健康..."
+      for i in $(seq 1 $max_attempts); do
+        if eval "$check_command" &>/dev/null; then
+          echo "✅ $service_name 服务已健康"
+          return 0
+        fi
+        echo "⏳ 等待 $service_name 服务健康... ($i/$max_attempts)"
+        sleep $wait_time
+      done
+      echo "❌ $service_name 服务健康检查超时"
+      return 1
+    }
+
+    # 创建前端环境配置
+    create_frontend_config() {
+      echo "📝 创建前端生产环境配置..."
+      cat > web/.env.production << 'EOF'
+    VITE_CLI_PORT = 80
+    VITE_SERVER_PORT = 8888
+    VITE_BASE_API = '/api'
+    VITE_BASE_PATH = ''
+    VITE_EDITOR = vscode
+    VITE_POSITION = open
+    EOF
+    }
 
 jobs:
   # 检测变化的文件和服务
@@ -22,8 +82,8 @@ jobs:
     outputs:
       backend_changed: ${{ steps.changes.outputs.backend }}
       frontend_changed: ${{ steps.changes.outputs.frontend }}
-      docker_changed: ${{ steps.changes.outputs.docker }}
-      deploy_all: ${{ github.event.inputs.force_deploy_all == 'true' || steps.force-all.outputs.force }}
+      infra_changed: ${{ steps.changes.outputs.infra }}
+      deploy_all: ${{ github.event.inputs.force_deploy_all == true || steps.force-all.outputs.force == 'true' }}
     steps:
       - name: 🔍 检查代码变化
         uses: actions/checkout@v4
@@ -37,21 +97,21 @@ jobs:
           filters: |
             backend:
               - 'server/**'
-              - 'deploy/docker-compose.yml'
-              - 'deploy/mysql/**'
-              - 'deploy/redis/**'
             frontend:
               - 'web/**'
               - '!web/node_modules/**'
-            docker:
+            infra:
               - 'deploy/**'
-              - 'Dockerfile'
-              - 'docker-compose.yml'
+              - '**/Dockerfile'
+              - '**/docker-compose.yml'
       
       - name: 🎯 检查是否需要强制全量部署
         id: force-all
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ steps.changes.outputs.docker }}" == "true" ]]; then
+          # 如果是手动触发且没有强制全量部署，或者基础设施文件发生变化，则需要全量部署
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.force_deploy_all }}" != "true" ]]; then
+            echo "force=false" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.changes.outputs.infra }}" == "true" ]]; then
             echo "force=true" >> $GITHUB_OUTPUT
           else
             echo "force=false" >> $GITHUB_OUTPUT
@@ -61,7 +121,7 @@ jobs:
   deploy-backend:
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend_changed == 'true' && needs.detect-changes.outputs.deploy_all == 'false'
+    if: needs.detect-changes.outputs.backend_changed == 'true' && needs.detect-changes.outputs.frontend_changed == 'false' && needs.detect-changes.outputs.deploy_all == 'false'
     steps:
       - name: 🚀 部署后端服务
         uses: appleboy/ssh-action@v1.0.3
@@ -71,46 +131,22 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            echo "🔧 智能部署后端服务..."
+            set -e  # 遇到错误立即退出
             cd /opt/gin-vue-admin
             
-            # 检查并创建/启用 Swap 交换空间
-            if [ "$(sudo swapon --show | wc -l)" -lt 2 ]; then
-              echo "🤔 未发现Swap, 正在创建4GB Swap空间..."
-              sudo fallocate -l 4G /swapfile
-              sudo chmod 600 /swapfile
-              sudo mkswap /swapfile
-              sudo swapon /swapfile
-              echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-              echo "✅ Swap创建并启用成功!"
-            else
-              echo "✅ Swap已存在."
-            fi
-            sudo swapon --show
-
-            # 拉取最新代码
-            echo "📥 获取最新代码并强制覆盖本地..."
-            git fetch origin
-            git reset --hard origin/dev-mqtt
+            # 导入通用函数
+            eval "${{ env.DEPLOY_COMMON_SCRIPT }}"
             
-            # 清理Docker构建缓存
-            docker builder prune -f || true
-
+            echo "🔧 智能部署后端服务..."
+            init_deployment
+            
             # 确保依赖服务运行
-            echo "🔍 检查依赖服务状态..."
+            echo "🔍 启动依赖服务..."
             docker-compose -f deploy/docker-compose.yml up -d mysql redis
             
             # 等待依赖服务健康
-            echo "⏰ 等待依赖服务健康..."
-            for i in {1..30}; do
-                if docker-compose -f deploy/docker-compose.yml ps mysql | grep -q "healthy" && \
-                   docker-compose -f deploy/docker-compose.yml ps redis | grep -q "healthy"; then
-                    echo "✅ 依赖服务健康"
-                    break
-                fi
-                echo "⏳ 等待依赖服务健康... ($i/30)"
-                sleep 2
-            done
+            wait_for_service "MySQL" "docker-compose -f deploy/docker-compose.yml exec -T mysql mysqladmin ping -h localhost -u root -pGva123456! --silent" 30 3
+            wait_for_service "Redis" "docker-compose -f deploy/docker-compose.yml exec -T redis redis-cli -a 'Gva123456!' ping | grep -q PONG" 20 2
             
             # 只重建后端服务
             echo "🔨 重建后端镜像..."
@@ -121,26 +157,18 @@ jobs:
             docker-compose -f deploy/docker-compose.yml up -d backend
             
             # 健康检查
-            echo "🏥 后端服务健康检查..."
-            for i in {1..30}; do
-                if curl -f -s http://localhost:8888/health > /dev/null 2>&1; then
-                    echo "✅ 后端服务重启成功"
-                    break
-                fi
-                if [ $i -eq 30 ]; then
-                    echo "❌ 后端服务重启失败"
-                    docker-compose -f deploy/docker-compose.yml logs --tail=20 backend
-                    exit 1
-                fi
-                echo "⏳ 等待后端服务... ($i/30)"
-                sleep 3
-            done
+            if ! wait_for_service "Backend" "curl -f -s http://localhost:8888/health" 30 3; then
+              echo "❌ 后端服务重启失败，查看日志："
+              docker-compose -f deploy/docker-compose.yml logs --tail=20 backend
+              exit 1
+            fi
+            echo "✅ 后端服务部署成功"
 
   # 智能部署前端服务
   deploy-frontend:
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend_changed == 'true' && needs.detect-changes.outputs.deploy_all == 'false'
+    if: needs.detect-changes.outputs.frontend_changed == 'true' && needs.detect-changes.outputs.backend_changed == 'false' && needs.detect-changes.outputs.deploy_all == 'false'
     steps:
       - name: 🚀 部署前端服务
         uses: appleboy/ssh-action@v1.0.3
@@ -150,56 +178,24 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            echo "🎨 智能部署前端服务..."
+            set -e  # 遇到错误立即退出
             cd /opt/gin-vue-admin
             
-            # 检查并创建/启用 Swap 交换空间
-            if [ "$(sudo swapon --show | wc -l)" -lt 2 ]; then
-              echo "🤔 未发现Swap, 正在创建4GB Swap空间..."
-              sudo fallocate -l 4G /swapfile
-              sudo chmod 600 /swapfile
-              sudo mkswap /swapfile
-              sudo swapon /swapfile
-              echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-              echo "✅ Swap创建并启用成功!"
-            else
-              echo "✅ Swap已存在."
-            fi
-            sudo swapon --show
-
-            # 拉取最新代码
-            echo "📥 获取最新代码并强制覆盖本地..."
-            git fetch origin
-            git reset --hard origin/dev-mqtt
+            # 导入通用函数
+            eval "${{ env.DEPLOY_COMMON_SCRIPT }}"
             
-            # 清理Docker构建缓存
-            docker builder prune -f || true
-
-            # 创建前端环境配置文件
-            echo "📝 创建前端生产环境配置..."
-            cat > web/.env.production << EOF
-            VITE_CLI_PORT = 80
-            VITE_SERVER_PORT = 8888
-            VITE_BASE_API = '/api'
-            VITE_BASE_PATH = ''
-            VITE_EDITOR = vscode
-            VITE_POSITION = open
-            EOF
+            echo "🎨 智能部署前端服务..."
+            init_deployment
+            create_frontend_config
             
             # 确保后端服务运行
-            echo "🔍 检查后端服务状态..."
+            echo "🔍 确保依赖服务状态..."
             docker-compose -f deploy/docker-compose.yml up -d mysql redis backend
             
             # 等待后端服务健康
-            echo "⏰ 等待后端服务健康..."
-            for i in {1..20}; do
-                if curl -f -s http://localhost:8888/health > /dev/null 2>&1; then
-                    echo "✅ 后端服务健康"
-                    break
-                fi
-                echo "⏳ 等待后端服务健康... ($i/20)"
-                sleep 3
-            done
+            if ! wait_for_service "Backend" "curl -f -s http://localhost:8888/health" 20 3; then
+              echo "⚠️ 后端服务未完全就绪，但继续前端部署"
+            fi
             
             # 只重建前端服务
             echo "🔨 重建前端镜像..."
@@ -210,26 +206,76 @@ jobs:
             docker-compose -f deploy/docker-compose.yml up -d frontend
             
             # 健康检查
-            echo "🏥 前端服务健康检查..."
-            for i in {1..15}; do
-                if curl -f -s http://localhost:80 > /dev/null 2>&1; then
-                    echo "✅ 前端服务重启成功"
-                    break
-                fi
-                if [ $i -eq 15 ]; then
-                    echo "❌ 前端服务重启失败"
-                    docker-compose -f deploy/docker-compose.yml logs --tail=20 frontend
-                    exit 1
-                fi
-                echo "⏳ 等待前端服务... ($i/15)"
-                sleep 2
-            done
+            if ! wait_for_service "Frontend" "curl -f -s http://localhost:80" 15 2; then
+              echo "❌ 前端服务重启失败，查看日志："
+              docker-compose -f deploy/docker-compose.yml logs --tail=20 frontend
+              exit 1
+            fi
+            echo "✅ 前端服务部署成功"
+
+  # 智能部署多个服务（当前端和后端同时变化时）
+  deploy-multiple:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend_changed == 'true' && needs.detect-changes.outputs.frontend_changed == 'true' && needs.detect-changes.outputs.deploy_all == 'false'
+    steps:
+      - name: 🚀 智能部署多个服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            set -e  # 遇到错误立即退出
+            cd /opt/gin-vue-admin
+            
+            # 导入通用函数
+            eval "${{ env.DEPLOY_COMMON_SCRIPT }}"
+            
+            echo "🔧 智能部署前端和后端服务..."
+            init_deployment
+            create_frontend_config
+            
+            # 确保依赖服务运行
+            echo "🔍 启动依赖服务..."
+            docker-compose -f deploy/docker-compose.yml up -d mysql redis
+            
+            # 等待依赖服务健康
+            wait_for_service "MySQL" "docker-compose -f deploy/docker-compose.yml exec -T mysql mysqladmin ping -h localhost -u root -pGva123456! --silent" 30 3
+            wait_for_service "Redis" "docker-compose -f deploy/docker-compose.yml exec -T redis redis-cli -a 'Gva123456!' ping | grep -q PONG" 20 2
+            
+            # 重建前端和后端服务
+            echo "🔨 重建前端和后端镜像..."
+            docker-compose -f deploy/docker-compose.yml build --no-cache frontend backend
+            
+            # 重启服务
+            echo "🔄 重启前端和后端服务..."
+            docker-compose -f deploy/docker-compose.yml up -d frontend backend
+            
+            # 健康检查
+            echo "🏥 服务健康检查..."
+            sleep 30  # 给服务一些启动时间
+            
+            # 检查前端
+            if ! wait_for_service "Frontend" "curl -f -s http://localhost:80" 15 2; then
+              echo "❌ 前端服务重启失败"
+              docker-compose -f deploy/docker-compose.yml logs --tail=20 frontend
+            fi
+            
+            # 检查后端
+            if ! wait_for_service "Backend" "curl -f -s http://localhost:8888/health" 30 3; then
+              echo "❌ 后端服务重启失败"
+              docker-compose -f deploy/docker-compose.yml logs --tail=20 backend
+              exit 1
+            fi
+            echo "✅ 多服务部署成功"
 
   # 全量部署（备用）
   deploy-all:
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.deploy_all == 'true' && (needs.detect-changes.outputs.docker_changed == 'true' || github.event.inputs.force_deploy_all == 'true')
+    if: needs.detect-changes.outputs.deploy_all == 'true'
     steps:
       - name: 🚀 全量部署所有服务
         uses: appleboy/ssh-action@v1.0.3
@@ -239,45 +285,19 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            echo "🚀 全量部署所有服务..."
+            set -e  # 遇到错误立即退出
             cd /opt/gin-vue-admin
             
-            # 检查并创建/启用 Swap 交换空间
-            if [ "$(sudo swapon --show | wc -l)" -lt 2 ]; then
-              echo "🤔 未发现Swap, 正在创建4GB Swap空间..."
-              sudo fallocate -l 4G /swapfile
-              sudo chmod 600 /swapfile
-              sudo mkswap /swapfile
-              sudo swapon /swapfile
-              echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-              echo "✅ Swap创建并启用成功!"
-            else
-              echo "✅ Swap已存在."
-            fi
-            sudo swapon --show
-
-            # 拉取最新代码
-            echo "📥 获取最新代码并强制覆盖本地..."
-            git fetch origin
-            git reset --hard origin/dev-mqtt
+            # 导入通用函数
+            eval "${{ env.DEPLOY_COMMON_SCRIPT }}"
             
-            # 清理Docker构建缓存
-            docker builder prune -f || true
-
-            # 创建前端环境配置文件
-            echo "📝 创建前端生产环境配置..."
-            cat > web/.env.production << EOF
-            VITE_CLI_PORT = 80
-            VITE_SERVER_PORT = 8888
-            VITE_BASE_API = '/api'
-            VITE_BASE_PATH = ''
-            VITE_EDITOR = vscode
-            VITE_POSITION = open
-            EOF
+            echo "🚀 全量部署所有服务..."
+            init_deployment
+            create_frontend_config
             
             # 停止所有服务
             echo "⏹️ 停止旧服务..."
-            docker-compose -f deploy/docker-compose.yml down
+            docker-compose -f deploy/docker-compose.yml down || true
             
             # 重建并启动所有服务
             echo "🔨 重建并启动所有服务..."
@@ -286,27 +306,29 @@ jobs:
             
             # 全面健康检查
             echo "🏥 全面服务健康检查..."
-            sleep 60
+            sleep 60  # 给所有服务充足的启动时间
             
             # 检查前端
-            if curl -f -s http://localhost:80 > /dev/null; then
-                echo "✅ 前端服务正常"
+            if wait_for_service "Frontend" "curl -f -s http://localhost:80" 20 3; then
+              echo "✅ 前端服务正常"
             else
-                echo "❌ 前端服务异常"
+              echo "❌ 前端服务异常"
             fi
             
             # 检查后端
-            if curl -f -s http://localhost:8888/health > /dev/null; then
-                echo "✅ 后端服务正常"
+            if wait_for_service "Backend" "curl -f -s http://localhost:8888/health" 30 3; then
+              echo "✅ 后端服务正常"
             else
-                echo "❌ 后端服务异常"
-                docker-compose -f deploy/docker-compose.yml logs --tail=30 backend
+              echo "❌ 后端服务异常"
+              docker-compose -f deploy/docker-compose.yml logs --tail=30 backend
+              exit 1
             fi
+            echo "✅ 全量部署完成"
 
   # 部署状态通知
   notify:
     runs-on: ubuntu-latest
-    needs: [detect-changes, deploy-backend, deploy-frontend, deploy-all]
+    needs: [detect-changes, deploy-backend, deploy-frontend, deploy-multiple, deploy-all]
     if: always()
     steps:
       - name: 📢 部署结果通知
@@ -315,30 +337,37 @@ jobs:
           echo "📋 变化检测结果："
           echo "  - 后端变化: ${{ needs.detect-changes.outputs.backend_changed }}"
           echo "  - 前端变化: ${{ needs.detect-changes.outputs.frontend_changed }}"
-          echo "  - Docker变化: ${{ needs.detect-changes.outputs.docker_changed }}"
-          echo "  - 全量部署: ${{ needs.detect-changes.outputs.deploy_all }}"
+          echo "  - 基础设施变化: ${{ needs.detect-changes.outputs.infra_changed }}"
+          echo "  - 触发全量部署: ${{ needs.detect-changes.outputs.deploy_all }}"
           
           echo "🚀 部署执行情况："
-          if [[ "${{ needs.deploy-backend.result }}" == "success" ]]; then
-            echo "  ✅ 后端服务部署成功"
-          elif [[ "${{ needs.deploy-backend.result }}" == "skipped" ]]; then
-            echo "  ⏭️ 后端服务跳过部署（无变化）"
-          elif [[ "${{ needs.deploy-backend.result }}" == "failure" ]]; then
-            echo "  ❌ 后端服务部署失败"
-          fi
-          
-          if [[ "${{ needs.deploy-frontend.result }}" == "success" ]]; then
-            echo "  ✅ 前端服务部署成功"
-          elif [[ "${{ needs.deploy-frontend.result }}" == "skipped" ]]; then
-            echo "  ⏭️ 前端服务跳过部署（无变化）"
-          elif [[ "${{ needs.deploy-frontend.result }}" == "failure" ]]; then
-            echo "  ❌ 前端服务部署失败"
-          fi
-          
-          if [[ "${{ needs.deploy-all.result }}" == "success" ]]; then
-            echo "  ✅ 全量部署成功"
-          elif [[ "${{ needs.deploy-all.result }}" == "skipped" ]]; then
-            echo "  ⏭️ 全量部署跳过"
-          elif [[ "${{ needs.deploy-all.result }}" == "failure" ]]; then
-            echo "  ❌ 全量部署失败"
-          fi 
+          for job in deploy-backend deploy-frontend deploy-multiple deploy-all; do
+            result_var="needs.${job}.result"
+            result="${{ needs.deploy-backend.result }}${{ needs.deploy-frontend.result }}${{ needs.deploy-multiple.result }}${{ needs.deploy-all.result }}"
+            
+            case "${job}" in
+              "deploy-backend")
+                result="${{ needs.deploy-backend.result }}"
+                name="后端服务"
+                ;;
+              "deploy-frontend") 
+                result="${{ needs.deploy-frontend.result }}"
+                name="前端服务"
+                ;;
+              "deploy-multiple")
+                result="${{ needs.deploy-multiple.result }}"
+                name="多服务"
+                ;;
+              "deploy-all")
+                result="${{ needs.deploy-all.result }}"
+                name="全量"
+                ;;
+            esac
+            
+            case "${result}" in
+              "success") echo "  ✅ ${name}部署成功" ;;
+              "skipped") echo "  ⏭️ ${name}部署跳过（无变化）" ;;
+              "failure") echo "  ❌ ${name}部署失败" ;;
+              "") echo "  ⏭️ ${name}部署未执行" ;;
+            esac
+          done 
