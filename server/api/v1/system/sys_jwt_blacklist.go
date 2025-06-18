@@ -205,5 +205,9 @@ func (jwtApi *JwtApi) GetUserMQTTTokens(c *gin.Context) {
 		}
 	}
 
+	if tokenInfos == nil {
+		tokenInfos = make([]response.MQTTTokenInfo, 0)
+	}
+
 	response.OkWithDetailed(tokenInfos, "获取成功", c)
 }

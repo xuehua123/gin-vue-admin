@@ -13,15 +13,12 @@ import paho.mqtt.client as mqtt
 from datetime import datetime
 import threading
 
-# --- 配置信息 ---
-SERVER_BASE = "http://43.165.186.134:8888"
-EMQX_HOST = "49.235.40.39"
-EMQX_PORT = 1883
-
-TEST_USER = {
-    "username": "admin",
-    "password": "123456"
-}
+# --- 导入配置 ---
+try:
+    from config import SERVER_BASE_URL, EMQX_HOST, EMQX_MQTT_PORT, USER1_CREDENTIALS
+except ImportError:
+    print("❌ 无法导入配置文件 `scripts/config.py`. 请确保该文件存在且路径正确。")
+    exit(1)
 
 # --- 辅助类 ---
 
@@ -53,8 +50,8 @@ class MqttClientHandler:
     def connect(self, username, password, topic_to_subscribe):
         self.client.username_pw_set(username, password)
         try:
-            print(f"🔌 [{self.client_id}] 尝试连接到 {EMQX_HOST}...")
-            self.client.connect(EMQX_HOST, EMQX_PORT, 60)
+            print(f"🔌 [{self.client_id}] 尝试连接到 {EMQX_HOST}:{EMQX_MQTT_PORT}...")
+            self.client.connect(EMQX_HOST, EMQX_MQTT_PORT, 60)
             self.client.loop_start()
             
             # 等待连接成功
@@ -106,13 +103,43 @@ class MqttClientHandler:
 
 def login_and_get_auth_token():
     """登录并获取API认证Token"""
+    session = requests.Session()
+
+    # 1. 获取验证码ID
+    print("🖼️  获取登录验证码...")
+    captcha_id = None
     try:
-        response = requests.post(f"{SERVER_BASE}/base/login", json=TEST_USER, timeout=10)
+        captcha_response = session.post(f"{SERVER_BASE_URL}/base/captcha", timeout=10)
+        captcha_response.raise_for_status()
+        captcha_data = captcha_response.json()
+        if captcha_data.get("code") == 0:
+            captcha_id = captcha_data["data"]["captchaId"]
+            print(f"✅ 获取验证码ID成功: {captcha_id}")
+        else:
+            print(f"❌ 获取验证码失败: {captcha_data.get('msg')}")
+            return None
+    except Exception as e:
+        print(f"❌ 获取验证码异常: {e}")
+        return None
+
+    # 2. 使用验证码ID进行登录
+    try:
+        payload = {
+            "username": USER1_CREDENTIALS["username"],
+            "password": USER1_CREDENTIALS["password"],
+            "captcha": "",
+            "captchaId": captcha_id
+        }
+        response = session.post(f"{SERVER_BASE_URL}/base/login", json=payload, timeout=10)
+        response.raise_for_status()
         data = response.json()
         if data.get("code") == 0:
+            print(f"✅ 登录成功, 用户: {USER1_CREDENTIALS['username']}")
             return data["data"]["token"]
-    except Exception as e:
-        print(f"❌ 登录失败: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ 登录请求失败: {e}")
+    except json.JSONDecodeError:
+        print("❌ 登录失败: 无法解析服务器响应")
     return None
 
 def get_mqtt_token(auth_token, role, force_kick=False, device_model="TestDevice"):
@@ -121,15 +148,18 @@ def get_mqtt_token(auth_token, role, force_kick=False, device_model="TestDevice"
     payload = {
         "role": role,
         "force_kick_existing": force_kick,
-        "device_info": {"model": device_model}
+        "device_info": {"device_model": device_model, "app_version": "test-1.0"}
     }
     try:
-        response = requests.post(f"{SERVER_BASE}/role/generateMQTTToken", headers=headers, json=payload, timeout=10)
+        response = requests.post(f"{SERVER_BASE_URL}/role/generateMQTTToken", headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
         result = response.json()
         if result.get("code") == 0:
             return result["data"]
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         print(f"❌ 获取MQTT Token失败: {e}")
+    except json.JSONDecodeError:
+        print("❌ 获取MQTT Token失败: 无法解析服务器响应")
     return None
 
 def run_end_to_end_test():
@@ -221,6 +251,8 @@ def run_end_to_end_test():
         print(f"✅ 设备B ({client_id_b}) 成功连接，测试通过！")
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         test_result.set_failed(f"测试过程中出现异常: {e}")
     finally:
         if client_a:

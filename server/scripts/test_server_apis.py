@@ -11,12 +11,12 @@ import time
 from datetime import datetime
 import base64
 
-# 配置信息
-SERVER_BASE = "http://43.165.186.134:8888"
-TEST_USER = {
-    "username": "admin",
-    "password": "123456"
-}
+# 导入配置
+try:
+    from config import SERVER_BASE_URL, USER1_CREDENTIALS
+except ImportError:
+    print("❌ 无法导入配置文件 `scripts/config.py`. 请确保该文件存在且路径正确。")
+    exit(1)
 
 class ServerAPITester:
     def __init__(self):
@@ -24,18 +24,43 @@ class ServerAPITester:
         self.auth_token = None
         self.user_info = None
         
+    def get_captcha(self):
+        """获取验证码ID"""
+        print("🖼️  获取登录验证码...")
+        try:
+            response = self.session.post(f"{SERVER_BASE_URL}/base/captcha", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == 0:
+                    print(f"✅ 获取验证码ID成功: {data['data']['captchaId']}")
+                    return data['data']['captchaId']
+                else:
+                    print(f"❌ 获取验证码失败: {data.get('msg', '未知错误')}")
+                    return None
+            else:
+                print(f"❌ 获取验证码请求失败: HTTP {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"❌ 获取验证码异常: {e}")
+            return None
+        
     def login(self):
         """用户登录获取JWT Token"""
         print("🔐 测试用户登录...")
         
+        captcha_id = self.get_captcha()
+        if not captcha_id:
+            print("❌ 未能获取验证码ID，登录中止")
+            return False
+        
         try:
             response = self.session.post(
-                f"{SERVER_BASE}/base/login",
+                f"{SERVER_BASE_URL}/base/login",
                 json={
-                    "username": TEST_USER["username"],
-                    "password": TEST_USER["password"],
-                    "captcha": "",
-                    "captchaId": ""
+                    "username": USER1_CREDENTIALS["username"],
+                    "password": USER1_CREDENTIALS["password"],
+                    "captcha": "", # 测试环境通常不需要填写验证码的值
+                    "captchaId": captcha_id
                 },
                 timeout=10
             )
@@ -70,7 +95,7 @@ class ServerAPITester:
         
         try:
             response = self.session.post(
-                f"{SERVER_BASE}/jwt/generateMQTTToken",
+                f"{SERVER_BASE_URL}/jwt/generateMQTTToken",
                 json={"role": role},
                 timeout=10
             )
@@ -107,7 +132,7 @@ class ServerAPITester:
         
         try:
             response = self.session.post(
-                f"{SERVER_BASE}/role/checkConflict",
+                f"{SERVER_BASE_URL}/role/checkConflict",
                 json={
                     "role": role,
                     "client_id": test_client_id,
@@ -147,7 +172,7 @@ class ServerAPITester:
         
         try:
             response = self.session.post(
-                f"{SERVER_BASE}/role/generateMQTTToken",
+                f"{SERVER_BASE_URL}/role/generateMQTTToken",
                 json={
                     "role": role,
                     "force_kick_existing": True,
@@ -183,7 +208,7 @@ class ServerAPITester:
         
         try:
             response = self.session.get(
-                f"{SERVER_BASE}/jwt/getUserMQTTTokens",
+                f"{SERVER_BASE_URL}/jwt/getUserMQTTTokens",
                 timeout=10
             )
             
@@ -214,7 +239,7 @@ class ServerAPITester:
         
         try:
             response = self.session.post(
-                f"{SERVER_BASE}/jwt/revokeMQTTToken",
+                f"{SERVER_BASE_URL}/jwt/revokeMQTTToken",
                 json={"client_id": client_id},
                 timeout=10
             )
