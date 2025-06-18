@@ -4,14 +4,15 @@ import time
 import json
 import threading
 import sys
+import base64
 
 # --- 配置 ---
-BASE_URL = "http://localhost:8888"
-MQTT_HOST = "localhost"
+BASE_URL = "http://43.165.186.134:8888"
+MQTT_HOST = "43.165.186.134"
 MQTT_PORT = 1883
 # 请确保该测试用户在您的数据库中存在
 TEST_USERNAME = "admin"
-TEST_PASSWORD = "123456"
+TEST_PASSWORD = "xuehua123"
 
 # 全局变量用于存储获取到的Token
 AUTH_TOKEN = None
@@ -34,20 +35,32 @@ class MqttClientHandler:
     """一个简单的MQTT客户端处理器，用于连接和监听消息"""
     def __init__(self, client_id):
         self.client_id = client_id
-        self.client = mqtt.Client(client_id=client_id)
+        self.client = mqtt.Client(client_id=client_id, callback_api_version=mqtt.CallbackAPIVersion.VERSION1)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
+        self.client.on_disconnect = self.on_disconnect
+        self.client.on_log = self.on_log
         self.received_message = None
         self.is_connected = False
         self.lock = threading.Lock()
         self.message_event = threading.Event()
+        self.connection_error = None
 
     def on_connect(self, client, userdata, flags, rc):
+        print(f"MQTT Client {self.client_id} connection attempt result: {rc}")
         if rc == 0:
             self.is_connected = True
             print(f"MQTT Client {self.client_id} connected successfully.")
         else:
             print(f"MQTT Client {self.client_id} failed to connect, return code {rc}")
+            self.connection_error = f"Connection failed with code {rc}"
+
+    def on_disconnect(self, client, userdata, rc):
+        self.is_connected = False
+        print(f"MQTT Client {self.client_id} disconnected with return code: {rc}")
+
+    def on_log(self, client, userdata, level, buf):
+        print(f"MQTT Client {self.client_id} LOG: {buf}")
 
     def on_message(self, client, userdata, msg):
         with self.lock:
@@ -56,14 +69,21 @@ class MqttClientHandler:
             self.message_event.set() # 通知已收到消息
 
     def connect_and_subscribe(self, username, token, topic):
+        print(f"Attempting to connect MQTT client {self.client_id} with username: {username}")
+        print(f"Token starts with: {token[:50]}..." if len(token) > 50 else f"Token: {token}")
+        print(f"Will subscribe to topic: {topic}")
+        
         self.client.username_pw_set(username, token)
         try:
+            print(f"Connecting to MQTT broker at {MQTT_HOST}:{MQTT_PORT}")
             self.client.connect(MQTT_HOST, MQTT_PORT, 60)
+            print(f"Connection initiated, subscribing to {topic}")
             self.client.subscribe(topic)
             threading.Thread(target=self.client.loop_forever, daemon=True).start()
-            time.sleep(1) # 等待连接建立
+            time.sleep(3) # 等待连接建立和认证完成
         except Exception as e:
             self.is_connected = False
+            self.connection_error = str(e)
             print(f"Error connecting {self.client_id}: {e}")
 
     def wait_for_message(self, timeout=15):
@@ -76,22 +96,45 @@ class MqttClientHandler:
             self.is_connected = False
             print(f"MQTT Client {self.client_id} disconnected.")
 
+def get_captcha():
+    """获取验证码"""
+    url = f"{BASE_URL}/base/captcha"
+    headers = {"Content-Type": "application/json"}
+    try:
+        response = requests.post(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        if data.get('code') == 0:
+            return data['data']['captchaId']
+        else:
+            print(f"Failed to get captcha: {data.get('msg')}")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"Error getting captcha: {e}")
+        return None
+
 def login_and_get_token():
     """登录并获取x-token"""
     global AUTH_TOKEN
     if AUTH_TOKEN:
         return AUTH_TOKEN
 
+    # 先获取验证码ID
+    captcha_id = get_captcha()
+    if not captcha_id:
+        print("Failed to get captcha ID")
+        return None
+
     url = f"{BASE_URL}/base/login"
     payload = {
         "username": TEST_USERNAME,
         "password": TEST_PASSWORD,
-        "captcha": "", # 通常本地测试不需要验证码
-        "captchaId": ""
+        "captcha": "",  # 验证码内容留空，通常测试环境可以绕过
+        "captchaId": captcha_id
     }
     headers = {"Content-Type": "application/json"}
     try:
-        print(f"Attempting to log in as user '{TEST_USERNAME}'...")
+        print(f"Attempting to log in as user '{TEST_USERNAME}' with captcha ID...")
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
         data = response.json()
@@ -105,6 +148,23 @@ def login_and_get_token():
     except requests.exceptions.RequestException as e:
         print(f"Error during login: {e}")
         return None
+
+def decode_jwt_payload(token):
+    """解码JWT的payload部分以便调试"""
+    try:
+        # JWT格式：header.payload.signature
+        parts = token.split('.')
+        if len(parts) != 3:
+            return "Invalid JWT format"
+        
+        # 解码payload部分
+        payload = parts[1]
+        # 添加必要的padding
+        payload += '=' * (4 - len(payload) % 4)
+        decoded = base64.b64decode(payload)
+        return json.loads(decoded)
+    except Exception as e:
+        return f"Error decoding JWT: {e}"
 
 def get_mqtt_token(role, force_kick=False, device_model="TestDevice"):
     """向后端请求MQTT Token"""
@@ -125,7 +185,16 @@ def get_mqtt_token(role, force_kick=False, device_model="TestDevice"):
     try:
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        
+        # 调试：打印MQTT Token的内容
+        if result and result.get('code') == 0 and 'token' in result['data']:
+            mqtt_token = result['data']['token']
+            payload_content = decode_jwt_payload(mqtt_token)
+            print(f"Generated MQTT Token payload: {json.dumps(payload_content, indent=2)}")
+            print(f"Client ID from response: {result['data']['client_id']}")
+        
+        return result
     except requests.exceptions.RequestException as e:
         print(f"Error getting MQTT token: {e}")
         return None

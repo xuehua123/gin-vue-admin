@@ -522,9 +522,9 @@ func (j *JWT) RevokeMQTTJWT(claims *request.MQTTClaims) error {
 	}
 
 	userID := claims.GetUserID()
-	clientID := claims.GetClientID()
+	jti := claims.GetJTI()
 
-	redisKey := fmt.Sprintf("mqtt:active:%s:%s", userID, clientID)
+	redisKey := fmt.Sprintf("mqtt:active:%s:%s", userID, jti)
 
 	_, err := global.GVA_REDIS.Del(context.Background(), redisKey).Result()
 	if err != nil {
@@ -536,7 +536,7 @@ func (j *JWT) RevokeMQTTJWT(claims *request.MQTTClaims) error {
 
 	global.GVA_LOG.Info("MQTT JWT已成功撤销",
 		zap.String("userID", userID),
-		zap.String("clientID", clientID),
+		zap.String("jti", jti),
 		zap.String("redisKey", redisKey))
 
 	return nil
