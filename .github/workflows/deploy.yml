@@ -8,13 +8,13 @@ on:
       force_legacy_deploy:
         description: '强制使用旧版全量部署 (仅紧急情况)'
         required: true
-        default: 'false'
+        default: false
         type: boolean
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: github.event.inputs.force_legacy_deploy == 'true'  # 只有明确指定才运行
+    if: github.event.inputs.force_legacy_deploy == true  # 只有明确指定才运行
     
     steps:
     - name: ⚠️ 使用旧版全量部署 (Legacy Deploy)
