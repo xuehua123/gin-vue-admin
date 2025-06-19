@@ -1,0 +1,72 @@
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      sed_config:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      HOST:
+        required: true
+      USER:
+        required: true
+      KEY:
+        required: true
+      PROT:
+        required: true
+      deploy_path:
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: ./web/dist
+
+      - name: Download backend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-binary
+          path: .
+          
+      - name: Apply environment config
+        if: ${{ inputs.sed_config == true }}
+        run: |
+          sed -i 's/${basePath}:${basePort}/${basePath}/g' web/src/view/systemTools/formCreate/index.vue
+
+      - name: Deploy to server
+        env:
+          KEY: ${{ secrets.KEY }}
+          HOST: ${{ secrets.HOST }}
+          USER: ${{ secrets.USER }}
+          PORT: ${{ secrets.PROT }}
+          DEPLOY_PATH: ${{ secrets.deploy_path }}
+        run: |
+          mkdir -p ~/.ssh/ && echo "$KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p ${PORT} ${HOST} >> ~/.ssh/known_hosts
+          
+          echo "🚀 Deploying frontend..."
+          scp -P ${PORT} -o StrictHostKeyChecking=no -r web/dist/* ${USER}@${HOST}:${DEPLOY_PATH}/dist/
+          
+          echo "🚀 Deploying backend..."
+          scp -P ${PORT} -o StrictHostKeyChecking=no -r gva-server ${USER}@${HOST}:${DEPLOY_PATH}/server
+          
+          echo "🚀 Deploying resources..."
+          ssh -p ${PORT} -o StrictHostKeyChecking=no ${USER}@${HOST} "rm -rf ${DEPLOY_PATH}/resource/*"
+          scp -P ${PORT} -o StrictHostKeyChecking=no -r server/resource/* ${USER}@${HOST}:${DEPLOY_PATH}/resource/
+          
+          echo "🔄 Restarting service..."
+          ssh -p ${PORT} -o StrictHostKeyChecking=no ${USER}@${HOST} "cd ${DEPLOY_PATH} && bash restart.sh > /dev/null 2>&1 &" 

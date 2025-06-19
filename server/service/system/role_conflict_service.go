@@ -271,7 +271,7 @@ func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
 	}
 
 	// 强制断开客户端
-	disconnectURL := fmt.Sprintf("http://%s:%s/api/v5/clients/%s/kickout", emqxHost, emqxPort, clientID)
+	disconnectURL := fmt.Sprintf("http://%s:%s/api/v5/clients/%s", emqxHost, emqxPort, clientID)
 	req, err := http.NewRequest("DELETE", disconnectURL, nil)
 	if err != nil {
 		return fmt.Errorf("创建断开连接请求失败: %w", err)
