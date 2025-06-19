@@ -103,29 +103,45 @@ class EMQXIntegrationTester:
         """从服务器获取MQTT Token"""
         print(f"🎫 获取MQTT Token (角色: {role})...")
         
+        url = f"{SERVER_BASE}/role/generateMQTTToken"
+        payload = {
+            "role": role,
+            "force_kick_existing": force_kick
+        }
+        
+        print(f"   - 请求URL: {url}")
+        print(f"   - 角色: {role}")
+        print(f"   - 强制踢出: {force_kick}")
+        
         try:
-            response = self.session.post(
-                f"{SERVER_BASE}/role/generateMQTTToken",
-                json={
-                    "role": role,
-                    "force_kick_existing": force_kick
-                },
-                timeout=10
-            )
+            response = self.session.post(url, json=payload, timeout=10)
+            
+            print(f"   - 响应状态: {response.status_code}")
+            print(f"   - 响应头: {dict(response.headers)}")
             
             if response.status_code == 200:
                 data = response.json()
+                print(f"   - 响应数据: {data}")
+                
                 if data.get("code") == 0:
                     token_info = data["data"]
                     self.mqtt_tokens[role] = token_info
                     print(f"✅ 获取{role} Token成功: {token_info['client_id']}")
+                    print(f"   - Client ID: {token_info['client_id']}")
+                    print(f"   - Token: {token_info['token'][:20]}...")
+                    print(f"   - Expires: {token_info.get('expires_at', 'N/A')}")
                     return token_info
+                else:
+                    print(f"❌ 服务器返回错误: code={data.get('code')}, msg={data.get('msg')}")
+                    return None
+            else:
+                print(f"❌ HTTP请求失败: {response.status_code}")
+                print(f"   - 响应体: {response.text}")
+                return None
                     
         except Exception as e:
             print(f"❌ 获取MQTT Token失败: {e}")
             return None
-        
-        return None
     
     def test_mqtt_auth_api(self, role):
         """测试MQTT认证API接口"""
@@ -346,46 +362,141 @@ class EMQXIntegrationTester:
         print("⚔️ 测试角色冲突场景...")
 
         # 获取并连接设备A
+        print("🎫 获取设备A的MQTT Token...")
         token_a = self.get_mqtt_token("transmitter")
-        if not token_a: return False
+        if not token_a: 
+            print("❌ 设备A Token获取失败")
+            return False
         
+        print(f"✅ 设备A Token: {token_a['client_id']}")
+        print(f"   - Token: {token_a['token'][:20]}...")
+        print(f"   - Expires: {token_a.get('expires_at', 'N/A')}")
+        
+        print("🔌 连接设备A到MQTT...")
         client_a = self.connect_mqtt_client("transmitter")
         if not client_a:
             print("❌ 设备A连接失败")
             return False
-        print(f"📱 设备A ({token_a['client_id']}) 连接成功")
+        
+        print(f"✅ 设备A ({token_a['client_id']}) 连接成功")
+        print(f"   - 连接状态: {client_a.is_connected()}")
+        
+        # 等待连接稳定
         time.sleep(2)
+        
+        # 检查设备A在EMQX中的状态
+        print("🔍 检查设备A在EMQX中的连接状态...")
+        self.check_emqx_client_status(token_a['client_id'])
 
         # 设备B强制获取相同角色，服务器应使设备A的token失效
-        print("🥊 设备B尝试强制获取transmitter角色...")
+        print("\n🥊 设备B尝试强制获取transmitter角色...")
+        print("🎫 获取设备B的MQTT Token (force_kick=True)...")
+        
         token_b = self.get_mqtt_token("transmitter", force_kick=True)
-        if not token_b: return False
+        if not token_b: 
+            print("❌ 设备B Token获取失败")
+            return False
 
+        print(f"✅ 设备B Token: {token_b['client_id']}")
+        print(f"   - Token: {token_b['token'][:20]}...")
+        print(f"   - Expires: {token_b.get('expires_at', 'N/A')}")
+
+        # 比较两个Token
         if token_a["client_id"] == token_b["client_id"]:
-            print("⚠️ 强制挤下线但获得了相同的ClientID")
+            print("⚠️ 强制挤下线但获得了相同的ClientID，这可能不是预期行为")
         else:
             print(f"✅ 强制挤下线成功，新ClientID: {token_b['client_id']}")
+            print(f"   - 旧ClientID: {token_a['client_id']}")
+            print(f"   - 新ClientID: {token_b['client_id']}")
 
-        # 等待服务器处理，EMQX应断开设备A的连接
-        print("⏳ 等待EMQX断开设备A的连接...")
-        time.sleep(5) 
+        # 立即检查设备A的连接状态
+        print("\n📊 立即检查设备A连接状态...")
+        print(f"   - 客户端连接状态: {client_a.is_connected()}")
         
-        if client_a.is_connected():
+        # 检查EMQX中设备A的状态
+        print("🔍 检查EMQX中设备A的状态...")
+        self.check_emqx_client_status(token_a['client_id'])
+        
+        # 等待服务器处理，EMQX应断开设备A的连接
+        print("\n⏳ 等待EMQX处理角色冲突...")
+        for i in range(10):  # 最多等待10秒，每秒检查一次
+            time.sleep(1)
+            is_connected = client_a.is_connected()
+            print(f"   [{i+1}/10] 设备A连接状态: {'🟢 已连接' if is_connected else '🔴 已断开'}")
+            
+            if not is_connected:
+                print("✅ 设备A的连接已按预期被服务器断开")
+                break
+                
+            # 每2秒检查一次EMQX状态
+            if (i + 1) % 2 == 0:
+                self.check_emqx_client_status(token_a['client_id'])
+        else:
             print("❌ 角色冲突后，设备A的连接未被断开")
+            print("🔍 最终检查EMQX状态...")
+            self.check_emqx_client_status(token_a['client_id'])
+            
+            # 手动断开设备A
+            print("🧹 手动断开设备A...")
             client_a.disconnect()
             return False
-        else:
-            print("✅ 设备A的连接已按预期被服务器断开")
 
-        # 使用新token为设备B创建并连接一个全新的客户端
-        client_b = self.connect_mqtt_client("transmitter_b", token_b) # 使用新的role key来隔离
+        # 测试设备B连接
+        print("\n🔌 测试设备B连接...")
+        client_b = self.connect_mqtt_client("transmitter_b", token_b)
         if not client_b:
             print("❌ 设备B连接失败")
             return False
         
-        print("📱 设备B连接成功")
-        client_b.disconnect() # 测试完成，断开B
+        print("✅ 设备B连接成功")
+        print(f"   - 连接状态: {client_b.is_connected()}")
+        
+        # 检查设备B在EMQX中的状态
+        print("🔍 检查设备B在EMQX中的连接状态...")
+        self.check_emqx_client_status(token_b['client_id'])
+        
+        # 清理设备B
+        print("🧹 断开设备B...")
+        client_b.disconnect()
+        
         return True
+
+    def check_emqx_client_status(self, client_id):
+        """检查EMQX中客户端的连接状态"""
+        try:
+            from config import EMQX_DASHBOARD_URL, EMQX_API_KEY, EMQX_SECRET_KEY
+            
+            # 使用EMQX API检查客户端状态
+            url = f"{EMQX_DASHBOARD_URL}/api/v5/clients/{client_id}"
+            
+            import base64
+            credentials = base64.b64encode(f"{EMQX_API_KEY}:{EMQX_SECRET_KEY}".encode()).decode()
+            headers = {
+                "Authorization": f"Basic {credentials}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                client_info = response.json()
+                print(f"   ✅ EMQX中找到客户端: {client_id}")
+                print(f"      - 连接状态: {client_info.get('connected', 'unknown')}")
+                print(f"      - 连接时间: {client_info.get('connected_at', 'N/A')}")
+                print(f"      - IP地址: {client_info.get('ip_address', 'N/A')}")
+                print(f"      - 保活时间: {client_info.get('keepalive', 'N/A')}")
+                return True
+            elif response.status_code == 404:
+                print(f"   🔴 EMQX中未找到客户端: {client_id}")
+                return False
+            else:
+                print(f"   ⚠️ EMQX API返回: {response.status_code}")
+                print(f"      响应: {response.text[:200]}")
+                return False
+                
+        except Exception as e:
+            print(f"   ❌ 检查EMQX状态失败: {e}")
+            return False
     
     def cleanup_clients(self):
         """清理MQTT客户端连接"""

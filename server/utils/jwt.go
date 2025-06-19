@@ -578,6 +578,28 @@ func (j *JWT) RevokeMQTTJWT(claims *request.MQTTClaims) error {
 	return nil
 }
 
+// RevokeMQTTJWTByID 直接根据userID和jti撤销MQTT JWT
+func (j *JWT) RevokeMQTTJWTByID(userID, jti string) error {
+	if userID == "" || jti == "" {
+		return errors.New("userID和jti不能为空")
+	}
+	redisKey := fmt.Sprintf("mqtt:active:%s:%s", userID, jti)
+	_, err := global.GVA_REDIS.Del(context.Background(), redisKey).Result()
+	if err != nil {
+		global.GVA_LOG.Error("根据ID撤销MQTT JWT失败",
+			zap.Error(err),
+			zap.String("redisKey", redisKey))
+		return err
+	}
+
+	global.GVA_LOG.Info("MQTT JWT已成功撤销",
+		zap.String("userID", userID),
+		zap.String("jti", jti),
+		zap.String("redisKey", redisKey))
+
+	return nil
+}
+
 // GetClaims 从Gin的Context中获取claims
 func GetClaims(c *gin.Context) (*request.CustomClaims, error) {
 	token, err := c.Cookie("x-token")

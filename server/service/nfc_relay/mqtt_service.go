@@ -616,11 +616,11 @@ func (s *MQTTService) cacheAPDUMessage(apduMsg APDUMessage) {
 	}
 }
 
-// IsConnected 检查MQTT是否连接
+// IsConnected 检查MQTT连接状态
 func (s *MQTTService) IsConnected() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.isConnected && s.client != nil && s.client.IsConnected()
+	return s.isConnected
 }
 
 // Disconnect 断开MQTT连接
@@ -963,4 +963,9 @@ func (s *MQTTService) updateClientOnlineStatus(clientID, role string, isOnline b
 	}
 	// 为状态设置过期时间，防止离线客户端信息永久留存
 	global.GVA_REDIS.Expire(ctx, statusKey, 24*time.Hour)
+}
+
+// PublishToClient 公开的发布消息到客户端方法（供其他服务调用）
+func (s *MQTTService) PublishToClient(clientID, subtopic string, payload interface{}) error {
+	return s.publishToClient(clientID, subtopic, payload)
 }

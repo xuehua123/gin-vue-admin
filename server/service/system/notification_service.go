@@ -17,19 +17,38 @@ import (
 type NotificationService struct{}
 
 var (
-	// MQTTPublisher 是一个假设的MQTT发布客户端，后续需要实现或集成
-	// 在实际应用中，它应该是一个实现了Publish方法的接口
-	MQTTPublisher mqttPublisher
+	// mqttService MQTT服务实例，用于发送角色撤销通知
+	mqttService mqttServiceInterface
 )
 
-// mqttPublisher 是一个示例接口，定义了发布消息的方法
-type mqttPublisher interface {
-	PublishWithRetry(topic string, payload interface{}, retries int) error
+// mqttServiceInterface MQTT服务接口
+type mqttServiceInterface interface {
+	IsConnected() bool
+	PublishToClient(clientID, subtopic string, payload interface{}) error
+}
+
+// SetMQTTService 设置MQTT服务实例（供其他服务注册使用）
+func (s *NotificationService) SetMQTTService(service mqttServiceInterface) {
+	mqttService = service
+	global.GVA_LOG.Info("MQTT服务已注册到通知服务")
+}
+
+// 初始化MQTT服务引用
+func (s *NotificationService) initMQTTService() {
+	// 这里通过类型断言获取NFC Relay的MQTT服务
+	// 如果有更好的服务注册机制，可以使用依赖注入
+	if mqttService == nil {
+		// 尝试获取MQTT服务实例
+		// 注意：这需要确保NFC中继MQTT服务已经初始化
+		// 在实际部署中，应该通过服务注册或依赖注入来管理
+		global.GVA_LOG.Info("初始化通知服务的MQTT发布器")
+	}
 }
 
 // Start 启动通知服务的后台任务
 func (s *NotificationService) Start() {
 	global.GVA_LOG.Info("启动实时通知服务...")
+	s.initMQTTService()
 	go s.processKickNotifications()
 	go s.cleanupExpiredConnections()
 }
@@ -66,17 +85,28 @@ func (s *NotificationService) processKickNotifications() {
 
 		global.GVA_LOG.Info("接收到挤下线通知", zap.Any("notification", notification))
 
-		// 1. 发送MQTT通知 (目前为伪代码，待MQTTPublisher实现)
-		// topic := fmt.Sprintf("client/%s/control/role_revoked_notification", targetClientID)
-		// payload := map[string]interface{}{
-		// 	"revoked_role":         notification["role"],
-		// 	"reason":              notification["reason"],
-		// 	"kicked_by_client_id": notification["kicker_client_id"],
-		// 	"timestamp_utc":       time.Now().UTC().Format(time.RFC3339),
-		// }
-		// if MQTTPublisher != nil {
-		// 	 MQTTPublisher.PublishWithRetry(topic, payload, 3)
-		// }
+		// 1. 发送MQTT挤下线通知
+		if mqttService != nil && mqttService.IsConnected() {
+			payload := map[string]interface{}{
+				"revoked_role":        notification["role"],
+				"reason":              notification["reason"],
+				"kicked_by_client_id": notification["kicker_client_id"],
+				"timestamp_utc":       time.Now().UTC().Format(time.RFC3339),
+			}
+
+			// 发送到客户端的控制主题
+			if err := mqttService.PublishToClient(targetClientID, "control/role_revoked_notification", payload); err != nil {
+				global.GVA_LOG.Error("发送MQTT挤下线通知失败",
+					zap.String("targetClientID", targetClientID),
+					zap.Error(err))
+			} else {
+				global.GVA_LOG.Info("MQTT挤下线通知发送成功",
+					zap.String("targetClientID", targetClientID))
+			}
+		} else {
+			global.GVA_LOG.Warn("MQTT服务未连接，无法发送挤下线通知",
+				zap.String("targetClientID", targetClientID))
+		}
 
 		// 2. 吊销旧的JWT
 		s.revokeTargetJWT(ctx, jwtUtil, targetClientID)
@@ -113,14 +143,12 @@ func (s *NotificationService) revokeTargetJWT(ctx context.Context, jwtUtil *util
 		return
 	}
 
-	// 构造一个临时的claims用于吊销
-	// 注意：这里的claims内容不全，但对于RevokeJWTByID来说足够了
-	// 我们需要一个更通用的Revoke方法
-	err = jwtUtil.RevokeJWTByID(userID, jti)
+	// 使用专门的MQTT JWT撤销方法
+	err = jwtUtil.RevokeMQTTJWTByID(userID, jti)
 	if err != nil {
 		global.GVA_LOG.Error("吊销旧的MQTT JWT失败", zap.Error(err), zap.String("userID", userID), zap.String("jti", jti))
 	} else {
-		global.GVA_LOG.Info("已成功吊销被挤下线设备的JWT", zap.String("userID", userID), zap.String("jti", jti))
+		global.GVA_LOG.Info("已成功吊销被挤下线设备的MQTT JWT", zap.String("userID", userID), zap.String("jti", jti))
 	}
 }
 

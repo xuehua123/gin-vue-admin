@@ -12,8 +12,20 @@ type MQTT struct {
 	CleanSession bool   `mapstructure:"clean-session" json:"clean-session" yaml:"clean-session"` // 清除会话
 	UseTLS       bool   `mapstructure:"use-tls" json:"use-tls" yaml:"use-tls"`                   // 是否使用TLS
 
+	// EMQX管理API配置
+	API EMQXAPIConfig `mapstructure:"api" json:"api" yaml:"api"`
+
 	// NFC中继相关配置
 	NFCRelay NFCRelayMQTT `mapstructure:"nfc-relay" json:"nfc-relay" yaml:"nfc-relay"`
+}
+
+// EMQXAPIConfig EMQX管理API配置
+type EMQXAPIConfig struct {
+	Host     string `mapstructure:"host" json:"host" yaml:"host"`             // API主机地址（通常与MQTT Host相同）
+	Port     int    `mapstructure:"port" json:"port" yaml:"port"`             // API端口（默认18083）
+	Username string `mapstructure:"username" json:"username" yaml:"username"` // API用户名
+	Password string `mapstructure:"password" json:"password" yaml:"password"` // API密码
+	UseTLS   bool   `mapstructure:"use-tls" json:"use-tls" yaml:"use-tls"`    // API是否使用TLS
 }
 
 // NFCRelayMQTT NFC中继MQTT配置

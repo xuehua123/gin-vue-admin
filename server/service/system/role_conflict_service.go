@@ -177,11 +177,11 @@ func (s *RoleConflictService) revokeOldClientJWT(ctx context.Context, clientID s
 		return fmt.Errorf("无法解析JTI或UserID")
 	}
 
-	// 立即撤销JWT
+	// 立即撤销MQTT JWT
 	jwtUtil := utils.NewJWT()
-	err = jwtUtil.RevokeJWTByID(userID, jti)
+	err = jwtUtil.RevokeMQTTJWTByID(userID, jti)
 	if err != nil {
-		return fmt.Errorf("撤销JWT失败: %w", err)
+		return fmt.Errorf("撤销MQTT JWT失败: %w", err)
 	}
 
 	global.GVA_LOG.Info("立即撤销旧JWT成功",
@@ -237,24 +237,44 @@ func (s *RoleConflictService) getLastActivity(clientID string) string {
 
 // forceDisconnectClient 通过EMQX API强制断开客户端连接
 func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
-	// 1. 从全局配置中获取EMQX的API配置
-	// 注意：这里的配置是针对EMQX的管理API，而不是MQTT连接本身。
-	// 假设管理API和MQTT使用相同的Host, 但端口和认证可能不同。
-	// 在config.yaml中，应有类似emqx_api的独立配置项。
-	// 为保持兼容性，暂时从MQTT配置中读取，但建议分离。
+	// 1. 从全局配置中获取EMQX API配置
 	cfg := global.GVA_CONFIG.MQTT
-	if cfg.Host == "" {
+	apiCfg := cfg.API
+
+	// 使用API专用配置，如果未配置则回退到MQTT配置
+	apiHost := apiCfg.Host
+	if apiHost == "" {
+		apiHost = cfg.Host
+	}
+	if apiHost == "" {
 		return fmt.Errorf("EMQX API主机地址未配置")
 	}
 
+	apiPort := apiCfg.Port
+	if apiPort == 0 {
+		apiPort = 18083 // 默认EMQX管理API端口
+	}
+
+	apiUsername := apiCfg.Username
+	if apiUsername == "" {
+		apiUsername = cfg.Username // 回退到MQTT用户名
+	}
+
+	apiPassword := apiCfg.Password
+	if apiPassword == "" {
+		apiPassword = cfg.Password // 回退到MQTT密码
+	}
+
 	// 2. 构造登录请求
-	// EMQX 5.0 的管理API端口默认为 18083
-	apiPort := 18083 // 建议在config.yaml中为API端口提供一个专用字段
-	loginURL := fmt.Sprintf("http://%s:%d/api/v5/login", cfg.Host, apiPort)
+	protocol := "http"
+	if apiCfg.UseTLS {
+		protocol = "https"
+	}
+	loginURL := fmt.Sprintf("%s://%s:%d/api/v5/login", protocol, apiHost, apiPort)
 
 	loginPayload := map[string]string{
-		"username": cfg.Username,
-		"password": cfg.Password,
+		"username": apiUsername,
+		"password": apiPassword,
 	}
 	loginData, err := json.Marshal(loginPayload)
 	if err != nil {
@@ -292,7 +312,7 @@ func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
 	}
 
 	// 4. 使用Token强制断开客户端
-	disconnectURL := fmt.Sprintf("http://%s:%d/api/v5/clients/%s", cfg.Host, apiPort, clientID)
+	disconnectURL := fmt.Sprintf("%s://%s:%d/api/v5/clients/%s", protocol, apiHost, apiPort, clientID)
 	req, err := http.NewRequest("DELETE", disconnectURL, nil)
 	if err != nil {
 		return fmt.Errorf("创建EMQX断开连接请求失败: %w", err)
