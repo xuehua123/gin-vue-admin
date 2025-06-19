@@ -1,10 +1,10 @@
 package system
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -236,60 +236,50 @@ func (s *RoleConflictService) getLastActivity(clientID string) string {
 
 // forceDisconnectClient 通过EMQX API强制断开客户端连接
 func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
-	// EMQX配置
-	emqxHost := "49.235.40.39"
-	emqxPort := "18083"
-	emqxUser := "admin"
-	emqxPass := "xuehua123"
-
-	// 获取EMQX API Token
-	loginURL := fmt.Sprintf("http://%s:%s/api/v5/login", emqxHost, emqxPort)
-	loginPayload := map[string]string{
-		"username": emqxUser,
-		"password": emqxPass,
+	// 1. 从全局配置中获取EMQX的API配置
+	// 注意：这里的配置是针对EMQX的管理API，而不是MQTT连接本身。
+	// 假设管理API和MQTT使用相同的Host, 但端口和认证可能不同。
+	// 在config.yaml中，应有类似emqx_api的独立配置项。
+	// 为保持兼容性，暂时从MQTT配置中读取，但建议分离。
+	cfg := global.GVA_CONFIG.MQTT
+	if cfg.Host == "" {
+		return fmt.Errorf("EMQX API主机地址未配置")
 	}
 
-	loginData, _ := json.Marshal(loginPayload)
-	loginResp, err := http.Post(loginURL, "application/json", bytes.NewBuffer(loginData))
+	// 2. 构造请求
+	// EMQX 5.0 的管理API端口默认为 18083，通常与MQTT端口不同
+	// 同样，这里的端口和认证信息应该有独立的配置项。
+	apiPort := 18083 // 默认值，最好从配置读取
+	apiURL := fmt.Sprintf("http://%s:%d/api/v5/clients/%s", cfg.Host, apiPort, clientID)
+
+	req, err := http.NewRequest("DELETE", apiURL, nil)
 	if err != nil {
-		return fmt.Errorf("EMQX登录请求失败: %w", err)
-	}
-	defer loginResp.Body.Close()
-
-	if loginResp.StatusCode != 200 {
-		return fmt.Errorf("EMQX登录失败: %d", loginResp.StatusCode)
+		return fmt.Errorf("创建EMQX断开连接请求失败: %w", err)
 	}
 
-	var loginResult map[string]interface{}
-	if err := json.NewDecoder(loginResp.Body).Decode(&loginResult); err != nil {
-		return fmt.Errorf("解析EMQX登录响应失败: %w", err)
-	}
+	// 3. 设置认证头
+	// 使用配置中的用户名和密码
+	req.SetBasicAuth(cfg.Username, cfg.Password)
 
-	token, ok := loginResult["token"].(string)
-	if !ok {
-		return fmt.Errorf("无法获取EMQX API Token")
-	}
-
-	// 强制断开客户端
-	disconnectURL := fmt.Sprintf("http://%s:%s/api/v5/clients/%s", emqxHost, emqxPort, clientID)
-	req, err := http.NewRequest("DELETE", disconnectURL, nil)
-	if err != nil {
-		return fmt.Errorf("创建断开连接请求失败: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
+	// 4. 发送请求
+	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("断开连接请求失败: %w", err)
+		return fmt.Errorf("发送EMQX断开连接请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 204 && resp.StatusCode != 404 {
-		return fmt.Errorf("断开连接失败: %d", resp.StatusCode)
+	// 5. 检查响应
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
+		global.GVA_LOG.Info("成功通过EMQX API请求断开客户端连接", zap.String("clientID", clientID))
+		return nil
 	}
 
-	return nil
+	if resp.StatusCode == http.StatusNotFound {
+		global.GVA_LOG.Warn("尝试断开一个不存在的EMQX客户端", zap.String("clientID", clientID))
+		return nil // 客户端已经离线，当作成功处理
+	}
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("EMQX API返回错误: status=%d, body=%s", resp.StatusCode, string(bodyBytes))
 }
