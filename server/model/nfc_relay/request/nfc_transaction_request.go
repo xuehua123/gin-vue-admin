@@ -17,11 +17,11 @@ type CreateTransactionRequest struct {
 
 // UpdateTransactionStatusRequest 更新交易状态请求
 type UpdateTransactionStatusRequest struct {
-	TransactionID string                 `json:"transaction_id" binding:"required" validate:"required" example:"txn_1234567890"`                                                    // 交易ID
-	Status        string                 `json:"status" binding:"required" validate:"required,oneof=pending active processing completed failed cancelled timeout" example:"active"` // 新状态
-	Reason        string                 `json:"reason" validate:"max=100" example:"用户操作"`                                                                                          // 状态变更原因
-	ErrorMsg      string                 `json:"error_msg" validate:"max=500" example:""`                                                                                           // 错误信息
-	Metadata      map[string]interface{} `json:"metadata" swaggertype:"object,string"`                                                                                              // 扩展元数据
+	TransactionID string                 `json:"transaction_id" binding:"required" validate:"required" example:"txn_1234567890"`                                                           // 交易ID
+	Status        string                 `json:"status" binding:"required" validate:"required,oneof=pending active processing completed failed cancelled timeout paused" example:"active"` // 新状态
+	Reason        string                 `json:"reason" validate:"max=100" example:"用户操作"`                                                                                                 // 状态变更原因
+	ErrorMsg      string                 `json:"error_msg" validate:"max=500" example:""`                                                                                                  // 错误信息
+	Metadata      map[string]interface{} `json:"metadata" swaggertype:"object,string"`                                                                                                     // 扩展元数据
 }
 
 // GetTransactionRequest 获取交易详情请求
@@ -100,10 +100,10 @@ type GetStatisticsRequest struct {
 
 // BatchUpdateTransactionRequest 批量更新交易请求
 type BatchUpdateTransactionRequest struct {
-	TransactionIDs []string               `json:"transaction_ids" binding:"required" validate:"required,min=1" example:"[\"txn_1\",\"txn_2\"]"` // 交易ID列表
-	Status         string                 `json:"status" binding:"required" validate:"required,oneof=cancelled timeout" example:"cancelled"`    // 新状态(仅支持取消和超时)
-	Reason         string                 `json:"reason" validate:"max=100" example:"批量操作"`                                                     // 操作原因
-	Metadata       map[string]interface{} `json:"metadata" swaggertype:"object,string"`                                                         // 扩展元数据
+	TransactionIDs []string               `json:"transaction_ids" binding:"required" validate:"required,min=1" example:"[\"txn_1\",\"txn_2\"]"`     // 交易ID列表
+	Status         string                 `json:"status" binding:"required" validate:"required,oneof=cancelled timeout paused" example:"cancelled"` // 新状态(仅支持取消、超时和暂停)
+	Reason         string                 `json:"reason" validate:"max=100" example:"批量操作"`                                                         // 操作原因
+	Metadata       map[string]interface{} `json:"metadata" swaggertype:"object,string"`                                                             // 扩展元数据
 }
 
 // ExportTransactionRequest 导出交易请求
