@@ -218,3 +218,32 @@ cors:
       allow-methods: GET, POST
       expose-headers: Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type
       allow-credentials: true # 布尔值
+
+# MQTT配置
+mqtt:
+  host: 49.235.40.39
+  port: 8883
+  username: nfc_server
+  password: xuehua123
+  client-id: nfc-relay-server
+  qos: 1
+  keep-alive: 60
+  clean-session: true
+  use-tls: true
+  api:
+    host: 49.235.40.39  # EMQX管理API主机，通常与MQTT主机相同
+    port: 18083         # EMQX管理API端口，默认18083
+    username: admin     # EMQX管理API用户名
+    password: xuehua123 # EMQX管理API密码 - 修复：与实际Dashboard密码一致
+    use-tls: false      # 管理API是否使用TLS
+  nfc-relay:
+    topic-prefix: nfc_relay
+    heartbeat-interval: 30
+    heartbeat-timeout: 60
+    message-timeout: 30
+    max-message-size: 4096
+    retry-attempts: 3
+    retry-interval: 5
+    enable-permission-control: true
+    enable-metrics: true
+    metrics-interval: 60
