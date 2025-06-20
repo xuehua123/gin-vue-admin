@@ -69,21 +69,24 @@ func (s *RoleConflictService) CheckRoleConflict(userID, role, newClientID string
 // AssignRole 执行角色分配（包含挤下线）
 func (s *RoleConflictService) AssignRole(userID, role, clientID string, jti string, deviceInfo map[string]interface{}, forceKick bool) error {
 	ctx := context.Background()
-	pipe := global.GVA_REDIS.TxPipeline()
 
-	// 1. 如果需要，处理强制挤下线
+	// 1. 如果需要，首先处理强制挤下线（在事务之外独立执行）
 	if forceKick {
-		if err := s.handleForceKick(ctx, pipe, userID, role, clientID); err != nil {
+		// handleForceKick现在是一个独立的操作，不再接收pipe
+		if err := s.handleForceKick(ctx, userID, role, clientID); err != nil {
 			return fmt.Errorf("处理强制挤下线失败: %w", err)
 		}
 	}
 
-	// 2. 创建并分配新角色信息
+	// 2. 启动一个新的Redis事务来处理新角色的分配
+	pipe := global.GVA_REDIS.TxPipeline()
+
+	// 3. 创建并分配新角色信息
 	assignmentInfo := s.createAssignmentInfo(clientID, deviceInfo)
 	userRoleKey := fmt.Sprintf("user:%s:roles", userID)
 	pipe.HSet(ctx, userRoleKey, role, assignmentInfo)
 
-	// 3. 更新角色占用状态
+	// 4. 更新角色占用状态
 	roleAssignmentKey := fmt.Sprintf("role_assignments:%s", role)
 	roleAssignmentValue := map[string]interface{}{
 		"current_user": userID,
@@ -92,17 +95,17 @@ func (s *RoleConflictService) AssignRole(userID, role, clientID string, jti stri
 	}
 	pipe.HSet(ctx, roleAssignmentKey, roleAssignmentValue)
 
-	// 4. 记录客户端连接状态 (增加jti用于后续的JWT吊销)
+	// 5. 记录客户端连接状态 (增加jti用于后续的JWT吊销)
 	now := time.Now().Unix()
 	connectionInfo := fmt.Sprintf("user:%s|role:%s|connected_at:%d|last_ping:%d|jti:%s",
 		userID, role, now, now, jti)
 	pipe.HSet(ctx, "client_connections", clientID, connectionInfo)
 
-	// 5. 为关键key设置过期时间，防止数据无限增长
+	// 6. 为关键key设置过期时间，防止数据无限增长
 	pipe.Expire(ctx, userRoleKey, 24*time.Hour)
 	pipe.Expire(ctx, roleAssignmentKey, 24*time.Hour)
 
-	// 6. 执行事务
+	// 7. 执行事务
 	if _, err := pipe.Exec(ctx); err != nil {
 		global.GVA_LOG.Error("分配角色事务执行失败", zap.Error(err))
 		return fmt.Errorf("分配角色事务执行失败: %w", err)
@@ -110,13 +113,17 @@ func (s *RoleConflictService) AssignRole(userID, role, clientID string, jti stri
 	return nil
 }
 
-// handleForceKick 处理强制挤下线（在Redis事务中执行）
-func (s *RoleConflictService) handleForceKick(ctx context.Context, pipe redis.Pipeliner, userID, role, newClientID string) error {
-	// 1. 获取被挤设备的信息
+// handleForceKick 处理强制挤下线（独立操作）
+func (s *RoleConflictService) handleForceKick(ctx context.Context, userID, role, newClientID string) error {
+	// 1. 获取被挤设备的信息（直接查询，不在事务中）
 	userRoleKey := fmt.Sprintf("user:%s:roles", userID)
 	currentAssignment, err := global.GVA_REDIS.HGet(ctx, userRoleKey, role).Result()
-	if err != nil || currentAssignment == "" {
-		return nil // 如果查询失败或角色未分配，则无需处理
+	if err != nil {
+		if err == redis.Nil {
+			return nil // 角色未分配，无需处理
+		}
+		global.GVA_LOG.Error("获取当前角色分配信息失败", zap.Error(err))
+		return fmt.Errorf("获取当前角色分配信息失败: %w", err)
 	}
 
 	targetClientID := s.extractFromAssignment(currentAssignment, "client_id")
@@ -124,14 +131,16 @@ func (s *RoleConflictService) handleForceKick(ctx context.Context, pipe redis.Pi
 		return nil // 没有有效的旧客户端或与新客户端相同，无需处理
 	}
 
-	// 2. 立即撤销旧JWT并断开连接（修复：如果失败则返回错误）
+	// 2. 立即撤销旧JWT并断开连接
 	if err := s.revokeOldClientJWT(ctx, targetClientID); err != nil {
 		global.GVA_LOG.Error("强制挤下线失败", zap.Error(err), zap.String("targetClientID", targetClientID))
-		// 修复：如果踢出失败，返回错误阻止新角色分配
 		return fmt.Errorf("强制挤下线失败: %w", err)
 	}
 
-	// 3. 创建挤下线通知（用于额外的清理工作）
+	// 3. 开启一个独立的事务来清理被挤下线客户端的数据
+	pipe := global.GVA_REDIS.TxPipeline()
+
+	// 4. 创建挤下线通知
 	kickNotification := map[string]interface{}{
 		"target_client_id": targetClientID,
 		"kicker_client_id": newClientID,
@@ -142,8 +151,16 @@ func (s *RoleConflictService) handleForceKick(ctx context.Context, pipe redis.Pi
 	notificationJSON, _ := json.Marshal(kickNotification)
 	pipe.LPush(ctx, "kick_notifications", string(notificationJSON))
 
-	// 4. 清除被挤设备的状态
+	// 5. 清除被挤设备的状态
 	pipe.HDel(ctx, "client_connections", targetClientID)
+	// 同时从user:roles中也删除，确保状态一致
+	pipe.HDel(ctx, userRoleKey, role)
+
+	// 6. 执行清理事务
+	if _, err := pipe.Exec(ctx); err != nil {
+		global.GVA_LOG.Error("清理被挤下线客户端状态事务失败", zap.Error(err))
+		// 即使清理失败，挤下线操作本身已成功，可以选择只记录日志而不返回错误
+	}
 
 	global.GVA_LOG.Info("强制挤下线成功完成",
 		zap.String("target_client_id", targetClientID),
