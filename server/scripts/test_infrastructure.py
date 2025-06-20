@@ -68,6 +68,89 @@ def test_emqx_mqtt_port():
         print(f"❌ EMQX MQTT端口测试异常: {e} ({EMQX_HOST})")
         return False
 
+def test_emqx_api_authentication():
+    """测试EMQX API认证"""
+    print("🔍 测试EMQX API认证...")
+    try:
+        # 从配置文件中读取API配置（假设存在）
+        api_url = f"{EMQX_DASHBOARD_URL}/api/v5/login"
+        api_credentials = {
+            "username": "admin",  # 可以从配置文件读取
+            "password": "xuehua123"  # 可以从配置文件读取
+        }
+        
+        response = requests.post(api_url, json=api_credentials, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if "token" in data:
+                print(f"✅ EMQX API认证成功")
+                # 测试使用token访问客户端列表API
+                token = data["token"]
+                clients_url = f"{EMQX_DASHBOARD_URL}/api/v5/clients"
+                headers = {"Authorization": f"Bearer {token}"}
+                clients_response = requests.get(clients_url, headers=headers, timeout=10)
+                
+                if clients_response.status_code == 200:
+                    print(f"✅ EMQX API客户端查询正常")
+                    return True
+                else:
+                    print(f"❌ EMQX API客户端查询失败: {clients_response.status_code}")
+                    return False
+            else:
+                print(f"❌ EMQX API响应中未找到token")
+                return False
+        else:
+            print(f"❌ EMQX API认证失败: {response.status_code}")
+            print(f"   响应内容: {response.text}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"❌ EMQX API认证测试失败: {e}")
+        return False
+
+def test_emqx_client_disconnection():
+    """测试EMQX客户端断开功能"""
+    print("🔍 测试EMQX客户端断开功能...")
+    try:
+        # 首先获取API token
+        api_url = f"{EMQX_DASHBOARD_URL}/api/v5/login"
+        api_credentials = {
+            "username": "admin",
+            "password": "xuehua123"
+        }
+        
+        response = requests.post(api_url, json=api_credentials, timeout=10)
+        if response.status_code != 200:
+            print(f"❌ 无法获取EMQX API token")
+            return False
+        
+        token = response.json().get("token")
+        if not token:
+            print(f"❌ EMQX API响应中未找到token")
+            return False
+            
+        # 尝试断开一个不存在的客户端（测试API端点是否正常工作）
+        test_client_id = "test-nonexistent-client-" + str(int(time.time()))
+        disconnect_url = f"{EMQX_DASHBOARD_URL}/api/v5/clients/{test_client_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        disconnect_response = requests.delete(disconnect_url, headers=headers, timeout=10)
+        
+        # 对于不存在的客户端，应该返回404
+        if disconnect_response.status_code == 404:
+            print(f"✅ EMQX客户端断开API正常工作（测试客户端不存在，返回404）")
+            return True
+        elif disconnect_response.status_code in [200, 204]:
+            print(f"✅ EMQX客户端断开API正常工作（返回{disconnect_response.status_code}）")
+            return True
+        else:
+            print(f"❌ EMQX客户端断开API异常: {disconnect_response.status_code}")
+            print(f"   响应内容: {disconnect_response.text}")
+            return False
+            
+    except requests.exceptions.RequestException as e:
+        print(f"❌ EMQX客户端断开测试失败: {e}")
+        return False
+
 def run_infrastructure_tests():
     """运行所有基础设施测试"""
     print("="*60)
@@ -78,6 +161,8 @@ def run_infrastructure_tests():
         ("服务器健康检查", test_server_health),
         ("EMQX控制台连通性", test_emqx_dashboard),
         ("EMQX MQTT端口连通性", test_emqx_mqtt_port),
+        ("EMQX API认证", test_emqx_api_authentication),
+        ("EMQX客户端断开功能", test_emqx_client_disconnection),
     ]
     
     results = []
@@ -102,6 +187,11 @@ def run_infrastructure_tests():
         print("\n🎉 基础设施测试全部通过，可以进行下一阶段测试！")
     else:
         print("\n⚠️  基础设施测试存在问题，请先解决连通性问题")
+        print("\n🔧 故障排除建议：")
+        print("1. 检查EMQX服务是否正常运行")
+        print("2. 检查EMQX管理API端口(18083)是否开放")
+        print("3. 检查EMQX管理员用户名密码是否正确")
+        print("4. 检查网络防火墙设置")
     
     return all_passed
 

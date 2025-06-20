@@ -1,0 +1,22 @@
+{
+  "emqx_info": {
+    "host": "49.235.40.39",
+    "dashboard_url": "http://49.235.40.39:18083",
+    "mqtt_tcp": "mqtt://49.235.40.39:1883",
+    "mqtt_ssl": "mqtts://49.235.40.39:8883",
+    "websocket": "ws://49.235.40.39:8083",
+    "websocket_ssl": "wss://49.235.40.39:8084"
+  },
+  "credentials": {
+    "dashboard_username": "admin",
+    "dashboard_password": "xuehua123",
+    "jwt_secret": "78c0f08f-9663-4c9c-a399-cc4ec36b8112",
+    "jwt_issuer": "qmPlus",
+    "jwt_audience": "GVA"
+  },
+  "client_connection": {
+    "username_field": "clientid",
+    "password_field": "jwt_token",
+    "authentication_method": "JWT"
+  }
+}
