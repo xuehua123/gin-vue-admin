@@ -93,6 +93,8 @@ services:
     image: gin-vue-admin-backend:${TAG:-latest}
     container_name: gin-vue-admin-backend
     restart: unless-stopped
+    volumes:
+      - ../server/config.yaml:/go/src/github.com/flipped-aurora/gin-vue-admin/server/config.yaml
     environment:
       TZ: Asia/Shanghai
     ports:

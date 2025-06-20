@@ -380,6 +380,16 @@ func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
 	cfg := global.GVA_CONFIG.MQTT
 	apiCfg := cfg.API
 
+	// 添加配置调试日志
+	global.GVA_LOG.Info("[forceDisconnectClient] 配置调试信息",
+		zap.String("MQTT.Host", cfg.Host),
+		zap.Int("MQTT.Port", cfg.Port),
+		zap.String("MQTT.Username", cfg.Username),
+		zap.String("MQTT.API.Host", apiCfg.Host),
+		zap.Int("MQTT.API.Port", apiCfg.Port),
+		zap.String("MQTT.API.Username", apiCfg.Username),
+		zap.Bool("MQTT.API.UseTLS", apiCfg.UseTLS))
+
 	// 使用API专用配置，如果未配置则回退到MQTT配置
 	apiHost := apiCfg.Host
 	if apiHost == "" {
