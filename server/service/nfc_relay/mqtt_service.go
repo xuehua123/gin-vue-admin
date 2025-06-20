@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -665,24 +666,40 @@ func (s *MQTTService) HandleConnectionStatusWebhook(c *gin.Context) {
 		zap.String("event", req.Event),
 		zap.String("clientID", req.ClientID),
 		zap.String("username", req.Username),
+		zap.String("reason", req.Reason),
 	)
 
 	// 根据事件类型处理
 	switch req.Event {
-	case "client.connected":
+	case "client_connected":
 		s.handleClientConnected(req)
-	case "client.disconnected":
-		s.handleClientDisconnected(req)
+	case "client_disconnected":
+		// 当客户端断开时，我们可以更新其状态或执行清理
+		pipe := global.GVA_REDIS.TxPipeline()
+		pipe.HDel(ctx, "client_connections", req.ClientID)
+		// 也可以选择不删除 user:roles 的记录，以保留用户最后的角色状态
+		if _, err := pipe.Exec(ctx); err != nil {
+			global.GVA_LOG.Error("Webhook: 清理断开连接的客户端状态失败",
+				zap.Error(err),
+				zap.String("client_id", req.ClientID))
+		} else {
+			global.GVA_LOG.Info("Webhook: 客户端已断开，并已清理其在Redis中的连接状态", zap.String("client_id", req.ClientID))
+		}
+
+	default:
+		global.GVA_LOG.Warn("收到未知的Webhook事件类型", zap.String("event", req.Event))
 	}
 
-	c.JSON(200, gin.H{"message": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // handleClientConnected 处理客户端连接事件
 func (s *MQTTService) handleClientConnected(req systemReq.MqttConnectionStatusRequest) {
 	ctx := context.Background()
+	global.GVA_LOG.Info("[Webhook] 开始处理客户端连接事件",
+		zap.String("clientID", req.ClientID),
+		zap.String("username", req.Username))
 
-	// 从Redis获取角色信息
 	role, err := s.getClientRoleFromRedis(req.ClientID)
 	if err != nil {
 		global.GVA_LOG.Error("无法从Redis获取客户端角色", zap.Error(err), zap.String("clientID", req.ClientID))
@@ -773,15 +790,12 @@ func (s *MQTTService) handleTransmitterConnected(ctx context.Context, clientID s
 // handleClientDisconnected 处理客户端断开事件
 func (s *MQTTService) handleClientDisconnected(req systemReq.MqttConnectionStatusRequest) {
 	ctx := context.Background()
-
-	// 更新Redis中的客户端在线状态
-	s.updateClientOnlineStatus(req.ClientID, "", false)
-
-	global.GVA_LOG.Info("客户端断开连接",
+	global.GVA_LOG.Info("[Webhook] 开始处理客户端断开连接事件",
 		zap.String("clientID", req.ClientID),
+		zap.String("username", req.Username),
 		zap.String("reason", req.Reason))
 
-	// 处理断开连接对交易的影响
+	// 清理客户端相关的状态
 	s.handleTransactionCleanupOnDisconnect(ctx, req.ClientID, req.Reason)
 }
 
