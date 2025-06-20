@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -671,35 +670,25 @@ func (s *MQTTService) HandleConnectionStatusWebhook(c *gin.Context) {
 
 	// 根据事件类型处理
 	switch req.Event {
-	case "client_connected":
+	case "client.connected":
 		s.handleClientConnected(req)
-	case "client_disconnected":
-		// 当客户端断开时，我们可以更新其状态或执行清理
-		pipe := global.GVA_REDIS.TxPipeline()
-		pipe.HDel(ctx, "client_connections", req.ClientID)
-		// 也可以选择不删除 user:roles 的记录，以保留用户最后的角色状态
-		if _, err := pipe.Exec(ctx); err != nil {
-			global.GVA_LOG.Error("Webhook: 清理断开连接的客户端状态失败",
-				zap.Error(err),
-				zap.String("client_id", req.ClientID))
-		} else {
-			global.GVA_LOG.Info("Webhook: 客户端已断开，并已清理其在Redis中的连接状态", zap.String("client_id", req.ClientID))
-		}
-
+	case "client.disconnected":
+		s.handleClientDisconnected(req)
 	default:
 		global.GVA_LOG.Warn("收到未知的Webhook事件类型", zap.String("event", req.Event))
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(200, gin.H{"message": "ok"})
 }
 
-// handleClientConnected 处理客户端连接事件
+// handleClientConnected 处理客户端连接
 func (s *MQTTService) handleClientConnected(req systemReq.MqttConnectionStatusRequest) {
 	ctx := context.Background()
 	global.GVA_LOG.Info("[Webhook] 开始处理客户端连接事件",
 		zap.String("clientID", req.ClientID),
 		zap.String("username", req.Username))
 
+	// 从Redis获取角色信息
 	role, err := s.getClientRoleFromRedis(req.ClientID)
 	if err != nil {
 		global.GVA_LOG.Error("无法从Redis获取客户端角色", zap.Error(err), zap.String("clientID", req.ClientID))
@@ -787,7 +776,7 @@ func (s *MQTTService) handleTransmitterConnected(ctx context.Context, clientID s
 	go s.notifyTransmitterResumeTransaction(ctx, clientID, activeTransaction.TransactionID, activeTransaction.Status)
 }
 
-// handleClientDisconnected 处理客户端断开事件
+// handleClientDisconnected 处理客户端断开
 func (s *MQTTService) handleClientDisconnected(req systemReq.MqttConnectionStatusRequest) {
 	ctx := context.Background()
 	global.GVA_LOG.Info("[Webhook] 开始处理客户端断开连接事件",
@@ -799,7 +788,7 @@ func (s *MQTTService) handleClientDisconnected(req systemReq.MqttConnectionStatu
 	s.handleTransactionCleanupOnDisconnect(ctx, req.ClientID, req.Reason)
 }
 
-// handleTransactionCleanupOnDisconnect 处理断开连接时的交易清理
+// handleTransactionCleanupOnDisconnect 在客户端断开时处理相关的交易清理
 func (s *MQTTService) handleTransactionCleanupOnDisconnect(ctx context.Context, clientID string, reason string) {
 	// 查找该客户端相关的活跃交易
 	var activeTransactions []nfc_relay.NFCTransaction
