@@ -193,7 +193,11 @@ func (s *RoleConflictService) revokeOldClientJWT(ctx context.Context, clientID s
 	err = s.forceDisconnectClient(clientID)
 	if err != nil {
 		global.GVA_LOG.Error("强制断开EMQX客户端失败", zap.Error(err), zap.String("clientID", clientID))
-		// 不返回错误，JWT撤销已成功，客户端在下次操作时会被拒绝
+		// 修改：如果EMQX API调用失败，应该返回错误而不是忽略
+		// 但考虑到JWT已经撤销，客户端在下次操作时会被拒绝，所以这里给出警告
+		global.GVA_LOG.Warn("EMQX API断开失败，但JWT已撤销，客户端在下次MQTT操作时将被拒绝",
+			zap.String("clientID", clientID))
+		// 不返回错误，因为JWT撤销已成功，这是主要的安全措施
 	} else {
 		global.GVA_LOG.Info("强制断开EMQX客户端成功", zap.String("clientID", clientID))
 	}
@@ -265,6 +269,14 @@ func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
 		apiPassword = cfg.Password // 回退到MQTT密码
 	}
 
+	// 增加调试日志
+	global.GVA_LOG.Info("开始强制断开EMQX客户端",
+		zap.String("clientID", clientID),
+		zap.String("apiHost", apiHost),
+		zap.Int("apiPort", apiPort),
+		zap.String("apiUsername", apiUsername),
+		zap.Bool("useTLS", apiCfg.UseTLS))
+
 	// 2. 构造登录请求
 	protocol := "http"
 	if apiCfg.UseTLS {
@@ -280,6 +292,8 @@ func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
 	if err != nil {
 		return fmt.Errorf("序列化EMQX登录载荷失败: %w", err)
 	}
+
+	global.GVA_LOG.Info("发送EMQX API登录请求", zap.String("url", loginURL), zap.String("username", apiUsername))
 
 	// 3. 发起登录请求获取Token
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -311,6 +325,8 @@ func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
 		return fmt.Errorf("从EMQX API响应中未能获取Token")
 	}
 
+	global.GVA_LOG.Info("EMQX API登录成功，获取到Token")
+
 	// 4. 使用Token强制断开客户端
 	disconnectURL := fmt.Sprintf("%s://%s:%d/api/v5/clients/%s", protocol, apiHost, apiPort, clientID)
 	req, err := http.NewRequest("DELETE", disconnectURL, nil)
@@ -319,6 +335,8 @@ func (s *RoleConflictService) forceDisconnectClient(clientID string) error {
 	}
 
 	req.Header.Set("Authorization", "Bearer "+loginResult.Token)
+
+	global.GVA_LOG.Info("发送EMQX客户端断开请求", zap.String("url", disconnectURL))
 
 	// 5. 发送断开请求
 	disconnectResp, err := client.Do(req)

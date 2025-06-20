@@ -275,7 +275,7 @@ mqtt:
     host: 49.235.40.39  # EMQX管理API主机，通常与MQTT主机相同
     port: 18083         # EMQX管理API端口，默认18083
     username: admin     # EMQX管理API用户名
-    password: nfc_relay_admin_2024  # EMQX管理API密码
+    password: xuehua123 # EMQX管理API密码 - 修复：与实际Dashboard密码一致
     use-tls: false      # 管理API是否使用TLS
   nfc-relay:
     topic-prefix: nfc_relay
