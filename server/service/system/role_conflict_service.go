@@ -260,16 +260,24 @@ func (s *RoleConflictService) revokeOldClientJWT(ctx context.Context, clientID s
 
 // forceDisconnectClientWithRetry 带重试机制的强制断开客户端
 func (s *RoleConflictService) forceDisconnectClientWithRetry(clientID string, maxRetries int) error {
+	// 获取API Token一次，在重试过程中复用
+	apiToken, err := s.getEMQXAPIToken()
+	if err != nil {
+		global.GVA_LOG.Error("[forceDisconnectClientWithRetry] 获取API Token失败", zap.Error(err))
+		return fmt.Errorf("获取EMQX API Token失败: %w", err)
+	}
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		global.GVA_LOG.Info("[Retry] 尝试强制断开EMQX客户端",
 			zap.String("clientID", clientID),
 			zap.Int("attempt", attempt),
 			zap.Int("maxRetries", maxRetries))
 
-		err := s.forceDisconnectClient(clientID)
+		// 使用复用的token进行断开操作
+		err := s.forceDisconnectClientWithToken(clientID, apiToken)
 		if err == nil {
-			// 成功后验证客户端是否真正断开
-			if s.verifyClientDisconnected(clientID) {
+			// 成功后验证客户端是否真正断开 - 传递token避免重复认证
+			if s.verifyClientDisconnectedWithToken(clientID, apiToken) {
 				global.GVA_LOG.Info("[Retry] 强制断开并验证成功", zap.String("clientID", clientID))
 				return nil
 			}
@@ -292,8 +300,75 @@ func (s *RoleConflictService) forceDisconnectClientWithRetry(clientID string, ma
 	return fmt.Errorf("经过 %d 次尝试后，仍无法断开客户端 %s", maxRetries, clientID)
 }
 
-// verifyClientDisconnected 验证客户端是否已断开连接
+// forceDisconnectClientWithToken 使用指定token强制断开客户端（避免重复认证）
+func (s *RoleConflictService) forceDisconnectClientWithToken(clientID, apiToken string) error {
+	cfg := global.GVA_CONFIG.MQTT
+	apiCfg := cfg.API
+
+	apiHost := apiCfg.Host
+	if apiHost == "" {
+		apiHost = cfg.Host
+	}
+	if apiHost == "" {
+		return fmt.Errorf("EMQX API主机地址未配置")
+	}
+
+	port := apiCfg.Port
+	if port == 0 {
+		port = 18083 // 默认EMQX管理API端口
+	}
+
+	protocol := "http"
+	if apiCfg.UseTLS {
+		protocol = "https"
+	}
+
+	// 使用Token强制断开客户端
+	disconnectURL := fmt.Sprintf("%s://%s:%d/api/v5/clients/%s", protocol, apiHost, port, clientID)
+	req, err := http.NewRequest("DELETE", disconnectURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建EMQX断开连接请求失败: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+
+	global.GVA_LOG.Info("[forceDisconnectClientWithToken] 发送EMQX客户端断开请求", zap.String("url", disconnectURL))
+
+	// 发送断开请求
+	client := &http.Client{Timeout: 5 * time.Second}
+	disconnectResp, err := client.Do(req)
+	if err != nil {
+		global.GVA_LOG.Error("[forceDisconnectClientWithToken] 发送EMQX断开连接请求失败", zap.String("url", disconnectURL), zap.Error(err))
+		return fmt.Errorf("发送EMQX断开连接请求失败: %w", err)
+	}
+	defer disconnectResp.Body.Close()
+
+	// 检查响应
+	if disconnectResp.StatusCode == http.StatusOK || disconnectResp.StatusCode == http.StatusNoContent {
+		global.GVA_LOG.Info("[forceDisconnectClientWithToken] 成功通过EMQX API请求断开客户端连接", zap.String("clientID", clientID))
+		return nil
+	}
+
+	if disconnectResp.StatusCode == http.StatusNotFound {
+		global.GVA_LOG.Warn("[forceDisconnectClientWithToken] 尝试断开一个不存在的EMQX客户端（可能已离线）", zap.String("clientID", clientID))
+		return nil // 客户端已经离线，当作成功处理
+	}
+
+	disconnectBodyBytes, _ := io.ReadAll(disconnectResp.Body)
+	global.GVA_LOG.Error("[forceDisconnectClientWithToken] EMQX API断开客户端操作失败",
+		zap.String("url", disconnectURL),
+		zap.Int("status", disconnectResp.StatusCode),
+		zap.String("response", string(disconnectBodyBytes)))
+	return fmt.Errorf("EMQX API返回错误: status=%d", disconnectResp.StatusCode)
+}
+
+// verifyClientDisconnected 验证客户端是否已断开连接（公共接口）
 func (s *RoleConflictService) verifyClientDisconnected(clientID string) bool {
+	return s.verifyClientDisconnectedWithToken(clientID, "")
+}
+
+// verifyClientDisconnectedWithToken 验证客户端是否已断开连接（支持复用token）
+func (s *RoleConflictService) verifyClientDisconnectedWithToken(clientID, apiToken string) bool {
 	// 1. 从全局配置中获取EMQX API配置
 	cfg := global.GVA_CONFIG.MQTT
 	apiCfg := cfg.API
@@ -312,7 +387,23 @@ func (s *RoleConflictService) verifyClientDisconnected(clientID string) bool {
 		port = 18083 // 默认EMQX API端口
 	}
 
-	apiURL := fmt.Sprintf("http://%s:%d/api/v5/clients/%s", apiHost, port, clientID)
+	protocol := "http"
+	if apiCfg.UseTLS {
+		protocol = "https"
+	}
+
+	// 2. 如果没有提供token，则获取新的token
+	if apiToken == "" {
+		token, err := s.getEMQXAPIToken()
+		if err != nil {
+			global.GVA_LOG.Error("[verifyClientDisconnected] 获取API Token失败", zap.Error(err))
+			return false
+		}
+		apiToken = token
+	}
+
+	// 3. 使用Token查询客户端状态
+	apiURL := fmt.Sprintf("%s://%s:%d/api/v5/clients/%s", protocol, apiHost, port, clientID)
 	global.GVA_LOG.Info("[verifyClientDisconnected] 检查客户端连接状态", zap.String("url", apiURL))
 
 	req, err := http.NewRequest("GET", apiURL, nil)
@@ -320,6 +411,9 @@ func (s *RoleConflictService) verifyClientDisconnected(clientID string) bool {
 		global.GVA_LOG.Error("[verifyClientDisconnected] 创建HTTP请求失败", zap.Error(err))
 		return false
 	}
+
+	// 4. 设置认证头 - 这是关键修复点
+	req.Header.Set("Authorization", "Bearer "+apiToken)
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
@@ -329,15 +423,105 @@ func (s *RoleConflictService) verifyClientDisconnected(clientID string) bool {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
+	// 5. 正确处理各种状态码
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// 客户端存在且在线，检查连接状态
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		var clientInfo map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &clientInfo); err == nil {
+			if connected, ok := clientInfo["connected"].(bool); ok && connected {
+				global.GVA_LOG.Warn("[verifyClientDisconnected] 客户端仍然在线",
+					zap.String("clientID", clientID))
+				return false
+			}
+		}
+		global.GVA_LOG.Info("[verifyClientDisconnected] 客户端已离线", zap.String("clientID", clientID))
+		return true
+
+	case http.StatusNotFound:
 		global.GVA_LOG.Info("[verifyClientDisconnected] 客户端已断开 (API返回404)", zap.String("clientID", clientID))
 		return true
+
+	case http.StatusUnauthorized:
+		global.GVA_LOG.Error("[verifyClientDisconnected] API认证失败，但这不意味着客户端仍然连接",
+			zap.String("clientID", clientID),
+			zap.Int("statusCode", resp.StatusCode))
+		return false // 认证问题，无法确定客户端状态
+
+	default:
+		global.GVA_LOG.Warn("[verifyClientDisconnected] API返回未预期的状态码",
+			zap.String("clientID", clientID),
+			zap.Int("statusCode", resp.StatusCode))
+		return false // 无法确定状态，保守返回false
+	}
+}
+
+// getEMQXAPIToken 获取EMQX API Token（复用逻辑）
+func (s *RoleConflictService) getEMQXAPIToken() (string, error) {
+	cfg := global.GVA_CONFIG.MQTT
+	apiCfg := cfg.API
+
+	apiHost := apiCfg.Host
+	if apiHost == "" {
+		apiHost = cfg.Host
 	}
 
-	global.GVA_LOG.Warn("[verifyClientDisconnected] 客户端似乎仍然连接",
-		zap.String("clientID", clientID),
-		zap.Int("statusCode", resp.StatusCode))
-	return false
+	port := apiCfg.Port
+	if port == 0 {
+		port = 18083
+	}
+
+	apiUsername := apiCfg.Username
+	if apiUsername == "" {
+		apiUsername = cfg.Username
+	}
+
+	apiPassword := apiCfg.Password
+	if apiPassword == "" {
+		apiPassword = cfg.Password
+	}
+
+	protocol := "http"
+	if apiCfg.UseTLS {
+		protocol = "https"
+	}
+
+	loginURL := fmt.Sprintf("%s://%s:%d/api/v5/login", protocol, apiHost, port)
+	loginPayload := map[string]string{
+		"username": apiUsername,
+		"password": apiPassword,
+	}
+	loginData, err := json.Marshal(loginPayload)
+	if err != nil {
+		return "", fmt.Errorf("序列化登录请求失败: %w", err)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	loginResp, err := client.Post(loginURL, "application/json", bytes.NewBuffer(loginData))
+	if err != nil {
+		return "", fmt.Errorf("EMQX API登录请求失败: %w", err)
+	}
+	defer loginResp.Body.Close()
+
+	if loginResp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(loginResp.Body)
+		return "", fmt.Errorf("EMQX API登录失败: status=%d, response=%s", loginResp.StatusCode, string(bodyBytes))
+	}
+
+	var loginResult struct {
+		Token string `json:"token"`
+	}
+	loginBodyBytes, _ := io.ReadAll(loginResp.Body)
+	if err := json.Unmarshal(loginBodyBytes, &loginResult); err != nil {
+		return "", fmt.Errorf("解析登录响应失败: %w", err)
+	}
+
+	if loginResult.Token == "" {
+		return "", fmt.Errorf("未能获取到API Token")
+	}
+
+	return loginResult.Token, nil
 }
 
 // createAssignmentInfo 创建存储在 user:{userID}:roles 哈希中的值
