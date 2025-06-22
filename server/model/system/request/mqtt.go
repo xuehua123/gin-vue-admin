@@ -1,9 +1,5 @@
 package request
 
-import (
-	"encoding/json"
-)
-
 // MqttAuthRequest MQTT认证/ACL请求结构
 type MqttAuthRequest struct {
 	ClientID string `json:"clientid"`
@@ -25,10 +21,10 @@ type MqttAclRequest struct {
 
 // MqttConnectionStatusRequest MQTT连接状态变化Webhook请求
 type MqttConnectionStatusRequest struct {
-	Event          string      `json:"event"`
-	ClientID       string      `json:"clientid"`
-	Username       string      `json:"username"`
-	Reason         string      `json:"reason"`
-	ConnectedAt    json.Number `json:"connected_at"`
-	DisconnectedAt json.Number `json:"disconnected_at,omitempty"`
+	Event          string  `json:"event"`
+	ClientID       string  `json:"clientid"`
+	Username       string  `json:"username"`
+	Reason         string  `json:"reason"`
+	ConnectedAt    *string `json:"connected_at,omitempty"`    // 使用字符串指针，避免 "undefined" 解析错误
+	DisconnectedAt *string `json:"disconnected_at,omitempty"` // 使用字符串指针，避免 "undefined" 解析错误
 }

@@ -100,9 +100,10 @@ func checkTopicPermission(clientID, topic, action string) bool {
 	}
 
 	// 规则2：客户端只能订阅和发布到属于自己的私有主题
-	// client/{clientID}/...
+	// client/{clientID}/... 或 clients/{clientID}/... (兼容Flutter客户端的格式)
 	clientPrefix := fmt.Sprintf("client/%s/", clientID)
-	if strings.HasPrefix(topic, clientPrefix) {
+	clientsPrefix := fmt.Sprintf("clients/%s/", clientID) // 兼容Flutter使用的格式
+	if strings.HasPrefix(topic, clientPrefix) || strings.HasPrefix(topic, clientsPrefix) {
 		return true
 	}
 
@@ -119,6 +120,24 @@ func checkTopicPermission(clientID, topic, action string) bool {
 	// 暂时简化，如果topic以"user/"开头且是订阅操作，则允许
 	if action == "subscribe" && strings.HasPrefix(topic, "user/") {
 		// 在真实场景下，需要解析userID并进行严格匹配
+		return true
+	}
+
+	// 规则5: 允许订阅 nfc_relay 全局主题（用于NFC中继系统的事务管理）
+	// 这些主题用于NFC事务的状态、APDU通信和心跳监控
+	if action == "subscribe" {
+		if strings.HasPrefix(topic, "nfc_relay/transactions/") {
+			// 允许订阅 nfc_relay/transactions/+/status, nfc_relay/transactions/+/apdu/+, nfc_relay/transactions/+/heartbeat
+			if strings.Contains(topic, "/status") ||
+				strings.Contains(topic, "/apdu/") ||
+				strings.Contains(topic, "/heartbeat") {
+				return true
+			}
+		}
+	}
+
+	// 规则6: 允许发布到 nfc_relay 系统主题（用于客户端状态上报）
+	if action == "publish" && strings.HasPrefix(topic, "nfc_relay/") {
 		return true
 	}
 

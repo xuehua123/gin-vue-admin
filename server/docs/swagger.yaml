@@ -111,6 +111,24 @@ definitions:
       mount-point:
         type: string
     type: object
+  config.EMQXAPIConfig:
+    properties:
+      host:
+        description: API主机地址（通常与MQTT Host相同）
+        type: string
+      password:
+        description: API密码
+        type: string
+      port:
+        description: API端口（默认18083）
+        type: integer
+      use-tls:
+        description: API是否使用TLS
+        type: boolean
+      username:
+        description: API用户名
+        type: string
+    type: object
   config.Excel:
     properties:
       dir:
@@ -173,6 +191,10 @@ definitions:
     type: object
   config.MQTT:
     properties:
+      api:
+        allOf:
+        - $ref: '#/definitions/config.EMQXAPIConfig'
+        description: EMQX管理API配置
       clean-session:
         description: 清除会话
         type: boolean
@@ -1214,10 +1236,11 @@ definitions:
         maxLength: 100
         type: string
       status:
-        description: 新状态(仅支持取消和超时)
+        description: 新状态(仅支持取消、超时和暂停)
         enum:
         - cancelled
         - timeout
+        - paused
         example: cancelled
         type: string
       transaction_ids:
@@ -1740,6 +1763,7 @@ definitions:
         - failed
         - cancelled
         - timeout
+        - paused
         example: active
         type: string
       transaction_id:

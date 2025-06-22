@@ -7856,6 +7856,31 @@ const docTemplate = `{
                 }
             }
         },
+        "config.EMQXAPIConfig": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "description": "API主机地址（通常与MQTT Host相同）",
+                    "type": "string"
+                },
+                "password": {
+                    "description": "API密码",
+                    "type": "string"
+                },
+                "port": {
+                    "description": "API端口（默认18083）",
+                    "type": "integer"
+                },
+                "use-tls": {
+                    "description": "API是否使用TLS",
+                    "type": "boolean"
+                },
+                "username": {
+                    "description": "API用户名",
+                    "type": "string"
+                }
+            }
+        },
         "config.Excel": {
             "type": "object",
             "properties": {
@@ -7946,6 +7971,14 @@ const docTemplate = `{
         "config.MQTT": {
             "type": "object",
             "properties": {
+                "api": {
+                    "description": "EMQX管理API配置",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.EMQXAPIConfig"
+                        }
+                    ]
+                },
                 "clean-session": {
                     "description": "清除会话",
                     "type": "boolean"
@@ -9413,11 +9446,12 @@ const docTemplate = `{
                     "example": "批量操作"
                 },
                 "status": {
-                    "description": "新状态(仅支持取消和超时)",
+                    "description": "新状态(仅支持取消、超时和暂停)",
                     "type": "string",
                     "enum": [
                         "cancelled",
-                        "timeout"
+                        "timeout",
+                        "paused"
                     ],
                     "example": "cancelled"
                 },
@@ -10144,7 +10178,8 @@ const docTemplate = `{
                         "completed",
                         "failed",
                         "cancelled",
-                        "timeout"
+                        "timeout",
+                        "paused"
                     ],
                     "example": "active"
                 },
