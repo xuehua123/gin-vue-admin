@@ -2,13 +2,16 @@ package initialize
 
 import (
 	"context"
+	"os"
 
 	adapter "github.com/casbin/gorm-adapter/v3"
+	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/example"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay"
 	sysModel "github.com/flipped-aurora/gin-vue-admin/server/model/system"
 	"github.com/flipped-aurora/gin-vue-admin/server/plugin/announcement/model"
 	"github.com/flipped-aurora/gin-vue-admin/server/service/system"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -77,6 +80,16 @@ func (e *ensureTables) MigrateTable(ctx context.Context) (context.Context, error
 		// 视图 authority_menu 会被当成表来创建，引发冲突错误（更新版本的gorm似乎不会）
 		// 由于 AutoMigrate() 基本无需考虑错误，因此显式忽略
 	}
+
+	if err := db.AutoMigrate(
+		nfc_relay.NFCTransaction{},
+		nfc_relay.NFCAPDUMessage{},
+		nfc_relay.NFCTransactionStatistics{},
+	); err != nil {
+		global.GVA_LOG.Error("migrate nfc_relay tables failed", zap.Error(err))
+		os.Exit(0)
+	}
+
 	return ctx, nil
 }
 

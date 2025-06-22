@@ -48,6 +48,14 @@ type NFCTransaction struct {
 	Metadata datatypes.JSON `json:"metadata" gorm:"type:json;comment:扩展元数据" swaggertype:"object"`
 	Tags     string         `json:"tags" gorm:"type:varchar(500);comment:标签(逗号分隔)"`
 
+	// 动态主题配置 - 新增字段
+	TransmitterStateTopic  string `json:"transmitter_state_topic" gorm:"type:varchar(256);comment:传卡端状态主题"`
+	ReceiverStateTopic     string `json:"receiver_state_topic" gorm:"type:varchar(256);comment:收卡端状态主题"`
+	APDUToTransmitterTopic string `json:"apdu_to_transmitter_topic" gorm:"type:varchar(256);comment:发送到传卡端的APDU主题"`
+	APDUToReceiverTopic    string `json:"apdu_to_receiver_topic" gorm:"type:varchar(256);comment:发送到收卡端的APDU主题"`
+	ControlTopic           string `json:"control_topic" gorm:"type:varchar(256);comment:控制指令主题"`
+	HeartbeatTopic         string `json:"heartbeat_topic" gorm:"type:varchar(256);comment:心跳主题"`
+
 	// 关联关系
 	APDUMessages []NFCAPDUMessage `json:"apdu_messages" gorm:"foreignKey:TransactionID;references:TransactionID"`
 }

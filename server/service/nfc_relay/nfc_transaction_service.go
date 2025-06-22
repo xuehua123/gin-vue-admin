@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/model/common/response"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay/request"
+	nfcRelayReq "github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay/request"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/datatypes"
@@ -1328,4 +1330,283 @@ func (s *NFCTransactionService) BatchUpdateTransactionStatus(ctx context.Context
 	}
 
 	return result, nil
+}
+
+// InitiateTransactionSession 发起交易会话
+func (nfcTransactionService *NFCTransactionService) InitiateTransactionSession(ctx context.Context, req nfcRelayReq.InitiateTransactionSessionRequest, userID uuid.UUID, username string) (*nfcRelayReq.TransactionSessionResponse, error) {
+	// 1. 生成交易ID
+	transactionID := fmt.Sprintf("txn_%d_%s", time.Now().UnixMilli(), uuid.New().String()[:8])
+
+	// 2. 从JWT中提取客户端ID (假设已经在中间件中设置)
+	clientID, exists := ctx.Value("clientID").(string)
+	if !exists || clientID == "" {
+		return nil, fmt.Errorf("无法获取客户端ID")
+	}
+
+	// 3. 生成动态主题配置
+	topicConfig := generateTopicConfig(transactionID)
+
+	// 4. 计算过期时间
+	expiresAt := time.Now().Add(time.Duration(req.TimeoutSecs) * time.Second)
+
+	// 5. 创建交易记录
+	transaction := &nfc_relay.NFCTransaction{
+		TransactionID: transactionID,
+		Status:        nfc_relay.StatusPending,
+		CardType:      req.CardType,
+		Description:   req.Description,
+		CreatedBy:     userID,
+		ExpiresAt:     &expiresAt,
+		Tags:          fmt.Sprintf("session,role:%s", req.Role),
+
+		// 设置动态主题
+		TransmitterStateTopic:  topicConfig.TransmitterStateTopic,
+		ReceiverStateTopic:     topicConfig.ReceiverStateTopic,
+		APDUToTransmitterTopic: topicConfig.APDUToTransmitterTopic,
+		APDUToReceiverTopic:    topicConfig.APDUToReceiverTopic,
+		ControlTopic:           topicConfig.ControlTopic,
+		HeartbeatTopic:         topicConfig.HeartbeatTopic,
+	}
+
+	// 根据角色设置客户端ID
+	if req.Role == "transmitter" {
+		transaction.TransmitterClientID = clientID
+	} else {
+		transaction.ReceiverClientID = clientID
+	}
+
+	// 处理元数据
+	if req.Metadata != nil || req.DeviceInfo != nil {
+		metadata := map[string]interface{}{
+			"device_info":       req.DeviceInfo,
+			"metadata":          req.Metadata,
+			"initiated_by_role": req.Role,
+		}
+		if metadataJSON, err := json.Marshal(metadata); err == nil {
+			transaction.Metadata = datatypes.JSON(metadataJSON)
+		}
+	}
+
+	// 6. 保存到数据库
+	if err := global.GVA_DB.Create(transaction).Error; err != nil {
+		global.GVA_LOG.Error("创建交易会话失败", zap.String("transactionID", transactionID), zap.Error(err))
+		return nil, fmt.Errorf("创建交易会话失败: %w", err)
+	}
+
+	// 7. 缓存到Redis用于ACL检查
+	if err := cacheTransactionForACL(transactionID, clientID, req.Role); err != nil {
+		global.GVA_LOG.Warn("缓存交易会话到Redis失败", zap.Error(err))
+	}
+
+	// 8. 构建响应
+	response := &nfcRelayReq.TransactionSessionResponse{
+		TransactionID: transactionID,
+		Status:        nfc_relay.StatusPending,
+		Role:          req.Role,
+		TopicConfig:   topicConfig,
+		ExpiresAt:     expiresAt.Unix(),
+		CreatedAt:     time.Now().Unix(),
+	}
+
+	// 根据角色设置客户端ID
+	if req.Role == "transmitter" {
+		response.TransmitterClientID = clientID
+		response.PeerRole = "receiver"
+	} else {
+		response.ReceiverClientID = clientID
+		response.PeerRole = "transmitter"
+	}
+
+	global.GVA_LOG.Info("交易会话发起成功",
+		zap.String("transactionID", transactionID),
+		zap.String("clientID", clientID),
+		zap.String("role", req.Role),
+		zap.String("username", username))
+
+	return response, nil
+}
+
+// JoinTransactionSession 加入交易会话
+func (nfcTransactionService *NFCTransactionService) JoinTransactionSession(ctx context.Context, req nfcRelayReq.JoinTransactionSessionRequest, userID uuid.UUID, username string) (*nfcRelayReq.TransactionSessionResponse, error) {
+	// 1. 从JWT中提取客户端ID
+	clientID, exists := ctx.Value("clientID").(string)
+	if !exists || clientID == "" {
+		return nil, fmt.Errorf("无法获取客户端ID")
+	}
+
+	// 2. 查询交易记录
+	var transaction nfc_relay.NFCTransaction
+	if err := global.GVA_DB.Where("transaction_id = ?", req.TransactionID).First(&transaction).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("交易会话不存在")
+		}
+		return nil, fmt.Errorf("查询交易会话失败: %w", err)
+	}
+
+	// 3. 检查交易状态
+	if transaction.Status != nfc_relay.StatusPending {
+		return nil, fmt.Errorf("交易会话状态无效，当前状态: %s", transaction.Status)
+	}
+
+	// 4. 检查是否过期
+	if transaction.ExpiresAt != nil && time.Now().After(*transaction.ExpiresAt) {
+		return nil, fmt.Errorf("交易会话已过期")
+	}
+
+	// 5. 检查角色冲突
+	var peerRole string
+	var peerClientID string
+
+	if req.Role == "transmitter" {
+		if transaction.TransmitterClientID != "" {
+			return nil, fmt.Errorf("传卡端角色已被占用")
+		}
+		peerRole = "receiver"
+		peerClientID = transaction.ReceiverClientID
+		transaction.TransmitterClientID = clientID
+	} else {
+		if transaction.ReceiverClientID != "" {
+			return nil, fmt.Errorf("收卡端角色已被占用")
+		}
+		peerRole = "transmitter"
+		peerClientID = transaction.TransmitterClientID
+		transaction.ReceiverClientID = clientID
+	}
+
+	// 6. 检查是否双方都已连接
+	if transaction.TransmitterClientID != "" && transaction.ReceiverClientID != "" {
+		transaction.Status = nfc_relay.StatusActive
+		transaction.StartedAt = &time.Time{}
+		now := time.Now()
+		transaction.StartedAt = &now
+	}
+
+	// 7. 更新元数据
+	if req.DeviceInfo != nil || req.Metadata != nil {
+		var existingMetadata map[string]interface{}
+		if transaction.Metadata != nil {
+			json.Unmarshal(transaction.Metadata, &existingMetadata)
+		}
+		if existingMetadata == nil {
+			existingMetadata = make(map[string]interface{})
+		}
+
+		// 根据角色存储设备信息
+		roleKey := fmt.Sprintf("%s_device_info", req.Role)
+		existingMetadata[roleKey] = req.DeviceInfo
+		existingMetadata[fmt.Sprintf("%s_metadata", req.Role)] = req.Metadata
+		existingMetadata[fmt.Sprintf("joined_by_%s", req.Role)] = time.Now().Format(time.RFC3339)
+
+		if metadataJSON, err := json.Marshal(existingMetadata); err == nil {
+			transaction.Metadata = datatypes.JSON(metadataJSON)
+		}
+	}
+
+	// 8. 更新数据库
+	if err := global.GVA_DB.Save(&transaction).Error; err != nil {
+		global.GVA_LOG.Error("更新交易会话失败", zap.String("transactionID", req.TransactionID), zap.Error(err))
+		return nil, fmt.Errorf("更新交易会话失败: %w", err)
+	}
+
+	// 9. 缓存到Redis用于ACL检查
+	if err := cacheTransactionForACL(req.TransactionID, clientID, req.Role); err != nil {
+		global.GVA_LOG.Warn("缓存交易会话到Redis失败", zap.Error(err))
+	}
+
+	// 10. 构建主题配置
+	topicConfig := nfcRelayReq.TransactionTopicConfig{
+		TransmitterStateTopic:  transaction.TransmitterStateTopic,
+		ReceiverStateTopic:     transaction.ReceiverStateTopic,
+		APDUToTransmitterTopic: transaction.APDUToTransmitterTopic,
+		APDUToReceiverTopic:    transaction.APDUToReceiverTopic,
+		ControlTopic:           transaction.ControlTopic,
+		HeartbeatTopic:         transaction.HeartbeatTopic,
+	}
+
+	// 11. 构建响应
+	response := &nfcRelayReq.TransactionSessionResponse{
+		TransactionID:       req.TransactionID,
+		Status:              transaction.Status,
+		TransmitterClientID: transaction.TransmitterClientID,
+		ReceiverClientID:    transaction.ReceiverClientID,
+		Role:                req.Role,
+		PeerRole:            peerRole,
+		TopicConfig:         topicConfig,
+		ExpiresAt:           transaction.ExpiresAt.Unix(),
+		CreatedAt:           transaction.CreatedAt.Unix(),
+	}
+
+	// 12. 如果双方都已连接，通知MQTT服务
+	if transaction.Status == nfc_relay.StatusActive {
+		mqttService := GetMQTTService()
+		if err := mqttService.PublishTransactionSessionActive(ctx, &transaction); err != nil {
+			global.GVA_LOG.Warn("发布交易会话激活通知失败", zap.Error(err))
+		}
+	}
+
+	global.GVA_LOG.Info("加入交易会话成功",
+		zap.String("transactionID", req.TransactionID),
+		zap.String("clientID", clientID),
+		zap.String("role", req.Role),
+		zap.String("peerClientID", peerClientID),
+		zap.String("newStatus", transaction.Status),
+		zap.String("username", username))
+
+	return response, nil
+}
+
+// generateTopicConfig 生成动态主题配置
+func generateTopicConfig(transactionID string) nfcRelayReq.TransactionTopicConfig {
+	// 使用配置中的topic-prefix
+	topicPrefix := global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix
+
+	return nfcRelayReq.TransactionTopicConfig{
+		TransmitterStateTopic:  fmt.Sprintf("%s/transactions/%s/transmitter/state", topicPrefix, transactionID),
+		ReceiverStateTopic:     fmt.Sprintf("%s/transactions/%s/receiver/state", topicPrefix, transactionID),
+		APDUToTransmitterTopic: fmt.Sprintf("%s/transactions/%s/apdu/to_transmitter", topicPrefix, transactionID),
+		APDUToReceiverTopic:    fmt.Sprintf("%s/transactions/%s/apdu/to_receiver", topicPrefix, transactionID),
+		ControlTopic:           fmt.Sprintf("%s/transactions/%s/control", topicPrefix, transactionID),
+		HeartbeatTopic:         fmt.Sprintf("%s/transactions/%s/heartbeat", topicPrefix, transactionID),
+	}
+}
+
+// cacheTransactionForACL 缓存交易信息到Redis用于ACL检查
+func cacheTransactionForACL(transactionID, clientID, role string) error {
+	ctx := context.Background()
+
+	// 存储交易ID -> 客户端ID映射
+	transactionKey := fmt.Sprintf("transaction:%s:clients", transactionID)
+	pipe := global.GVA_REDIS.Pipeline()
+
+	pipe.HSet(ctx, transactionKey, role+"_client_id", clientID)
+	pipe.HSet(ctx, transactionKey, role+"_joined_at", time.Now().Unix())
+	pipe.Expire(ctx, transactionKey, 24*time.Hour) // 24小时过期
+
+	// 存储客户端ID -> 交易ID映射
+	clientKey := fmt.Sprintf("client:%s:current_transaction", clientID)
+	pipe.Set(ctx, clientKey, transactionID, 24*time.Hour)
+
+	// 存储交易ID的权限映射
+	aclKey := fmt.Sprintf("transaction:%s:acl", transactionID)
+	aclData := map[string]interface{}{
+		"transmitter_topics": []string{
+			fmt.Sprintf("%s/transactions/%s/transmitter/state", global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix, transactionID),
+			fmt.Sprintf("%s/transactions/%s/apdu/to_receiver", global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix, transactionID),
+		},
+		"receiver_topics": []string{
+			fmt.Sprintf("%s/transactions/%s/receiver/state", global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix, transactionID),
+			fmt.Sprintf("%s/transactions/%s/apdu/to_transmitter", global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix, transactionID),
+		},
+		"common_topics": []string{
+			fmt.Sprintf("%s/transactions/%s/control", global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix, transactionID),
+			fmt.Sprintf("%s/transactions/%s/heartbeat", global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix, transactionID),
+		},
+	}
+
+	if aclJSON, err := json.Marshal(aclData); err == nil {
+		pipe.Set(ctx, aclKey, string(aclJSON), 24*time.Hour)
+	}
+
+	_, err := pipe.Exec(ctx)
+	return err
 }

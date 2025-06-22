@@ -363,6 +363,75 @@ func (s *MQTTService) PublishTransactionStatusUpdate(ctx context.Context, transa
 	return s.publishToClient(clientID, "transaction/status", message)
 }
 
+// PublishTransactionSessionActive 发布交易会话激活通知
+func (s *MQTTService) PublishTransactionSessionActive(ctx context.Context, transaction *nfc_relay.NFCTransaction) error {
+	if !s.IsConnected() {
+		return fmt.Errorf("MQTT未连接")
+	}
+
+	// 构建激活通知消息
+	message := map[string]interface{}{
+		"event_type":            "session_active",
+		"transaction_id":        transaction.TransactionID,
+		"transmitter_client_id": transaction.TransmitterClientID,
+		"receiver_client_id":    transaction.ReceiverClientID,
+		"timestamp":             time.Now().Unix(),
+		"topic_config": map[string]interface{}{
+			"transmitter_state_topic":   transaction.TransmitterStateTopic,
+			"receiver_state_topic":      transaction.ReceiverStateTopic,
+			"apdu_to_transmitter_topic": transaction.APDUToTransmitterTopic,
+			"apdu_to_receiver_topic":    transaction.APDUToReceiverTopic,
+			"control_topic":             transaction.ControlTopic,
+			"heartbeat_topic":           transaction.HeartbeatTopic,
+		},
+	}
+
+	// 发送给传卡端
+	if err := s.publishToTransactionClient(transaction.TransactionID, "transmitter", "session/active", message); err != nil {
+		global.GVA_LOG.Error("发送会话激活通知到传卡端失败", zap.Error(err))
+	}
+
+	// 发送给收卡端
+	if err := s.publishToTransactionClient(transaction.TransactionID, "receiver", "session/active", message); err != nil {
+		global.GVA_LOG.Error("发送会话激活通知到收卡端失败", zap.Error(err))
+	}
+
+	global.GVA_LOG.Info("交易会话激活通知发送完成",
+		zap.String("transactionID", transaction.TransactionID),
+		zap.String("transmitterClientID", transaction.TransmitterClientID),
+		zap.String("receiverClientID", transaction.ReceiverClientID))
+
+	return nil
+}
+
+// publishToTransactionClient 发布消息到交易中的指定角色客户端
+func (s *MQTTService) publishToTransactionClient(transactionID, role, subtopic string, payload interface{}) error {
+	// 使用新的主题结构
+	topicPrefix := global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix
+	topic := fmt.Sprintf("%s/transactions/%s/%s/%s", topicPrefix, transactionID, role, subtopic)
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("序列化消息失败: %w", err)
+	}
+
+	qos := global.GVA_CONFIG.MQTT.QoS
+	token := s.client.Publish(topic, qos, false, data)
+
+	if token.Wait() && token.Error() != nil {
+		return fmt.Errorf("发布消息失败: %w", token.Error())
+	}
+
+	global.GVA_LOG.Debug("交易客户端MQTT消息发布成功",
+		zap.String("topic", topic),
+		zap.String("transactionID", transactionID),
+		zap.String("role", role),
+		zap.String("subtopic", subtopic),
+	)
+
+	return nil
+}
+
 // SendAPDUToClient 发送APDU消息到客户端
 func (s *MQTTService) SendAPDUToClient(ctx context.Context, clientID string, apduMsg APDUMessage) error {
 	if !s.IsConnected() {

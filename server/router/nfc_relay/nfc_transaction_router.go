@@ -61,6 +61,11 @@ func (r *NFCTransactionRouter) InitNFCTransactionRouter(Router *gin.RouterGroup,
 
 		// WebSocket连接（需要认证）
 		nfcTransactionRouterWithoutRecord.GET("ws", nfcRelayService.HandleWebSocket)
+
+		// 交易会话管理路由 - 新增
+		nfcTransactionRouter.POST("/transactions/sessions/initiate", nfcTransactionApi.InitiateTransactionSession)  // 发起交易会话
+		nfcTransactionRouter.POST("/transactions/sessions/join", nfcTransactionApi.JoinTransactionSession)          // 加入交易会话
+		nfcTransactionRouter.GET("/transactions/sessions/:transaction_id", nfcTransactionApi.GetTransactionSession) // 获取会话状态
 	}
 
 	// 公开路由（用于系统集成）

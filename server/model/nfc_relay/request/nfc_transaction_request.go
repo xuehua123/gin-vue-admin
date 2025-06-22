@@ -4,6 +4,54 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/model/common/request"
 )
 
+// InitiateTransactionSessionRequest 发起交易会话请求
+type InitiateTransactionSessionRequest struct {
+	Role        string                 `json:"role" binding:"required" validate:"required,oneof=transmitter receiver" example:"transmitter"`   // 当前客户端角色
+	DeviceInfo  map[string]interface{} `json:"device_info" swaggertype:"object,string" example:"{\"model\":\"iPhone12\",\"os\":\"iOS 15.0\"}"` // 设备信息
+	CardType    string                 `json:"card_type" validate:"max=50" example:"mifare_classic"`                                           // 卡片类型
+	Description string                 `json:"description" validate:"max=500" example:"NFC卡片中继交易会话"`                                           // 交易描述
+	TimeoutSecs int                    `json:"timeout_seconds" validate:"min=30,max=3600" example:"300"`                                       // 会话超时时间(秒)
+	Metadata    map[string]interface{} `json:"metadata" swaggertype:"object,string"`                                                           // 扩展元数据
+}
+
+// JoinTransactionSessionRequest 加入交易会话请求
+type JoinTransactionSessionRequest struct {
+	TransactionID string                 `json:"transaction_id" binding:"required" validate:"required" example:"txn_uuid_123456"`                     // 交易会话ID
+	Role          string                 `json:"role" binding:"required" validate:"required,oneof=transmitter receiver" example:"receiver"`           // 当前客户端角色
+	DeviceInfo    map[string]interface{} `json:"device_info" swaggertype:"object,string" example:"{\"model\":\"Samsung S21\",\"os\":\"Android 12\"}"` // 设备信息
+	Metadata      map[string]interface{} `json:"metadata" swaggertype:"object,string"`                                                                // 扩展元数据
+}
+
+// TransactionTopicConfig 交易主题配置
+type TransactionTopicConfig struct {
+	// 状态主题 - 客户端发布自己的状态，订阅对端状态
+	TransmitterStateTopic string `json:"transmitter_state_topic" example:"nfc-relay/transactions/txn_123/transmitter/state"` // 传卡端状态主题
+	ReceiverStateTopic    string `json:"receiver_state_topic" example:"nfc-relay/transactions/txn_123/receiver/state"`       // 收卡端状态主题
+
+	// APDU消息主题
+	APDUToTransmitterTopic string `json:"apdu_to_transmitter_topic" example:"nfc-relay/transactions/txn_123/apdu/to_transmitter"` // 发送到传卡端的APDU
+	APDUToReceiverTopic    string `json:"apdu_to_receiver_topic" example:"nfc-relay/transactions/txn_123/apdu/to_receiver"`       // 发送到收卡端的APDU
+
+	// 控制主题
+	ControlTopic string `json:"control_topic" example:"nfc-relay/transactions/txn_123/control"` // 控制指令主题
+
+	// 心跳主题
+	HeartbeatTopic string `json:"heartbeat_topic" example:"nfc-relay/transactions/txn_123/heartbeat"` // 心跳主题
+}
+
+// TransactionSessionResponse 交易会话响应
+type TransactionSessionResponse struct {
+	TransactionID       string                 `json:"transaction_id" example:"txn_uuid_123456"`                        // 交易会话ID
+	Status              string                 `json:"status" example:"waiting_for_peer"`                               // 会话状态
+	TransmitterClientID string                 `json:"transmitter_client_id,omitempty" example:"admin-transmitter-001"` // 传卡端客户端ID（如果已连接）
+	ReceiverClientID    string                 `json:"receiver_client_id,omitempty" example:"user-receiver-002"`        // 收卡端客户端ID（如果已连接）
+	Role                string                 `json:"role" example:"transmitter"`                                      // 当前客户端的角色
+	PeerRole            string                 `json:"peer_role,omitempty" example:"receiver"`                          // 对端角色
+	TopicConfig         TransactionTopicConfig `json:"topic_config"`                                                    // 主题配置
+	ExpiresAt           int64                  `json:"expires_at" example:"1640995200"`                                 // 会话过期时间戳
+	CreatedAt           int64                  `json:"created_at" example:"1640991600"`                                 // 创建时间戳
+}
+
 // CreateTransactionRequest 创建交易请求
 type CreateTransactionRequest struct {
 	TransmitterClientID string                 `json:"transmitter_client_id" binding:"required" validate:"required,min=1,max=128" example:"admin-transmitter-001"` // 传卡端客户端ID

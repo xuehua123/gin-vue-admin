@@ -697,3 +697,22 @@ func ClearToken(c *gin.Context) {
 func GetUserID(c *gin.Context) uint {
 	return GetUserId(c)
 }
+
+// GetClientIDFromJWT 从Gin的Context中获取从JWT解析出来的客户端ID
+// 优先从MQTT Claims中获取，如果没有则从标准Claims中获取
+func GetClientIDFromJWT(c *gin.Context) string {
+	// 首先尝试从MQTT JWT中获取ClientID
+	if mqttToken := c.Request.Header.Get("x-mqtt-token"); mqttToken != "" {
+		j := NewJWT()
+		if mqttClaims, err := j.ParseMQTTToken(mqttToken); err == nil && mqttClaims != nil {
+			return mqttClaims.GetClientID()
+		}
+	}
+
+	// 如果没有MQTT token，尝试从标准JWT中获取ClientID
+	if claims := GetUserInfo(c); claims != nil {
+		return claims.GetClientID()
+	}
+
+	return ""
+}

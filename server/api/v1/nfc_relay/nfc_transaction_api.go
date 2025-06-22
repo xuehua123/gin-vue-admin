@@ -470,3 +470,244 @@ func (a *NFCTransactionApi) ExportTransactions(c *gin.Context) {
 	// 暂时返回成功消息
 	response.OkWithMessage("导出任务已创建，请稍后下载", c)
 }
+
+// InitiateTransactionSession 发起交易会话
+// @Tags NFCTransaction
+// @Summary 发起NFC中继交易会话
+// @Description 客户端发起一个新的交易会话，等待对端加入
+// @Security ApiKeyAuth
+// @accept application/json
+// @Produce application/json
+// @Param data body request.InitiateTransactionSessionRequest true "发起会话请求"
+// @Success 200 {object} response.Response{data=request.TransactionSessionResponse} "发起成功"
+// @Router /nfc-relay/transactions/sessions/initiate [post]
+func (a *NFCTransactionApi) InitiateTransactionSession(c *gin.Context) {
+	var req request.InitiateTransactionSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMessage("请求参数格式错误: "+err.Error(), c)
+		return
+	}
+
+	// 参数验证
+	if req.Role == "" {
+		response.FailWithMessage("角色(role)不能为空", c)
+		return
+	}
+	if req.Role != "transmitter" && req.Role != "receiver" {
+		response.FailWithMessage("角色(role)必须是 transmitter 或 receiver", c)
+		return
+	}
+	if req.TimeoutSecs < 30 || req.TimeoutSecs > 3600 {
+		response.FailWithMessage("超时时间必须在30-3600秒之间", c)
+		return
+	}
+
+	// 获取当前用户信息
+	userUUID := utils.GetUserUuid(c)
+	if userUUID == uuid.Nil {
+		response.FailWithMessage("获取用户信息失败", c)
+		return
+	}
+
+	// 从JWT中获取用户名
+	claims := utils.GetUserInfo(c)
+	username := ""
+	if claims != nil {
+		username = claims.Username
+	}
+
+	// 从JWT中获取客户端ID
+	clientID := utils.GetClientIDFromJWT(c)
+	if clientID == "" {
+		response.FailWithMessage("无法获取客户端ID，请重新登录", c)
+		return
+	}
+
+	// 设置context
+	ctx := context.WithValue(context.Background(), "userID", userUUID)
+	ctx = context.WithValue(ctx, "clientID", clientID)
+	ctx = context.WithValue(ctx, "username", username)
+
+	// 调用服务层
+	result, err := nfcTransactionService.InitiateTransactionSession(ctx, req, userUUID, username)
+	if err != nil {
+		global.GVA_LOG.Error("发起交易会话失败",
+			zap.String("clientID", clientID),
+			zap.String("role", req.Role),
+			zap.String("username", username),
+			zap.Error(err))
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	global.GVA_LOG.Info("交易会话发起API调用成功",
+		zap.String("transactionID", result.TransactionID),
+		zap.String("clientID", clientID),
+		zap.String("role", req.Role),
+		zap.String("username", username))
+
+	response.OkWithDetailed(result, "发起交易会话成功", c)
+}
+
+// JoinTransactionSession 加入交易会话
+// @Tags NFCTransaction
+// @Summary 加入NFC中继交易会话
+// @Description 客户端加入一个已存在的交易会话
+// @Security ApiKeyAuth
+// @accept application/json
+// @Produce application/json
+// @Param data body request.JoinTransactionSessionRequest true "加入会话请求"
+// @Success 200 {object} response.Response{data=request.TransactionSessionResponse} "加入成功"
+// @Router /nfc-relay/transactions/sessions/join [post]
+func (a *NFCTransactionApi) JoinTransactionSession(c *gin.Context) {
+	var req request.JoinTransactionSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMessage("请求参数格式错误: "+err.Error(), c)
+		return
+	}
+
+	// 参数验证
+	if req.TransactionID == "" {
+		response.FailWithMessage("交易ID(transaction_id)不能为空", c)
+		return
+	}
+	if req.Role == "" {
+		response.FailWithMessage("角色(role)不能为空", c)
+		return
+	}
+	if req.Role != "transmitter" && req.Role != "receiver" {
+		response.FailWithMessage("角色(role)必须是 transmitter 或 receiver", c)
+		return
+	}
+
+	// 获取当前用户信息
+	userUUID := utils.GetUserUuid(c)
+	if userUUID == uuid.Nil {
+		response.FailWithMessage("获取用户信息失败", c)
+		return
+	}
+
+	// 从JWT中获取用户名
+	claims := utils.GetUserInfo(c)
+	username := ""
+	if claims != nil {
+		username = claims.Username
+	}
+
+	// 从JWT中获取客户端ID
+	clientID := utils.GetClientIDFromJWT(c)
+	if clientID == "" {
+		response.FailWithMessage("无法获取客户端ID，请重新登录", c)
+		return
+	}
+
+	// 设置context
+	ctx := context.WithValue(context.Background(), "userID", userUUID)
+	ctx = context.WithValue(ctx, "clientID", clientID)
+	ctx = context.WithValue(ctx, "username", username)
+
+	// 调用服务层
+	result, err := nfcTransactionService.JoinTransactionSession(ctx, req, userUUID, username)
+	if err != nil {
+		global.GVA_LOG.Error("加入交易会话失败",
+			zap.String("transactionID", req.TransactionID),
+			zap.String("clientID", clientID),
+			zap.String("role", req.Role),
+			zap.String("username", username),
+			zap.Error(err))
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	global.GVA_LOG.Info("交易会话加入API调用成功",
+		zap.String("transactionID", req.TransactionID),
+		zap.String("clientID", clientID),
+		zap.String("role", req.Role),
+		zap.String("username", username),
+		zap.String("newStatus", result.Status))
+
+	response.OkWithDetailed(result, "加入交易会话成功", c)
+}
+
+// GetTransactionSession 获取交易会话状态
+// @Tags NFCTransaction
+// @Summary 获取交易会话状态
+// @Description 获取指定交易会话的当前状态和配置信息
+// @Security ApiKeyAuth
+// @accept application/json
+// @Produce application/json
+// @Param transaction_id path string true "交易ID"
+// @Success 200 {object} response.Response{data=request.TransactionSessionResponse} "获取成功"
+// @Router /nfc-relay/transactions/sessions/{transaction_id} [get]
+func (a *NFCTransactionApi) GetTransactionSession(c *gin.Context) {
+	transactionID := c.Param("transaction_id")
+	if transactionID == "" {
+		response.FailWithMessage("交易ID不能为空", c)
+		return
+	}
+
+	// 获取当前用户信息
+	userUUID := utils.GetUserUuid(c)
+	if userUUID == uuid.Nil {
+		response.FailWithMessage("获取用户信息失败", c)
+		return
+	}
+
+	// 从JWT中获取客户端ID
+	clientID := utils.GetClientIDFromJWT(c)
+	if clientID == "" {
+		response.FailWithMessage("无法获取客户端ID，请重新登录", c)
+		return
+	}
+
+	// 调用服务层获取交易详情（重用现有方法）
+	getReq := request.GetTransactionRequest{
+		TransactionID: transactionID,
+		IncludeAPDU:   false, // 获取会话状态不需要APDU详情
+	}
+
+	ctx := context.WithValue(context.Background(), "userID", userUUID)
+	ctx = context.WithValue(ctx, "clientID", clientID)
+
+	transactionDetail, err := nfcTransactionService.GetTransaction(ctx, &getReq, userUUID)
+	if err != nil {
+		global.GVA_LOG.Error("获取交易会话失败",
+			zap.String("transactionID", transactionID),
+			zap.String("clientID", clientID),
+			zap.Error(err))
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	// 构建会话响应（从交易详情转换）
+	sessionResponse := request.TransactionSessionResponse{
+		TransactionID:       transactionDetail.TransactionID,
+		Status:              transactionDetail.Status,
+		TransmitterClientID: transactionDetail.TransmitterClientID,
+		ReceiverClientID:    transactionDetail.ReceiverClientID,
+		ExpiresAt:           transactionDetail.ExpiresAt.Unix(),
+		CreatedAt:           transactionDetail.CreatedAt.Unix(),
+		TopicConfig: request.TransactionTopicConfig{
+			TransmitterStateTopic:  transactionDetail.TransmitterStateTopic,
+			ReceiverStateTopic:     transactionDetail.ReceiverStateTopic,
+			APDUToTransmitterTopic: transactionDetail.APDUToTransmitterTopic,
+			APDUToReceiverTopic:    transactionDetail.APDUToReceiverTopic,
+			ControlTopic:           transactionDetail.ControlTopic,
+			HeartbeatTopic:         transactionDetail.HeartbeatTopic,
+		},
+	}
+
+	// 确定当前客户端的角色
+	if clientID == transactionDetail.TransmitterClientID {
+		sessionResponse.Role = "transmitter"
+		sessionResponse.PeerRole = "receiver"
+	} else if clientID == transactionDetail.ReceiverClientID {
+		sessionResponse.Role = "receiver"
+		sessionResponse.PeerRole = "transmitter"
+	} else {
+		response.FailWithMessage("您不是此交易的参与者", c)
+		return
+	}
+
+	response.OkWithDetailed(sessionResponse, "获取交易会话状态成功", c)
+}
