@@ -1,9 +1,12 @@
 package nfc_relay
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -655,33 +658,52 @@ func (s *MQTTService) HandleRoleRequestWebhook(c *gin.Context) {
 // HandleConnectionStatusWebhook 处理连接状态的Webhook
 func (s *MQTTService) HandleConnectionStatusWebhook(c *gin.Context) {
 	var req systemReq.MqttConnectionStatusRequest
+
+	// 预读请求体，以便在解析失败或事件未知时能记录原始数据
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		global.GVA_LOG.Error("读取MQTT Webhook请求体失败", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot read request body"})
+		return
+	}
+	// 重新填充请求体，以供ShouldBindJSON使用
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
 	if err := c.ShouldBindJSON(&req); err != nil {
-		global.GVA_LOG.Error("解析连接状态Webhook失败", zap.Error(err))
-		c.JSON(400, gin.H{"error": "bad request"})
+		// 如果解析失败，记录原始请求体以供调试
+		global.GVA_LOG.Error("解析MQTT Webhook连接状态请求失败",
+			zap.Error(err),
+			zap.String("rawBody", string(bodyBytes)),
+		)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	global.GVA_LOG.Info("收到MQTT连接状态Webhook",
+	global.GVA_LOG.Info("收到MQTT Webhook连接状态事件",
 		zap.String("event", req.Event),
 		zap.String("clientID", req.ClientID),
 		zap.String("username", req.Username),
 		zap.String("reason", req.Reason),
 	)
 
-	// 根据事件类型处理
 	switch req.Event {
-	case "client.connected":
+	case "client_connected":
 		s.handleClientConnected(req)
-	case "client.disconnected":
+	case "client_disconnected":
 		s.handleClientDisconnected(req)
 	default:
-		global.GVA_LOG.Warn("收到未知的Webhook事件类型", zap.String("event", req.Event))
+		// 增强日志: 对于未知或空事件，记录为错误级别并包含原始请求体
+		global.GVA_LOG.Error("收到未知或空的Webhook事件类型",
+			zap.String("event", req.Event),
+			zap.String("clientID", req.ClientID),
+			zap.String("rawBody", string(bodyBytes)),
+		)
 	}
 
-	c.JSON(200, gin.H{"message": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-// handleClientConnected 处理客户端连接
+// handleClientConnected 处理客户端连接事件
 func (s *MQTTService) handleClientConnected(req systemReq.MqttConnectionStatusRequest) {
 	ctx := context.Background()
 	global.GVA_LOG.Info("[Webhook] 开始处理客户端连接事件",
