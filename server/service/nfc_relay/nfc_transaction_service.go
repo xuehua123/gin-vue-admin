@@ -56,16 +56,28 @@ func (s *NFCTransactionService) RegisterForPairing(ctx context.Context, req *req
 		}
 		if !success {
 			// 槽位已被占据
+			occupyingClientID, _ := global.GVA_REDIS.Get(ctx, slotKey).Result()
+			global.GVA_LOG.Warn("配对角色冲突", zap.String("slotKey", slotKey), zap.String("requesterClientID", clientID), zap.String("occupyingClientID", occupyingClientID))
 			return "conflict", nil, nil
 		}
 	} else {
 		// 强制占据槽位
+		oldClientID, _ := global.GVA_REDIS.Get(ctx, slotKey).Result()
+		if oldClientID != "" {
+			global.GVA_LOG.Warn("配对角色被强制接管",
+				zap.String("slotKey", slotKey),
+				zap.String("evictedClientID", oldClientID),
+				zap.String("newClientID", clientID),
+			)
+		}
+
 		// TODO: 在此可以增加通知被挤下线的用户的逻辑
 		if err := global.GVA_REDIS.Set(ctx, slotKey, clientID, PairingSlotTTL).Err(); err != nil {
 			global.GVA_LOG.Error("Redis Set failed for pairing slot", zap.String("slotKey", slotKey), zap.Error(err))
 			return "error", nil, fmt.Errorf("服务器内部错误，请稍后重试")
 		}
 	}
+	global.GVA_LOG.Info("客户端已进入配对等待队列", zap.String("role", req.Role), zap.String("clientID", clientID))
 
 	// 2. 检查对方槽位是否已有人在等待
 	oppositeClientID, err := global.GVA_REDIS.Get(ctx, oppositeSlotKey).Result()
@@ -79,6 +91,11 @@ func (s *NFCTransactionService) RegisterForPairing(ctx context.Context, req *req
 	}
 
 	// 3. 匹配成功！
+	global.GVA_LOG.Info("配对成功，正在处理...",
+		zap.String("role", req.Role),
+		zap.String("selfClientID", clientID),
+		zap.String("peerClientID", oppositeClientID))
+
 	// 立即删除两个槽位的键，防止重复匹配
 	if err := global.GVA_REDIS.Del(ctx, slotKey, oppositeSlotKey).Err(); err != nil {
 		// 即使删除失败，也要继续尝试通知，但需要记录严重错误
@@ -102,6 +119,11 @@ func (s *NFCTransactionService) RegisterForPairing(ctx context.Context, req *req
 
 	// 异步通知双方
 	go func() {
+		global.GVA_LOG.Info("开始通过MQTT通知配对成功的双方",
+			zap.String("transactionID", transactionID),
+			zap.String("senderID", senderID),
+			zap.String("receiverID", receiverID),
+		)
 		mqttSvc := GetMQTTService() // 获取MQTT服务实例
 		payload := map[string]interface{}{
 			"type":           "pairing_success",

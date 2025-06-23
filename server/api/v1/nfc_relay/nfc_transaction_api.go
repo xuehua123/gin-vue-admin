@@ -49,6 +49,12 @@ func (a *NFCTransactionApi) RegisterForPairing(c *gin.Context) {
 
 	force := c.Query("force") == "true"
 
+	global.GVA_LOG.Info("收到配对请求",
+		zap.String("userID", userUUID.String()),
+		zap.String("role", req.Role),
+		zap.Bool("force", force),
+	)
+
 	ctx := context.Background() // 使用 Background context
 
 	status, data, err := nfcTransactionService.RegisterForPairing(ctx, &req, userUUID, force)
