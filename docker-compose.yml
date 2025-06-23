@@ -1,0 +1,99 @@
+version: '3.8'
+
+# GVA for 1panel deployment
+# Place this file in the root of your project directory on the server
+# e.g., /opt/apps/gin-vue-admin/docker-compose.yml
+
+networks:
+  gva-network:
+    driver: bridge
+
+volumes:
+  gva-mysql-data:
+  gva-redis-data:
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: gva-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Gva123456!
+      MYSQL_DATABASE: gin_vue_admin
+      MYSQL_USER: gva_user
+      MYSQL_PASSWORD: Gva123456!
+      TZ: Asia/Shanghai
+    volumes:
+      - gva-mysql-data:/var/lib/mysql
+    command: >
+      mysqld
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pGva123456!"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - gva-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: gva-redis
+    restart: unless-stopped
+    command: redis-server --requirepass "Gva123456!"
+    volumes:
+      - gva-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "Gva123456!", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gva-network
+
+  # 后端服务 (源码构建)
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      args:
+        # 使用国内代理加速
+        GOPROXY: https://goproxy.cn,direct
+    container_name: gva-backend
+    restart: unless-stopped
+    volumes:
+      # 挂载配置文件，确保 server/config.docker.yaml 文件存在
+      - ./server/config.docker.yaml:/go/src/github.com/flipped-aurora/gin-vue-admin/server/config.docker.yaml:ro
+      - ./server/log:/go/src/github.com/flipped-aurora/gin-vue-admin/server/log
+      - ./server/uploads:/go/src/github.com/flipped-aurora/gin-vue-admin/server/uploads
+    environment:
+      TZ: Asia/Shanghai
+      GIN_MODE: release
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gva-network
+
+  # 前端服务 (源码构建)
+  frontend:
+    build:
+      context: . 
+      dockerfile: web/Dockerfile
+      args:
+        # 使用国内镜像加速
+        NPM_REGISTRY: https://registry.npmmirror.com
+    container_name: gva-frontend
+    restart: unless-stopped
+    ports:
+      # 映射到 8080 端口，避免和 1panel 的端口冲突
+      - "8080:80" 
+    depends_on:
+      - backend
+    networks:
+      - gva-network 

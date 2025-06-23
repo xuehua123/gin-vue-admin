@@ -66,8 +66,10 @@ func (a *NFCTransactionApi) RegisterForPairing(c *gin.Context) {
 
 	switch status {
 	case "waiting":
+		global.GVA_LOG.Info("加入等待队列", zap.String("userID", userUUID.String()), zap.String("role", req.Role))
 		response.OkWithMessage("已将您加入等待队列，请等待匹配...", c)
 	case "matched":
+		global.GVA_LOG.Info("匹配成功", zap.String("userID", userUUID.String()), zap.Any("data", data))
 		// 使用 202 Accepted 表示服务器已接受请求，并在后台异步处理通知
 		c.JSON(http.StatusAccepted, response.Response{
 			Code: 0,
@@ -75,12 +77,14 @@ func (a *NFCTransactionApi) RegisterForPairing(c *gin.Context) {
 			Msg:  "匹配成功！请注意查收系统通知获取交易ID。",
 		})
 	case "conflict":
+		global.GVA_LOG.Warn("角色冲突", zap.String("userID", userUUID.String()), zap.String("role", req.Role))
 		// 使用 409 Conflict 表示请求冲突
 		c.JSON(http.StatusConflict, response.Response{
 			Code: 409,
 			Msg:  "角色已被占用，可尝试强制接管。",
 		})
 	default: // "error" or other cases
+		global.GVA_LOG.Error("配对失败，未知状态", zap.String("status", status), zap.String("userID", userUUID.String()))
 		response.FailWithMessage("配对失败，未知错误", c)
 	}
 }

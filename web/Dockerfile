@@ -11,11 +11,18 @@ ENV CI=true
 # 复制 package 文件
 COPY web/package*.json ./
 
-# 安装所有依赖（包括开发依赖，构建需要）
-RUN npm install && npm cache clean --force
+# 设置npm国内镜像源并安装依赖
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm install \
+    && npm cache clean --force
 
 # 复制源代码和环境配置
 COPY web/ .
+
+# 安装并运行循环依赖分析工具
+RUN npm install -g dpdm && \
+    dpdm ./src --circular --warning=false --exit-code=0 --no-tree > circular.log || true && \
+    cat circular.log
 
 # 设置生产环境用于构建
 ENV NODE_ENV=production

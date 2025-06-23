@@ -1,0 +1,46 @@
+# Git version control
+.git
+.gitignore
+.gitattributes
+
+# IDE settings
+.idea/
+.vscode/
+
+# Dependencies (these should be installed inside the container)
+**/node_modules
+server/vendor
+
+# Build artifacts (these will be generated inside the container)
+web/dist
+server/gin-vue-admin-server
+server/server.exe
+server/bin/
+*.exe
+
+# Logs and user data
+*.log
+log/
+uploads/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# Archives
+*.tar.gz
+*.zip
+*.rar
+
+# Local deployment/config files
+deploy_files/
+config_backups/
+1panel部署指南.md
+1panel部署指南(修正版).md
+*.sh
+*.bat
+README_TRANSACTION_SESSIONS.md
+deployment_check.md
+fix_deployment.txt 

@@ -23,6 +23,14 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	MQTTEventClientConnected    = "client.connected"
+	MQTTEventClientDisconnected = "client.disconnected"
+
+	RoleReceiver    = "receiver"
+	RoleTransmitter = "transmitter"
+)
+
 type MQTTService struct {
 	client      mqtt.Client
 	mu          sync.RWMutex
@@ -756,17 +764,20 @@ func (s *MQTTService) HandleConnectionStatusWebhook(c *gin.Context) {
 	)
 
 	switch req.Event {
-	case "client_connected":
+	case MQTTEventClientConnected:
 		s.handleClientConnected(req)
-	case "client_disconnected":
+	case MQTTEventClientDisconnected:
 		s.handleClientDisconnected(req)
 	default:
 		// 增强日志: 对于未知或空事件，记录为错误级别并包含原始请求体
-		global.GVA_LOG.Error("收到未知或空的Webhook事件类型",
+		global.GVA_LOG.Error("收到无法处理的Webhook事件类型",
 			zap.String("event", req.Event),
 			zap.String("clientID", req.ClientID),
 			zap.String("rawBody", string(bodyBytes)),
 		)
+		// 返回一个明确的错误码，而不是200 OK
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "message": "unknown event"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -791,12 +802,14 @@ func (s *MQTTService) handleClientConnected(req systemReq.MqttConnectionStatusRe
 
 	// 根据角色执行特定逻辑
 	switch role {
-	case "receiver":
+	case RoleReceiver:
 		s.handleReceiverConnected(ctx, req.ClientID)
-	case "transmitter":
+	case RoleTransmitter:
 		s.handleTransmitterConnected(ctx, req.ClientID)
 	default:
-		global.GVA_LOG.Info("客户端已连接，但没有特定角色", zap.String("clientID", req.ClientID), zap.String("role", role))
+		global.GVA_LOG.Info("客户端已连接，但没有特定角色或角色未知",
+			zap.String("clientID", req.ClientID),
+			zap.String("role", role))
 	}
 }
 

@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   gva-network:
     driver: bridge
@@ -90,6 +88,9 @@ services:
     build:
       context: ../server
       dockerfile: Dockerfile
+      args:
+        # 使用国内Go代理
+        GOPROXY: https://goproxy.cn,direct
     image: gin-vue-admin-backend:${TAG:-latest}
     container_name: gin-vue-admin-backend
     restart: unless-stopped
@@ -119,13 +120,15 @@ services:
       args:
         # 增加构建时的内存分配
         BUILDKIT_INLINE_CACHE: 1
+        # 使用国内npm镜像
+        NPM_REGISTRY: https://registry.npmmirror.com
     image: gin-vue-admin-frontend:${TAG:-latest}
     container_name: gin-vue-admin-frontend
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
     ports:
-      - "80:80"
+      - "8080:80"
     depends_on:
       - backend
     networks:

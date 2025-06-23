@@ -40,3 +40,4 @@ web/pnpm-lock.yaml
 *.db
 *.sqlite
 *.sqlite3
+/deploy_files/

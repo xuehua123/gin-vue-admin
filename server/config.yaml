@@ -125,11 +125,11 @@ mssql:
   log-zap: false
 mysql:
   prefix: ""
-  port: "23306"
+  port: "3306"
   config: charset=utf8mb4&parseTime=True&loc=Local
-  db-name: gva
+  db-name: gin_vue_admin
   username: root
-  password: xuehua123
+  password: Gva123456!
   path: 49.235.40.39
   engine: ""
   log-mode: error
@@ -202,15 +202,15 @@ qiniu:
   use-cdn-domains: false
 redis:
   name: nfc
-  addr: 49.235.40.39:26379
-  password: xuehua123
+  addr: 49.235.40.39:6379
+  password: "Gva123456!"
   db: 0
   useCluster: false
   clusterAddrs:
     - 172.21.0.3:7000
 redis-list:
   - name: cache
-    addr: 49.235.40.39:26379
+    addr: 49.235.40.39:6379
     password: xuehua123
     db: 0
     useCluster: false
@@ -251,7 +251,7 @@ tencent-cos:
   base-url: https://gin.vue.admin
   path-prefix: github.com/flipped-aurora/gin-vue-admin/server
 zap:
-  level: info
+  level: debug
   prefix: '[github.com/flipped-aurora/gin-vue-admin/server]'
   format: console
   director: log

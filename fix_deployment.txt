@@ -1,0 +1,70 @@
+# 🔧 修复部署问题 - 请在服务器上逐行执行
+
+# 1. 进入部署目录
+cd /opt/gin-vue-admin
+
+# 2. 修复脚本格式问题（转换换行符）
+sed -i 's/\r$//' start.sh
+
+# 3. 检查后端服务状态
+ps aux | grep server
+
+# 4. 创建nginx配置目录
+mkdir -p /etc/nginx/conf.d
+
+# 5. 手动创建nginx配置文件
+cat > /etc/nginx/conf.d/gin-vue-admin.conf << 'EOF'
+server {
+    listen 80;
+    server_name _;
+    
+    location / {
+        root /opt/gin-vue-admin/dist;
+        try_files $uri $uri/ /index.html;
+        index index.html;
+    }
+    
+    location /api/ {
+        proxy_pass http://127.0.0.1:8888/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+EOF
+
+# 6. 安装并启动nginx
+yum install -y nginx || apt-get update && apt-get install -y nginx
+
+# 7. 检查nginx配置
+nginx -t
+
+# 8. 启动nginx
+systemctl start nginx
+systemctl enable nginx
+
+# 9. 开放防火墙端口（根据系统选择）
+# CentOS/RHEL:
+firewall-cmd --zone=public --add-port=80/tcp --permanent
+firewall-cmd --reload
+
+# 或者 Ubuntu:
+# ufw allow 80
+
+# 10. 检查端口监听
+netstat -tlnp | grep :80
+
+# 11. 检查nginx状态
+systemctl status nginx
+
+# 12. 如果后端服务没启动，手动启动
+chmod +x ./server
+nohup ./server > server.log 2>&1 &
+
+# 13. 检查所有服务
+echo "=== 服务状态 ==="
+systemctl status nginx
+echo "=== 端口监听 ==="
+netstat -tlnp | grep -E ":80|:8888"
+echo "=== 进程状态 ==="
+ps aux | grep -E "nginx|server" 

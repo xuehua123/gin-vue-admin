@@ -41,37 +41,7 @@ export default ({ mode }) => {
       assetFileNames: 'assets/087AC4D233B64EB0[name].[hash].[ext]',
       manualChunks(id) {
         if (id.includes('node_modules')) {
-          // 将不同类型的依赖分别打包
-          if (id.includes('vue') || id.includes('@vue')) {
-            return 'vue-vendor'
-          }
-          // 单独处理pinia，避免和其他store模块混合
-          if (id.includes('pinia')) {
-            return 'pinia-vendor'
-          }
-          if (id.includes('element-plus') || id.includes('@element-plus')) {
-            return 'element-vendor'
-          }
-          if (id.includes('echarts') || id.includes('codemirror') || id.includes('monaco')) {
-            return 'editor-vendor'
-          }
-          // 其他依赖打包到通用 vendor
-          return 'common-vendor'
-        }
-        // 将pinia store模块保持在一起，避免循环依赖问题
-        if (id.includes('src/pinia/')) {
-          return 'pinia-stores'
-        }
-        // 对特定的大型组件或库进行代码分割
-        const largeComponents = [
-          'src/view/systemTools/richEdit/index.vue',
-          'src/view/systemTools/autoCode/previewCodeDialog.vue',
-          'src/components/selectImage/index.vue',
-          'src/view/systemTools/autoCode/index.vue',
-          'src/view/systemTools/formCreate/index.vue'
-        ]
-        if (largeComponents.some(comp => id.includes(comp))) {
-          return 'large-components'
+          return 'vendor'
         }
       }
     }
