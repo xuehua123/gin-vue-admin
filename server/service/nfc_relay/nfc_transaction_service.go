@@ -21,7 +21,115 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	PairingSenderSlotKey   = "nfc:pairing:sender"
+	PairingReceiverSlotKey = "nfc:pairing:receiver"
+	PairingSlotTTL         = 3 * time.Minute // 等待用户配对的有效期
+)
+
 type NFCTransactionService struct{}
+
+// RegisterForPairing handles the logic for client pairing.
+// It returns a status string ("waiting", "matched", "conflict", "error") and data.
+func (s *NFCTransactionService) RegisterForPairing(ctx context.Context, req *request.RegisterForPairingRequest, userID uuid.UUID, force bool) (string, map[string]interface{}, error) {
+	var slotKey string
+	var oppositeSlotKey string
+
+	if req.Role == "sender" {
+		slotKey = PairingSenderSlotKey
+		oppositeSlotKey = PairingReceiverSlotKey
+	} else {
+		slotKey = PairingReceiverSlotKey
+		oppositeSlotKey = PairingSenderSlotKey
+	}
+
+	clientID := userID.String()
+
+	// 1. 检查并占据自己的角色槽位
+	if !force {
+		// SetNX (Set if Not Exists)
+		// 尝试占据槽位，如果键已存在，则返回false
+		success, err := global.GVA_REDIS.SetNX(ctx, slotKey, clientID, PairingSlotTTL).Result()
+		if err != nil {
+			global.GVA_LOG.Error("Redis SetNX failed for pairing slot", zap.String("slotKey", slotKey), zap.Error(err))
+			return "error", nil, fmt.Errorf("服务器内部错误，请稍后重试")
+		}
+		if !success {
+			// 槽位已被占据
+			return "conflict", nil, nil
+		}
+	} else {
+		// 强制占据槽位
+		// TODO: 在此可以增加通知被挤下线的用户的逻辑
+		if err := global.GVA_REDIS.Set(ctx, slotKey, clientID, PairingSlotTTL).Err(); err != nil {
+			global.GVA_LOG.Error("Redis Set failed for pairing slot", zap.String("slotKey", slotKey), zap.Error(err))
+			return "error", nil, fmt.Errorf("服务器内部错误，请稍后重试")
+		}
+	}
+
+	// 2. 检查对方槽位是否已有人在等待
+	oppositeClientID, err := global.GVA_REDIS.Get(ctx, oppositeSlotKey).Result()
+	if err != nil {
+		if err.Error() == "redis: nil" { // "redis: nil" 表示键不存在
+			// 对方槽位无人，返回等待状态
+			return "waiting", nil, nil
+		}
+		global.GVA_LOG.Error("Redis Get failed for opposite pairing slot", zap.String("oppositeSlotKey", oppositeSlotKey), zap.Error(err))
+		return "error", nil, fmt.Errorf("服务器内部错误，请稍后重试")
+	}
+
+	// 3. 匹配成功！
+	// 立即删除两个槽位的键，防止重复匹配
+	if err := global.GVA_REDIS.Del(ctx, slotKey, oppositeSlotKey).Err(); err != nil {
+		// 即使删除失败，也要继续尝试通知，但需要记录严重错误
+		global.GVA_LOG.Error("Failed to delete pairing slots, potential for zombie match", zap.Error(err))
+	}
+
+	var senderID, receiverID string
+	if req.Role == "sender" {
+		senderID = clientID
+		receiverID = oppositeClientID
+	} else {
+		senderID = oppositeClientID
+		receiverID = clientID
+	}
+
+	// 生成交易ID
+	transactionID, err := s.generateTransactionID()
+	if err != nil {
+		return "error", nil, fmt.Errorf("无法生成交易ID")
+	}
+
+	// 异步通知双方
+	go func() {
+		mqttSvc := GetMQTTService() // 获取MQTT服务实例
+		payload := map[string]interface{}{
+			"type":           "pairing_success",
+			"transaction_id": transactionID,
+			"sender_id":      senderID,
+			"receiver_id":    receiverID,
+			"matched_at":     time.Now(),
+		}
+
+		// 通知发送者
+		if err := mqttSvc.PublishToClient(senderID, "system/notification", payload); err != nil {
+			global.GVA_LOG.Error("Failed to publish pairing success to sender", zap.Error(err), zap.String("clientID", senderID))
+		}
+		// 通知接收者
+		if err := mqttSvc.PublishToClient(receiverID, "system/notification", payload); err != nil {
+			global.GVA_LOG.Error("Failed to publish pairing success to receiver", zap.Error(err), zap.String("clientID", receiverID))
+		}
+	}()
+
+	// 返回匹配成功状态及信息
+	matchDetails := map[string]interface{}{
+		"transaction_id": transactionID,
+		"sender_id":      senderID,
+		"receiver_id":    receiverID,
+	}
+
+	return "matched", matchDetails, nil
+}
 
 // CreateTransaction 创建交易
 func (s *NFCTransactionService) CreateTransaction(ctx context.Context, req *request.CreateTransactionRequest, userID uuid.UUID) (*response.CreateTransactionResponse, error) {

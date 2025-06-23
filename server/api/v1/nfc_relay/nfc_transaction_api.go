@@ -2,6 +2,7 @@ package nfc_relay
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -18,6 +19,65 @@ import (
 type NFCTransactionApi struct{}
 
 var nfcTransactionService = nfc_relay.NFCTransactionService{}
+
+// RegisterForPairing handles client pairing requests.
+// @Tags NFCPairing
+// @Summary 请求自动配对
+// @Description 客户端（传卡端或收卡端）请求进行自动配对。
+// @Security ApiKeyAuth
+// @accept application/json
+// @Produce application/json
+// @Param data body request.RegisterForPairingRequest true "配对请求"
+// @Param force query bool false "是否强制接管现有会话" default(false)
+// @Success 200 {object} response.Response "等待中：已将您加入等待队列"
+// @Success 202 {object} response.Response "匹配成功"
+// @Failure 409 {object} response.Response "冲突：角色已被占用，可尝试强制接管"
+// @Failure 500 {object} response.Response "失败：服务器内部错误"
+// @Router /nfc-relay/pairing/register [post]
+func (a *NFCTransactionApi) RegisterForPairing(c *gin.Context) {
+	var req request.RegisterForPairingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	userUUID := utils.GetUserUuid(c)
+	if userUUID == uuid.Nil {
+		response.FailWithMessage("获取用户信息失败，请重新登录", c)
+		return
+	}
+
+	force := c.Query("force") == "true"
+
+	ctx := context.Background() // 使用 Background context
+
+	status, data, err := nfcTransactionService.RegisterForPairing(ctx, &req, userUUID, force)
+	if err != nil {
+		global.GVA_LOG.Error("配对服务失败", zap.Error(err), zap.String("userID", userUUID.String()))
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	switch status {
+	case "waiting":
+		response.OkWithMessage("已将您加入等待队列，请等待匹配...", c)
+	case "matched":
+		// 使用 202 Accepted 表示服务器已接受请求，并在后台异步处理通知
+		c.JSON(http.StatusAccepted, response.Response{
+			Code: 0,
+			Data: data,
+			Msg:  "匹配成功！请注意查收系统通知获取交易ID。",
+		})
+	case "conflict":
+		// 使用 409 Conflict 表示请求冲突
+		c.JSON(http.StatusConflict, response.Response{
+			Code: 409,
+			Msg:  "角色已被占用，可尝试强制接管。",
+		})
+	default: // "error" or other cases
+		response.FailWithMessage("配对失败，未知错误", c)
+	}
+}
 
 // CreateTransaction 创建交易
 // @Tags NFCTransaction

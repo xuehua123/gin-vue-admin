@@ -4331,6 +4331,70 @@
                 }
             }
         },
+        "/nfc-relay/pairing/register": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "客户端（传卡端或收卡端）请求进行自动配对。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCPairing"
+                ],
+                "summary": "请求自动配对",
+                "parameters": [
+                    {
+                        "description": "配对请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.RegisterForPairingRequest"
+                        }
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "是否强制接管现有会话",
+                        "name": "force",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "等待中：已将您加入等待队列",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "202": {
+                        "description": "匹配成功",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "冲突：角色已被占用，可尝试强制接管",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "失败：服务器内部错误",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/nfc-relay/transactions": {
             "get": {
                 "security": [
@@ -4757,6 +4821,157 @@
                         "description": "导出成功",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/sessions/initiate": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "客户端发起一个新的交易会话，等待对端加入",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "发起NFC中继交易会话",
+                "parameters": [
+                    {
+                        "description": "发起会话请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.InitiateTransactionSessionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "发起成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/request.TransactionSessionResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/sessions/join": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "客户端加入一个已存在的交易会话",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "加入NFC中继交易会话",
+                "parameters": [
+                    {
+                        "description": "加入会话请求",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.JoinTransactionSessionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "加入成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/request.TransactionSessionResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/nfc-relay/transactions/sessions/{transaction_id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "获取指定交易会话的当前状态和配置信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "NFCTransaction"
+                ],
+                "summary": "获取交易会话状态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "交易ID",
+                        "name": "transaction_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "获取成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/request.TransactionSessionResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -9822,6 +10037,101 @@
                 }
             }
         },
+        "request.InitiateTransactionSessionRequest": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "card_type": {
+                    "description": "卡片类型",
+                    "type": "string",
+                    "maxLength": 50,
+                    "example": "mifare_classic"
+                },
+                "description": {
+                    "description": "交易描述",
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "NFC卡片中继交易会话"
+                },
+                "device_info": {
+                    "description": "设备信息",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "\"os\"": "\"iOS 15.0\"}",
+                        "{\"model\"": "\"iPhone12\""
+                    }
+                },
+                "metadata": {
+                    "description": "扩展元数据",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "role": {
+                    "description": "当前客户端角色",
+                    "type": "string",
+                    "enum": [
+                        "transmitter",
+                        "receiver"
+                    ],
+                    "example": "transmitter"
+                },
+                "timeout_seconds": {
+                    "description": "会话超时时间(秒)",
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 30,
+                    "example": 300
+                }
+            }
+        },
+        "request.JoinTransactionSessionRequest": {
+            "type": "object",
+            "required": [
+                "role",
+                "transaction_id"
+            ],
+            "properties": {
+                "device_info": {
+                    "description": "设备信息",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "\"os\"": "\"Android 12\"}",
+                        "{\"model\"": "\"Samsung S21\""
+                    }
+                },
+                "metadata": {
+                    "description": "扩展元数据",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "role": {
+                    "description": "当前客户端角色",
+                    "type": "string",
+                    "enum": [
+                        "transmitter",
+                        "receiver"
+                    ],
+                    "example": "receiver"
+                },
+                "transaction_id": {
+                    "description": "交易会话ID",
+                    "type": "string",
+                    "example": "txn_uuid_123456"
+                }
+            }
+        },
         "request.Login": {
             "type": "object",
             "properties": {
@@ -9924,6 +10234,22 @@
                 "userName": {
                     "type": "string",
                     "example": "用户名"
+                }
+            }
+        },
+        "request.RegisterForPairingRequest": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "role": {
+                    "description": "Role of the client: \"sender\" or \"receiver\"",
+                    "type": "string",
+                    "enum": [
+                        "sender",
+                        "receiver"
+                    ]
                 }
             }
         },
@@ -10131,6 +10457,94 @@
                 "id": {
                     "description": "主键ID",
                     "type": "integer"
+                }
+            }
+        },
+        "request.TransactionSessionResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "创建时间戳",
+                    "type": "integer",
+                    "example": 1640991600
+                },
+                "expires_at": {
+                    "description": "会话过期时间戳",
+                    "type": "integer",
+                    "example": 1640995200
+                },
+                "peer_role": {
+                    "description": "对端角色",
+                    "type": "string",
+                    "example": "receiver"
+                },
+                "receiver_client_id": {
+                    "description": "收卡端客户端ID（如果已连接）",
+                    "type": "string",
+                    "example": "user-receiver-002"
+                },
+                "role": {
+                    "description": "当前客户端的角色",
+                    "type": "string",
+                    "example": "transmitter"
+                },
+                "status": {
+                    "description": "会话状态",
+                    "type": "string",
+                    "example": "waiting_for_peer"
+                },
+                "topic_config": {
+                    "description": "主题配置",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/request.TransactionTopicConfig"
+                        }
+                    ]
+                },
+                "transaction_id": {
+                    "description": "交易会话ID",
+                    "type": "string",
+                    "example": "txn_uuid_123456"
+                },
+                "transmitter_client_id": {
+                    "description": "传卡端客户端ID（如果已连接）",
+                    "type": "string",
+                    "example": "admin-transmitter-001"
+                }
+            }
+        },
+        "request.TransactionTopicConfig": {
+            "type": "object",
+            "properties": {
+                "apdu_to_receiver_topic": {
+                    "description": "发送到收卡端的APDU",
+                    "type": "string",
+                    "example": "nfc-relay/transactions/txn_123/apdu/to_receiver"
+                },
+                "apdu_to_transmitter_topic": {
+                    "description": "APDU消息主题",
+                    "type": "string",
+                    "example": "nfc-relay/transactions/txn_123/apdu/to_transmitter"
+                },
+                "control_topic": {
+                    "description": "控制主题",
+                    "type": "string",
+                    "example": "nfc-relay/transactions/txn_123/control"
+                },
+                "heartbeat_topic": {
+                    "description": "心跳主题",
+                    "type": "string",
+                    "example": "nfc-relay/transactions/txn_123/heartbeat"
+                },
+                "receiver_state_topic": {
+                    "description": "收卡端状态主题",
+                    "type": "string",
+                    "example": "nfc-relay/transactions/txn_123/receiver/state"
+                },
+                "transmitter_state_topic": {
+                    "description": "状态主题 - 客户端发布自己的状态，订阅对端状态",
+                    "type": "string",
+                    "example": "nfc-relay/transactions/txn_123/transmitter/state"
                 }
             }
         },
@@ -10919,6 +11333,12 @@
                         "$ref": "#/definitions/nfc_relay.NFCAPDUMessage"
                     }
                 },
+                "apdu_to_receiver_topic": {
+                    "type": "string"
+                },
+                "apdu_to_transmitter_topic": {
+                    "type": "string"
+                },
                 "average_response_time_ms": {
                     "type": "integer"
                 },
@@ -10927,6 +11347,9 @@
                     "type": "string"
                 },
                 "completed_at": {
+                    "type": "string"
+                },
+                "control_topic": {
                     "type": "string"
                 },
                 "createdAt": {
@@ -10950,11 +11373,17 @@
                 "expires_at": {
                     "type": "string"
                 },
+                "heartbeat_topic": {
+                    "type": "string"
+                },
                 "metadata": {
                     "description": "扩展信息",
                     "type": "object"
                 },
                 "receiver_client_id": {
+                    "type": "string"
+                },
+                "receiver_state_topic": {
                     "type": "string"
                 },
                 "started_at": {
@@ -10992,6 +11421,10 @@
                 },
                 "transmitter_client_id": {
                     "description": "客户端信息",
+                    "type": "string"
+                },
+                "transmitter_state_topic": {
+                    "description": "动态主题配置 - 新增字段",
                     "type": "string"
                 },
                 "updatedAt": {

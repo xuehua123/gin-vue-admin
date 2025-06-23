@@ -1512,6 +1512,77 @@ definitions:
     - adminPassword
     - dbName
     type: object
+  request.InitiateTransactionSessionRequest:
+    properties:
+      card_type:
+        description: 卡片类型
+        example: mifare_classic
+        maxLength: 50
+        type: string
+      description:
+        description: 交易描述
+        example: NFC卡片中继交易会话
+        maxLength: 500
+        type: string
+      device_info:
+        additionalProperties:
+          type: string
+        description: 设备信息
+        example:
+          '"os"': '"iOS 15.0"}'
+          '{"model"': '"iPhone12"'
+        type: object
+      metadata:
+        additionalProperties:
+          type: string
+        description: 扩展元数据
+        type: object
+      role:
+        description: 当前客户端角色
+        enum:
+        - transmitter
+        - receiver
+        example: transmitter
+        type: string
+      timeout_seconds:
+        description: 会话超时时间(秒)
+        example: 300
+        maximum: 3600
+        minimum: 30
+        type: integer
+    required:
+    - role
+    type: object
+  request.JoinTransactionSessionRequest:
+    properties:
+      device_info:
+        additionalProperties:
+          type: string
+        description: 设备信息
+        example:
+          '"os"': '"Android 12"}'
+          '{"model"': '"Samsung S21"'
+        type: object
+      metadata:
+        additionalProperties:
+          type: string
+        description: 扩展元数据
+        type: object
+      role:
+        description: 当前客户端角色
+        enum:
+        - transmitter
+        - receiver
+        example: receiver
+        type: string
+      transaction_id:
+        description: 交易会话ID
+        example: txn_uuid_123456
+        type: string
+    required:
+    - role
+    - transaction_id
+    type: object
   request.Login:
     properties:
       captcha:
@@ -1585,6 +1656,17 @@ definitions:
       userName:
         example: 用户名
         type: string
+    type: object
+  request.RegisterForPairingRequest:
+    properties:
+      role:
+        description: 'Role of the client: "sender" or "receiver"'
+        enum:
+        - sender
+        - receiver
+        type: string
+    required:
+    - role
     type: object
   request.RevokeMQTTTokenRequest:
     properties:
@@ -1735,6 +1817,72 @@ definitions:
       id:
         description: 主键ID
         type: integer
+    type: object
+  request.TransactionSessionResponse:
+    properties:
+      created_at:
+        description: 创建时间戳
+        example: 1640991600
+        type: integer
+      expires_at:
+        description: 会话过期时间戳
+        example: 1640995200
+        type: integer
+      peer_role:
+        description: 对端角色
+        example: receiver
+        type: string
+      receiver_client_id:
+        description: 收卡端客户端ID（如果已连接）
+        example: user-receiver-002
+        type: string
+      role:
+        description: 当前客户端的角色
+        example: transmitter
+        type: string
+      status:
+        description: 会话状态
+        example: waiting_for_peer
+        type: string
+      topic_config:
+        allOf:
+        - $ref: '#/definitions/request.TransactionTopicConfig'
+        description: 主题配置
+      transaction_id:
+        description: 交易会话ID
+        example: txn_uuid_123456
+        type: string
+      transmitter_client_id:
+        description: 传卡端客户端ID（如果已连接）
+        example: admin-transmitter-001
+        type: string
+    type: object
+  request.TransactionTopicConfig:
+    properties:
+      apdu_to_receiver_topic:
+        description: 发送到收卡端的APDU
+        example: nfc-relay/transactions/txn_123/apdu/to_receiver
+        type: string
+      apdu_to_transmitter_topic:
+        description: APDU消息主题
+        example: nfc-relay/transactions/txn_123/apdu/to_transmitter
+        type: string
+      control_topic:
+        description: 控制主题
+        example: nfc-relay/transactions/txn_123/control
+        type: string
+      heartbeat_topic:
+        description: 心跳主题
+        example: nfc-relay/transactions/txn_123/heartbeat
+        type: string
+      receiver_state_topic:
+        description: 收卡端状态主题
+        example: nfc-relay/transactions/txn_123/receiver/state
+        type: string
+      transmitter_state_topic:
+        description: 状态主题 - 客户端发布自己的状态，订阅对端状态
+        example: nfc-relay/transactions/txn_123/transmitter/state
+        type: string
     type: object
   request.UpdateTransactionStatusRequest:
     properties:
@@ -2282,12 +2430,18 @@ definitions:
         items:
           $ref: '#/definitions/nfc_relay.NFCAPDUMessage'
         type: array
+      apdu_to_receiver_topic:
+        type: string
+      apdu_to_transmitter_topic:
+        type: string
       average_response_time_ms:
         type: integer
       card_type:
         description: 业务信息
         type: string
       completed_at:
+        type: string
+      control_topic:
         type: string
       created_by:
         description: 用户信息
@@ -2304,10 +2458,14 @@ definitions:
         type: string
       expires_at:
         type: string
+      heartbeat_topic:
+        type: string
       metadata:
         description: 扩展信息
         type: object
       receiver_client_id:
+        type: string
+      receiver_state_topic:
         type: string
       started_at:
         description: 时间信息
@@ -2333,6 +2491,9 @@ definitions:
         type: string
       transmitter_client_id:
         description: 客户端信息
+        type: string
+      transmitter_state_topic:
+        description: 动态主题配置 - 新增字段
         type: string
       updated_by:
         type: string
@@ -5456,6 +5617,47 @@ paths:
       summary: 更新菜单
       tags:
       - Menu
+  /nfc-relay/pairing/register:
+    post:
+      consumes:
+      - application/json
+      description: 客户端（传卡端或收卡端）请求进行自动配对。
+      parameters:
+      - description: 配对请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.RegisterForPairingRequest'
+      - default: false
+        description: 是否强制接管现有会话
+        in: query
+        name: force
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 等待中：已将您加入等待队列
+          schema:
+            $ref: '#/definitions/response.Response'
+        "202":
+          description: 匹配成功
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: 冲突：角色已被占用，可尝试强制接管
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: 失败：服务器内部错误
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 请求自动配对
+      tags:
+      - NFCPairing
   /nfc-relay/transactions:
     get:
       consumes:
@@ -5781,6 +5983,92 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: 导出交易数据
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/sessions/{transaction_id}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定交易会话的当前状态和配置信息
+      parameters:
+      - description: 交易ID
+        in: path
+        name: transaction_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/request.TransactionSessionResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取交易会话状态
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/sessions/initiate:
+    post:
+      consumes:
+      - application/json
+      description: 客户端发起一个新的交易会话，等待对端加入
+      parameters:
+      - description: 发起会话请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.InitiateTransactionSessionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 发起成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/request.TransactionSessionResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 发起NFC中继交易会话
+      tags:
+      - NFCTransaction
+  /nfc-relay/transactions/sessions/join:
+    post:
+      consumes:
+      - application/json
+      description: 客户端加入一个已存在的交易会话
+      parameters:
+      - description: 加入会话请求
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/request.JoinTransactionSessionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 加入成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/request.TransactionSessionResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 加入NFC中继交易会话
       tags:
       - NFCTransaction
   /nfc-relay/transactions/statistics:

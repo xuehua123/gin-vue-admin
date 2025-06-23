@@ -194,3 +194,8 @@ type GetOnlineClientsRequest struct {
 	LastSeenFrom string `json:"last_seen_from" form:"last_seen_from" example:"2024-01-01 00:00:00"`           // 最后活跃时间范围(开始)
 	LastSeenTo   string `json:"last_seen_to" form:"last_seen_to" example:"2024-01-02 00:00:00"`               // 最后活跃时间范围(结束)
 }
+
+// RegisterForPairingRequest defines the request for pairing registration
+type RegisterForPairingRequest struct {
+	Role string `json:"role" binding:"required,oneof=sender receiver"` // Role of the client: "sender" or "receiver"
+}
