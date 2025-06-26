@@ -283,3 +283,48 @@ type ExportResponse struct {
 	DownloadURL string    `json:"download_url"` // 下载链接
 	ExpiresAt   time.Time `json:"expires_at"`   // 过期时间
 }
+
+// OccupyingDeviceInfo 占用设备信息
+type OccupyingDeviceInfo struct {
+	ClientID       string                 `json:"client_id"`       // 客户端ID
+	DeviceModel    string                 `json:"device_model"`    // 设备型号
+	OSVersion      string                 `json:"os_version"`      // 操作系统版本
+	UserAgent      string                 `json:"user_agent"`      // 用户代理
+	IPAddress      string                 `json:"ip_address"`      // IP地址
+	LastSeen       string                 `json:"last_seen"`       // 最后活跃时间
+	OccupiedSince  int64                  `json:"occupied_since"`  // 占用开始时间戳
+	OnlineDuration int64                  `json:"online_duration"` // 在线时长(秒)
+	DeviceInfo     map[string]interface{} `json:"device_info"`     // 扩展设备信息
+}
+
+// PairingConflictResponse 配对冲突响应
+type PairingConflictResponse struct {
+	ConflictRole        string              `json:"conflict_role"`         // 冲突的角色
+	ExistingClientID    string              `json:"existing_client_id"`    // 已存在的客户端ID
+	OccupyingDevice     OccupyingDeviceInfo `json:"occupying_device"`      // 占用设备信息
+	Message             string              `json:"message"`               // 冲突消息
+	AvailableActions    []string            `json:"available_actions"`     // 可用操作
+	SuggestedRetryAfter int                 `json:"suggested_retry_after"` // 建议重试时间(秒)
+}
+
+// PairingRegisterResponse defines the successful response for a pairing registration.
+type PairingRegisterResponse struct {
+	ClientID   string `json:"client_id"`
+	MqttToken  string `json:"mqtt_token"`
+	MqttServer string `json:"mqtt_server"`
+}
+
+// PairingConflictConstants 配对冲突常量
+const (
+	ErrorCodePairingRoleConflict = "PAIRING_ROLE_CONFLICT"
+	ErrorCodePairingTimeout      = "PAIRING_TIMEOUT"
+	ErrorCodePairingInvalidRole  = "PAIRING_INVALID_ROLE"
+
+	ErrorTypePairingConflict = "pairing_conflict"
+	ErrorTypePairingTimeout  = "pairing_timeout"
+	ErrorTypeValidation      = "validation_error"
+
+	ActionTypeForceTakeover = "force_takeover"
+	ActionTypeWaitRetry     = "wait_retry"
+	ActionTypeCancel        = "cancel"
+)

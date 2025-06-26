@@ -12,6 +12,9 @@ func (s *MqttRouter) InitMqttRouter(Router *gin.RouterGroup) {
 		// EMQX认证接口 - 使用现有的MqttAuthApi
 		mqttRouter.POST("auth", mqttAuthApi.Authenticate) // MQTT客户端认证
 		mqttRouter.POST("acl", mqttAuthApi.CheckACL)      // ACL权限检查
+
+		// 新增：EMQX WebHook事件处理接口
+		mqttRouter.POST("webhook", mqttAuthApi.WebHookEvent) // 处理客户端连接/断开事件
 	}
 
 	// MQTT Webhook路由 (使用现有的MqttWebhookApi)

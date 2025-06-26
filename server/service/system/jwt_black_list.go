@@ -1,7 +1,9 @@
 package system
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/system"
@@ -138,4 +140,41 @@ func LoadAll() {
 	// 	global.BlackCache.SetDefault(data[i], struct{}{})
 	// } // jwt黑名单 加入 BlackCache 中
 	global.GVA_LOG.Info("旧的JWT黑名单加载逻辑(LoadAll)已不再执行。")
+}
+
+// SetClientRole 将客户端的角色信息存储到Redis，以便Webhook可以查询
+func (jwtService *JwtService) SetClientRole(ctx context.Context, clientID string, role string, expiration time.Time) error {
+	key := fmt.Sprintf("mqtt:client:%s:role", clientID)
+	// 使用HSet存储角色和其他未来可能的信息，更具扩展性
+	err := global.GVA_REDIS.HSet(ctx, key, "role", role).Err()
+	if err != nil {
+		return err
+	}
+	// 设置key的过期时间
+	return global.GVA_REDIS.ExpireAt(ctx, key, expiration).Err()
+}
+
+// RevokeMQTTToken 撤销一个MQTT Token并清理其关联的角色信息
+func (jwtService *JwtService) RevokeMQTTToken(ctx context.Context, claims *request.CustomClaims, clientID string) error {
+	j := utils.NewJWT()
+	mqttClaims := &request.MQTTClaims{
+		UserID:   claims.GetUserID(),
+		ClientID: clientID,
+	}
+
+	// 1. 撤销JWT本身
+	if err := j.RevokeMQTTJWT(mqttClaims); err != nil {
+		global.GVA_LOG.Error("在service层撤销MQTT JWT失败", zap.Error(err), zap.String("clientID", clientID))
+		return err
+	}
+
+	// 2. 清理角色信息
+	roleKey := fmt.Sprintf("mqtt:client:%s:role", clientID)
+	if err := global.GVA_REDIS.Del(ctx, roleKey).Err(); err != nil {
+		// 即使清理角色失败，主撤销逻辑已成功，所以只记录错误
+		global.GVA_LOG.Error("清理MQTT客户端角色键失败", zap.Error(err), zap.String("key", roleKey))
+	}
+
+	global.GVA_LOG.Info("MQTT Token及关联角色已在service层成功撤销", zap.String("clientID", clientID))
+	return nil
 }

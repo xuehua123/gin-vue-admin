@@ -197,5 +197,11 @@ type GetOnlineClientsRequest struct {
 
 // RegisterForPairingRequest defines the request for pairing registration
 type RegisterForPairingRequest struct {
-	Role string `json:"role" binding:"required,oneof=sender receiver"` // Role of the client: "sender" or "receiver"
+	Role     string `json:"role" binding:"required,oneof=transmitter receiver"` // Role of the client: "transmitter" or "receiver"
+	ClientID string `json:"client_id,omitempty"`                                // 客户端主动上报的ClientID（可选，用于连接复用场景）
+}
+
+// PairingStatusRequest represents the request for checking pairing status
+type PairingStatusRequest struct {
+	// ... existing code ...
 }

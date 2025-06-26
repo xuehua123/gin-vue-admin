@@ -5,7 +5,7 @@
 ## 用途：安全卡片中继系统远程MQTT Broker配置
 ## 作者：NFC Relay System Team
 ## 版本：1.0.0
-## 远程EMQX地址：http://49.235.40.39/
+## 远程EMQX地址：http://192.168.50.194/
 ##--------------------------------------------------------------------
 
 set -e
@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # 远程EMQX配置
-EMQX_HOST="49.235.40.39"
+EMQX_HOST="192.168.50.194"
 EMQX_HTTP_PORT="18083"
 EMQX_MQTT_PORT="1883"
 EMQX_MQTTS_PORT="8883"

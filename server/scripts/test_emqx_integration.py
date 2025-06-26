@@ -15,8 +15,8 @@ import base64
 
 # 配置信息
 SERVER_BASE = "http://43.165.186.134:8888"
-EMQX_HOST = "49.235.40.39"
-EMQX_DASHBOARD = "http://49.235.40.39:18083"
+EMQX_HOST = "192.168.50.194"
+EMQX_DASHBOARD = "http://192.168.50.194:18083"
 EMQX_PORTS = {
     "tcp": 1883,
     "ssl": 8883,

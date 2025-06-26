@@ -27,7 +27,7 @@
 
 #### 步骤1: 验证EMQX API连接
 ```bash
-curl -X POST "http://49.235.40.39:18083/api/v5/login" \
+curl -X POST "http://192.168.50.194:18083/api/v5/login" \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "xuehua123"}'
 ```
@@ -36,14 +36,14 @@ curl -X POST "http://49.235.40.39:18083/api/v5/login" \
 #### 步骤2: 测试客户端断开API
 ```bash
 # 使用步骤1获得的token
-curl -X DELETE "http://49.235.40.39:18083/api/v5/clients/test-client-123" \
+curl -X DELETE "http://192.168.50.194:18083/api/v5/clients/test-client-123" \
   -H "Authorization: Bearer {TOKEN}"
 ```
 预期结果: 返回200/204状态码（客户端不存在时返回404也正常）
 
 #### 步骤3: 获取当前连接客户端列表
 ```bash
-curl -X GET "http://49.235.40.39:18083/api/v5/clients" \
+curl -X GET "http://192.168.50.194:18083/api/v5/clients" \
   -H "Authorization: Bearer {TOKEN}"
 ```
 预期结果: 返回当前连接的客户端列表
@@ -57,7 +57,7 @@ curl -X GET "http://49.235.40.39:18083/api/v5/clients" \
 #### 测试流程
 1. **设备A获取角色**:
    ```bash
-   curl -X POST "http://49.235.40.39:8888/role/generateMQTTToken" \
+   curl -X POST "http://192.168.50.194:8888/role/generateMQTTToken" \
      -H "x-token: {SERVER_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{
@@ -73,7 +73,7 @@ curl -X GET "http://49.235.40.39:18083/api/v5/clients" \
 
 3. **设备B强制获取角色**:
    ```bash
-   curl -X POST "http://49.235.40.39:8888/role/generateMQTTToken" \
+   curl -X POST "http://192.168.50.194:8888/role/generateMQTTToken" \
      -H "x-token: {SERVER_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{

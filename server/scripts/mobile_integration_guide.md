@@ -112,7 +112,7 @@ class MQTTTokenResponse {
 
 ### **连接参数**
 
--   **Host**: `49.235.40.39`
+-   **Host**: `192.168.50.194`
 -   **Port**: `1883` (TCP), `8083` (WebSocket)
 -   **ClientID**: 使用从 `/role/generateMQTTToken` 获取的 `client_id`。
 -   **Username**: 与 `ClientID` **相同**。

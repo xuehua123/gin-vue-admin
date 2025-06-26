@@ -1,11 +1,11 @@
 {
   "emqx_info": {
-    "host": "49.235.40.39",
-    "dashboard_url": "http://49.235.40.39:18083",
-    "mqtt_tcp": "mqtt://49.235.40.39:1883",
-    "mqtt_ssl": "mqtts://49.235.40.39:8883",
-    "websocket": "ws://49.235.40.39:8083",
-    "websocket_ssl": "wss://49.235.40.39:8084"
+    "host": "192.168.50.194",
+    "dashboard_url": "http://192.168.50.194:18083",
+    "mqtt_tcp": "mqtt://192.168.50.194:1883",
+    "mqtt_ssl": "mqtts://192.168.50.194:8883",
+    "websocket": "ws://192.168.50.194:8083",
+    "websocket_ssl": "wss://192.168.50.194:8084"
   },
   "credentials": {
     "dashboard_username": "admin",

@@ -1,6 +1,6 @@
 param([string]$Action = "setup")
 
-$EmqxHost = "49.235.40.39"
+$EmqxHost = "192.168.50.194"
 $Port = "18083"
 $Url = "http://$EmqxHost`:$Port"
 $User = "admin"

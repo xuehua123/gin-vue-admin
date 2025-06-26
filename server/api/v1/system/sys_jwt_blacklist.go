@@ -94,6 +94,17 @@ func (jwtApi *JwtApi) GenerateMQTTToken(c *gin.Context) {
 		return
 	}
 
+	/*
+		// 存储客户端角色到Redis，以便Webhook可以查询 (此步骤已通过无状态ACL优化，不再需要)
+		err = jwtService.SetClientRole(c, mqttClaims.ClientID, req.Role, mqttClaims.ExpiresAt.Time)
+		if err != nil {
+			global.GVA_LOG.Error("存储客户端角色到Redis失败", zap.Error(err), zap.String("clientID", mqttClaims.ClientID))
+			// 存储角色是关键步骤，如果失败，应该阻止Token下发，避免后续逻辑错误
+			response.FailWithMessage("存储客户端角色失败，无法生成Token", c)
+			return
+		}
+	*/
+
 	resp := response.MQTTTokenResponse{
 		Token:     mqttToken,
 		ClientID:  mqttClaims.ClientID,
@@ -135,17 +146,10 @@ func (jwtApi *JwtApi) RevokeMQTTToken(c *gin.Context) {
 		return
 	}
 
-	jwt := utils.NewJWT()
-
-	// 构造MQTT Claims用于撤销（只需要关键字段）
-	mqttClaims := request.MQTTClaims{
-		UserID:   claims.GetUserID(),
-		ClientID: req.ClientID,
-	}
-
-	err = jwt.RevokeMQTTJWT(&mqttClaims)
+	// 调用新的、更全面的Service层方法
+	err = jwtService.RevokeMQTTToken(c, claims, req.ClientID)
 	if err != nil {
-		global.GVA_LOG.Error("撤销MQTT Token失败", zap.Error(err))
+		global.GVA_LOG.Error("撤销MQTT Token失败", zap.Error(err), zap.String("clientID", req.ClientID))
 		response.FailWithMessage("撤销MQTT Token失败", c)
 		return
 	}

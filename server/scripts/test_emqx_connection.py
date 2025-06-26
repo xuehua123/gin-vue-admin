@@ -14,7 +14,7 @@ from typing import Dict, Any
 
 # 远程EMQX配置
 EMQX_CONFIG = {
-    "host": "49.235.40.39",
+    "host": "192.168.50.194",
     "dashboard_port": 18083,
     "mqtt_port": 1883,
     "username": "admin",

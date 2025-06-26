@@ -34,8 +34,8 @@ python scripts/test_emqx_connection.py
 
 ## 远程EMQX实例信息
 
-- **地址**: 49.235.40.39
-- **Dashboard**: http://49.235.40.39:18083
+- **地址**: 192.168.50.194
+- **Dashboard**: http://192.168.50.194:18083
 - **用户名**: admin  
 - **密码**: xuehua123
 - **MQTT端口**: 1883 (TCP), 8883 (SSL)

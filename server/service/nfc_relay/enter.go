@@ -1,6 +1,7 @@
 package nfc_relay
 
 type ServiceGroup struct {
-	NFCTransactionService
-	MQTTService
+	TransactionService NFCTransactionService
+	MqttService        MqttService
+	PairingPoolService PairingPoolService
 }

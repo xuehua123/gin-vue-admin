@@ -1,11 +1,12 @@
 package internal
 
 import (
+	"os"
+	"time"
+
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"os"
-	"time"
 )
 
 type ZapCore struct {

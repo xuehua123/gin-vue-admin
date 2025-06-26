@@ -2,17 +2,19 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
+
 	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
+	"github.com/flipped-aurora/gin-vue-admin/server/model/common"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/system/request"
 	"github.com/gin-gonic/gin"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -351,74 +353,40 @@ func (j *JWT) GenerateMQTTClientID(username, role string, sequence int) string {
 	return fmt.Sprintf("%s-%s-%03d", username, role, sequence)
 }
 
-// GetNextMQTTSequence 获取用户指定角色的下一个序号
+// GetNextMQTTSequence 使用Redis的INCR命令以原子方式获取下一个MQTT序列号
+// 这是一个高性能、高并发安全的实现，取代了旧的SCAN...LOOP...MAX模式
 func (j *JWT) GetNextMQTTSequence(userID, username, role string) (int, error) {
 	ctx := context.Background()
+	// 为每个用户和角色组合定义一个独立的计数器
+	counterKey := fmt.Sprintf("mqtt:seq:%s:%s", userID, role)
 
-	// 查找当前用户的所有活跃MQTT连接
-	pattern := fmt.Sprintf("mqtt:active:%s:*", userID)
-	keys, err := global.GVA_REDIS.Keys(ctx, pattern).Result()
+	// 使用INCR原子地增加计数器并获取新值
+	seq, err := global.GVA_REDIS.Incr(ctx, counterKey).Result()
 	if err != nil {
-		global.GVA_LOG.Error("查询用户活跃MQTT连接失败", zap.Error(err), zap.String("pattern", pattern))
-		return 1, err // 如果查询失败，返回序号1
+		global.GVA_LOG.Error("获取MQTT序列号失败 (INCR)",
+			zap.Error(err),
+			zap.String("counterKey", counterKey),
+			zap.String("userID", userID),
+			zap.String("role", role),
+		)
+		return 0, fmt.Errorf("无法生成MQTT序列号: %w", err)
 	}
 
-	global.GVA_LOG.Debug("查找用户活跃MQTT连接",
-		zap.String("userID", userID),
-		zap.String("username", username),
-		zap.String("role", role),
-		zap.String("pattern", pattern),
-		zap.Strings("keys", keys))
-
-	// 找到当前角色的最大序号
-	maxSequence := 0
-	expectedPrefix := fmt.Sprintf("%s-%s-", username, role)
-
-	for _, key := range keys {
-		// 获取clientID（存储在Redis value中）
-		clientID, err := global.GVA_REDIS.Get(ctx, key).Result()
-		if err != nil {
-			global.GVA_LOG.Debug("获取clientID失败", zap.String("key", key), zap.Error(err))
-			continue // 跳过无效的key
-		}
-
-		global.GVA_LOG.Debug("检查clientID",
-			zap.String("key", key),
-			zap.String("clientID", clientID),
-			zap.String("expectedPrefix", expectedPrefix))
-
-		// 解析clientID格式：username-role-sequence
-		// 只处理匹配当前角色的clientID
-		if strings.HasPrefix(clientID, expectedPrefix) {
-			// 提取序号部分
-			seqStr := strings.TrimPrefix(clientID, expectedPrefix)
-			if seq, err := strconv.Atoi(seqStr); err == nil {
-				global.GVA_LOG.Debug("找到匹配的序号",
-					zap.String("clientID", clientID),
-					zap.String("seqStr", seqStr),
-					zap.Int("seq", seq),
-					zap.Int("currentMax", maxSequence))
-				if seq > maxSequence {
-					maxSequence = seq
-				}
-			} else {
-				global.GVA_LOG.Debug("序号解析失败", zap.String("seqStr", seqStr), zap.Error(err))
-			}
-		}
+	// 可选：设置一个合理的过期时间，例如7天，防止计数器永久存在
+	// 这有助于清理那些不再活跃用户的计数器
+	expiration := 7 * 24 * time.Hour
+	if err := global.GVA_REDIS.Expire(ctx, counterKey, expiration).Err(); err != nil {
+		// 这里只记录警告，因为即使设置过期失败，序列号也已经成功获取
+		global.GVA_LOG.Warn("为MQTT序列号计数器设置过期时间失败",
+			zap.Error(err),
+			zap.String("counterKey", counterKey),
+		)
 	}
 
-	nextSequence := maxSequence + 1
-	global.GVA_LOG.Info("MQTT序号生成完成",
-		zap.String("userID", userID),
-		zap.String("username", username),
-		zap.String("role", role),
-		zap.Int("maxSequence", maxSequence),
-		zap.Int("nextSequence", nextSequence))
-
-	return nextSequence, nil
+	return int(seq), nil
 }
 
-// CreateMQTTClaims 创建MQTT专用JWT声明
+// CreateMQTTClaims 创建MQTT JWT的声明
 func (j *JWT) CreateMQTTClaims(userID, username, role string) (request.MQTTClaims, error) {
 	// 获取下一个序号
 	sequence, err := j.GetNextMQTTSequence(userID, username, role)
@@ -472,6 +440,21 @@ func (j *JWT) CreateMQTTToken(claims request.MQTTClaims) (string, error) {
 		return "", fmt.Errorf("存储MQTT JWT状态失败: %w", err)
 	}
 
+	// 存储 clientID -> role 的映射
+	err = j.StoreMQTTRoleByClaims(&claims)
+	if err != nil {
+		global.GVA_LOG.Error("存储MQTT角色到Redis失败", zap.Error(err))
+		return "", fmt.Errorf("存储MQTT角色状态失败: %w", err)
+	}
+
+	// 存储 clientID -> [activeKey, roleKey] 的反向引用，用于高效清理
+	if err := j.StoreMQTTClientRefByClaims(&claims); err != nil {
+		global.GVA_LOG.Error("存储MQTT客户端引用失败", zap.Error(err))
+		// 这是一个重要的辅助功能，失败时应该记录错误但不需要中断主流程
+		// 但为了健壮性，这里也返回错误
+		return "", fmt.Errorf("存储MQTT客户端引用失败: %w", err)
+	}
+
 	global.GVA_LOG.Info("MQTT JWT创建成功并已存储",
 		zap.String("userID", claims.GetUserID()),
 		zap.String("clientID", claims.GetClientID()),
@@ -514,29 +497,187 @@ func (j *JWT) ParseMQTTToken(tokenString string) (*request.MQTTClaims, error) {
 
 // StoreMQTTActiveJWT 存储活跃的MQTT JWT到Redis
 func (j *JWT) StoreMQTTActiveJWT(claims *request.MQTTClaims) error {
+	userID := claims.UserID
+	jti := claims.ID
+	clientID := claims.ClientID
+
+	if userID == "" || jti == "" || clientID == "" {
+		return TokenClaimsInvalid
+	}
+
+	redisKey := fmt.Sprintf("mqtt:active:%s:%s", userID, jti)
+	// 计算正确的过期时间，与JWT的生命周期保持一致
+	expiration := time.Unix(claims.ExpiresAt.Unix(), 0).Sub(time.Now())
+	// 确保至少有1秒的过期时间
+	if expiration < time.Second {
+		expiration = time.Second
+	}
+
+	err := global.GVA_REDIS.Set(context.Background(), redisKey, clientID, expiration).Err()
+	if err != nil {
+		global.GVA_LOG.Error("存储MQTT active状态失败",
+			zap.Error(err),
+			zap.String("redisKey", redisKey),
+			zap.String("clientID", clientID))
+		return err
+	}
+	global.GVA_LOG.Debug("MQTT active状态已存储",
+		zap.String("redisKey", redisKey),
+		zap.String("clientID", clientID),
+		zap.Duration("expiration", expiration))
+	return nil
+}
+
+// StoreMQTTRoleByClaims stores the role of an MQTT client in Redis.
+// The key is mqtt:role:<clientID> and the value is the role.
+// The expiration of the key is aligned with the JWT's expiration.
+func (j *JWT) StoreMQTTRoleByClaims(claims *request.MQTTClaims) error {
 	if !claims.IsValid() {
 		return TokenClaimsInvalid
 	}
-	ctx := context.Background()
-	redisKey := fmt.Sprintf("mqtt:active:%s:%s", claims.GetUserID(), claims.GetJTI())
-	expiration := time.Unix(claims.ExpiresAt.Unix(), 0).Sub(time.Now())
 
-	err := global.GVA_REDIS.Set(ctx, redisKey, claims.GetClientID(), expiration).Err()
+	clientID := claims.ClientID
+	role := claims.Role
+	if clientID == "" || role == "" {
+		return errors.New("clientID and role cannot be empty")
+	}
+
+	redisKey := common.RedisMqttRoleKeyPrefix + clientID
+	expiration := time.Until(claims.ExpiresAt.Time)
+
+	err := global.GVA_REDIS.Set(context.Background(), redisKey, role, expiration).Err()
 	if err != nil {
-		global.GVA_LOG.Error("存储MQTT active状态失败", zap.Error(err), zap.String("key", redisKey))
+		global.GVA_LOG.Error("Failed to store MQTT client role in Redis",
+			zap.Error(err),
+			zap.String("redisKey", redisKey),
+			zap.String("role", role),
+			zap.String("clientID", clientID))
 		return err
 	}
+
+	global.GVA_LOG.Debug("Successfully stored MQTT client role in Redis",
+		zap.String("redisKey", redisKey),
+		zap.String("role", role),
+		zap.String("clientID", clientID),
+		zap.Duration("expiration", expiration))
+
 	return nil
+}
+
+// StoreMQTTClientRefByClaims stores a reference from clientID to its associated Redis keys.
+// This is crucial for efficient cleanup when a client disconnects.
+func (j *JWT) StoreMQTTClientRefByClaims(claims *request.MQTTClaims) error {
+	if !claims.IsValid() {
+		return TokenClaimsInvalid
+	}
+
+	clientID := claims.ClientID
+	if clientID == "" {
+		return errors.New("clientID cannot be empty")
+	}
+
+	// Define the keys that are associated with this clientID
+	activeKey := fmt.Sprintf("mqtt:active:%s:%s", claims.UserID, claims.ID)
+	roleKey := common.RedisMqttRoleKeyPrefix + clientID
+
+	// Create a struct for the reference data for easy JSON marshalling
+	refData := struct {
+		ActiveKey string `json:"activeKey"`
+		RoleKey   string `json:"roleKey"`
+	}{
+		ActiveKey: activeKey,
+		RoleKey:   roleKey,
+	}
+
+	refDataJSON, err := json.Marshal(refData)
+	if err != nil {
+		global.GVA_LOG.Error("Failed to marshal MQTT client reference data",
+			zap.Error(err),
+			zap.String("clientID", clientID))
+		return err
+	}
+
+	// Define the reference key itself
+	refKey := "mqtt:client_ref:" + clientID
+	expiration := time.Until(claims.ExpiresAt.Time)
+
+	// Ensure at least 1 second expiration
+	if expiration < time.Second {
+		expiration = time.Second
+	}
+
+	err = global.GVA_REDIS.Set(context.Background(), refKey, refDataJSON, expiration).Err()
+	if err != nil {
+		global.GVA_LOG.Error("Failed to store MQTT client reference in Redis",
+			zap.Error(err),
+			zap.String("refKey", refKey),
+			zap.String("clientID", clientID))
+		return err
+	}
+
+	global.GVA_LOG.Debug("Successfully stored MQTT client reference in Redis",
+		zap.String("refKey", refKey),
+		zap.String("clientID", clientID),
+		zap.Duration("expiration", expiration))
+
+	return nil
+}
+
+// IsClientIDActive 检查指定的ClientID是否有活跃的JWT记录
+// 用于验证客户端上报的ClientID的有效性
+func (j *JWT) IsClientIDActive(clientID string) bool {
+	if clientID == "" {
+		return false
+	}
+
+	// 通过客户端引用获取相关的Redis键
+	refKey := "mqtt:client_ref:" + clientID
+	refDataJSON, err := global.GVA_REDIS.Get(context.Background(), refKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			// 客户端引用不存在，说明没有活跃的JWT
+			return false
+		}
+		global.GVA_LOG.Error("检查ClientID活跃状态时Redis查询失败",
+			zap.Error(err),
+			zap.String("clientID", clientID))
+		return false
+	}
+
+	// 解析引用数据
+	var refData struct {
+		ActiveKey string `json:"activeKey"`
+		RoleKey   string `json:"roleKey"`
+	}
+	if err := json.Unmarshal([]byte(refDataJSON), &refData); err != nil {
+		global.GVA_LOG.Error("解析ClientID引用数据失败",
+			zap.Error(err),
+			zap.String("clientID", clientID))
+		return false
+	}
+
+	// 检查活跃键是否存在
+	exists, err := global.GVA_REDIS.Exists(context.Background(), refData.ActiveKey).Result()
+	if err != nil {
+		global.GVA_LOG.Error("检查JWT活跃状态时Redis查询失败",
+			zap.Error(err),
+			zap.String("clientID", clientID),
+			zap.String("activeKey", refData.ActiveKey))
+		return false
+	}
+
+	isActive := exists > 0
+	global.GVA_LOG.Debug("ClientID活跃状态检查完成",
+		zap.String("clientID", clientID),
+		zap.Bool("isActive", isActive))
+
+	return isActive
 }
 
 // IsMQTTJWTActive 检查MQTT JWT是否处于活跃状态
 func (j *JWT) IsMQTTJWTActive(claims *request.MQTTClaims) (bool, error) {
-	if !claims.IsValid() {
-		return false, TokenClaimsInvalid
-	}
-	ctx := context.Background()
-	redisKey := fmt.Sprintf("mqtt:active:%s:%s", claims.GetUserID(), claims.GetJTI())
-	storedClientID, err := global.GVA_REDIS.Get(ctx, redisKey).Result()
+	redisKey := fmt.Sprintf("mqtt:active:%s:%s", claims.UserID, claims.ID)
+	storedClientID, err := global.GVA_REDIS.Get(context.Background(), redisKey).Result()
 	if err != nil {
 		if err.Error() == "redis: nil" {
 			return false, TokenNotActive

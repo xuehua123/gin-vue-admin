@@ -68,7 +68,9 @@ func (r *NFCTransactionRouter) InitNFCTransactionRouter(Router *gin.RouterGroup,
 		nfcTransactionRouter.GET("/transactions/sessions/:transaction_id", nfcTransactionApi.GetTransactionSession) // 获取会话状态
 
 		// 智能配对路由
-		nfcTransactionRouter.POST("pairing/register", nfcTransactionApi.RegisterForPairing)
+		nfcTransactionRouter.POST("pairing/register", nfcTransactionApi.RegisterForPairing) // 注册配对
+		nfcTransactionRouter.DELETE("pairing/cancel", nfcTransactionApi.CancelPairing)      // 取消配对
+		nfcTransactionRouter.GET("pairing/status", nfcTransactionApi.GetPairingStatus)      // 获取配对状态
 	}
 
 	// 公开路由（用于系统集成）

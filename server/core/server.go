@@ -2,11 +2,12 @@ package core
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/initialize"
 	"github.com/flipped-aurora/gin-vue-admin/server/service/system"
 	"go.uber.org/zap"
-	"time"
 )
 
 func RunServer() {
@@ -43,7 +44,7 @@ func RunServer() {
 	默认自动化文档地址:http://127.0.0.1%s/swagger/index.html
 	默认MCP SSE地址:http://127.0.0.1%s%s
 	默认MCP Message地址:http://127.0.0.1%s%s
-	默认前端文件运行地址:http://127.0.0.1:8080
+	11111111111111111111111默认前端文件运行地址:http://127.0.0.1:8080
 	--------------------------------------版权声明--------------------------------------
 	** 版权所有方：flipped-aurora开源团队 **
 	** 版权持有公司：北京翻转极光科技有限责任公司 **

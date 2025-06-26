@@ -2,14 +2,18 @@ package nfc_relay
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/common/response"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay/request"
-	"github.com/flipped-aurora/gin-vue-admin/server/service/nfc_relay"
+	nfcreq "github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay/request"
+	nfcres "github.com/flipped-aurora/gin-vue-admin/server/model/nfc_relay/response"
+	"github.com/flipped-aurora/gin-vue-admin/server/service"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -18,7 +22,10 @@ import (
 
 type NFCTransactionApi struct{}
 
-var nfcTransactionService = nfc_relay.NFCTransactionService{}
+var (
+	nfcTransactionService = service.ServiceGroupApp.NFCRelayServiceGroup.TransactionService
+	mqttService           = service.ServiceGroupApp.NFCRelayServiceGroup.MqttService
+)
 
 // RegisterForPairing handles client pairing requests.
 // @Tags NFCPairing
@@ -27,22 +34,22 @@ var nfcTransactionService = nfc_relay.NFCTransactionService{}
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data body request.RegisterForPairingRequest true "配对请求"
+// @Param data body nfcreq.RegisterForPairingRequest true "配对请求"
 // @Param force query bool false "是否强制接管现有会话" default(false)
-// @Success 200 {object} response.Response "等待中：已将您加入等待队列"
-// @Success 202 {object} response.Response "匹配成功"
+// @Success 200 {object} response.Response{data=nfcres.PairingResponse} "成功"
+// @Success 202 {object} response.Response{data=nfcres.PairingResponse} "匹配成功"
 // @Failure 409 {object} response.Response "冲突：角色已被占用，可尝试强制接管"
 // @Failure 500 {object} response.Response "失败：服务器内部错误"
 // @Router /nfc-relay/pairing/register [post]
 func (a *NFCTransactionApi) RegisterForPairing(c *gin.Context) {
-	var req request.RegisterForPairingRequest
+	var req nfcreq.RegisterForPairingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
 	}
 
-	userUUID := utils.GetUserUuid(c)
-	if userUUID == uuid.Nil {
+	claims := utils.GetUserInfo(c)
+	if claims == nil {
 		response.FailWithMessage("获取用户信息失败，请重新登录", c)
 		return
 	}
@@ -50,41 +57,95 @@ func (a *NFCTransactionApi) RegisterForPairing(c *gin.Context) {
 	force := c.Query("force") == "true"
 
 	global.GVA_LOG.Info("收到配对请求",
-		zap.String("userID", userUUID.String()),
+		zap.String("userID", claims.GetUserID()),
 		zap.String("role", req.Role),
 		zap.Bool("force", force),
 	)
 
-	ctx := context.Background() // 使用 Background context
-
-	status, data, err := nfcTransactionService.RegisterForPairing(ctx, &req, userUUID, force)
+	// 1. 生成权威的MQTT凭证
+	jwt := utils.NewJWT()
+	mqttClaims, err := jwt.CreateMQTTClaims(claims.GetUserID(), claims.Username, req.Role)
 	if err != nil {
-		global.GVA_LOG.Error("配对服务失败", zap.Error(err), zap.String("userID", userUUID.String()))
-		response.FailWithMessage(err.Error(), c)
+		global.GVA_LOG.Error("创建MQTT Claims失败", zap.Error(err), zap.String("userID", claims.GetUserID()))
+		response.FailWithMessage("创建MQTT凭证失败", c)
 		return
 	}
 
-	switch status {
+	mqttToken, err := jwt.CreateMQTTToken(mqttClaims)
+	if err != nil {
+		global.GVA_LOG.Error("生成MQTT Token失败", zap.Error(err), zap.String("userID", claims.GetUserID()))
+		response.FailWithMessage("生成MQTT凭证失败", c)
+		return
+	}
+
+	// 2. 使用生成的权威ClientID进行配对注册
+	ctx := context.Background()
+	pairingResult, err := nfcTransactionService.RegisterForPairing(ctx, &req, claims.UUID, force, mqttClaims.ClientID)
+	if err != nil {
+		// 根据企业级API契约，将特定的业务错误映射到正确的HTTP状态码
+		if strings.Contains(err.Error(), "客户端离线") {
+			global.GVA_LOG.Warn("配对失败，客户端离线", zap.Error(err), zap.String("userID", claims.GetUserID()))
+			c.JSON(http.StatusConflict, response.Response{
+				Code: response.ERROR, // 业务错误码 (通常为 7)
+				Data: nil,
+				Msg:  err.Error(),
+			})
+			return
+		}
+
+		// 对于其他未知错误，返回 HTTP 500 Internal Server Error
+		global.GVA_LOG.Error("配对服务发生未知内部错误", zap.Error(err), zap.String("userID", claims.GetUserID()))
+		c.JSON(http.StatusInternalServerError, response.Response{
+			Code: response.ERROR,
+			Data: nil,
+			Msg:  "服务器内部错误，请稍后重试",
+		})
+		return
+	}
+
+	// 3. 构造统一响应
+	resp := nfcres.PairingResponse{
+		Status:        pairingResult.Status,
+		QueuePosition: pairingResult.QueuePosition,
+		EstimatedWait: pairingResult.EstimatedWait,
+		TransactionID: pairingResult.TransactionID,
+		ClientID:      mqttClaims.ClientID,
+		MqttToken:     mqttToken,
+		ExpiresAt:     mqttClaims.ExpiresAt.Unix(),
+		Role:          mqttClaims.Role,
+	}
+
+	switch pairingResult.Status {
 	case "waiting":
-		global.GVA_LOG.Info("加入等待队列", zap.String("userID", userUUID.String()), zap.String("role", req.Role))
-		response.OkWithMessage("已将您加入等待队列，请等待匹配...", c)
+		global.GVA_LOG.Info("加入等待队列", zap.String("userID", claims.GetUserID()), zap.String("role", req.Role))
+		response.OkWithDetailed(resp, "已将您加入等待队列，请等待匹配...", c)
 	case "matched":
-		global.GVA_LOG.Info("匹配成功", zap.String("userID", userUUID.String()), zap.Any("data", data))
-		// 使用 202 Accepted 表示服务器已接受请求，并在后台异步处理通知
+		global.GVA_LOG.Info("匹配成功", zap.String("userID", claims.GetUserID()), zap.Any("data", resp))
 		c.JSON(http.StatusAccepted, response.Response{
 			Code: 0,
-			Data: data,
+			Data: resp,
 			Msg:  "匹配成功！请注意查收系统通知获取交易ID。",
 		})
+	case "session_conflict":
+		global.GVA_LOG.Info("响应会话冲突", zap.String("userID", claims.GetUserID()), zap.Any("data", pairingResult.ConflictDetails))
+		c.JSON(http.StatusConflict, response.Response{
+			Code: 40901,
+			Data: pairingResult.ConflictDetails,
+			Msg:  "客户端与服务器会话不一致，请同步。",
+		})
 	case "conflict":
-		global.GVA_LOG.Warn("角色冲突", zap.String("userID", userUUID.String()), zap.String("role", req.Role))
-		// 使用 409 Conflict 表示请求冲突
+		global.GVA_LOG.Warn("角色冲突", zap.String("userID", claims.GetUserID()), zap.String("role", req.Role))
+		conflictMessage := "角色已被占用，可尝试强制接管。"
+		if pairingResult.ConflictDetails != nil {
+			conflictMessage = fmt.Sprintf("角色已被其他设备占用，您可以选择强制接管或等待重试。")
+		}
 		c.JSON(http.StatusConflict, response.Response{
 			Code: 409,
-			Msg:  "角色已被占用，可尝试强制接管。",
+			Data: pairingResult.ConflictDetails,
+			Msg:  conflictMessage,
 		})
 	default: // "error" or other cases
-		global.GVA_LOG.Error("配对失败，未知状态", zap.String("status", status), zap.String("userID", userUUID.String()))
+		global.GVA_LOG.Error("配对失败，未知状态", zap.String("status", pairingResult.Status), zap.String("userID", claims.GetUserID()))
 		response.FailWithMessage("配对失败，未知错误", c)
 	}
 }
@@ -96,39 +157,48 @@ func (a *NFCTransactionApi) RegisterForPairing(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data body request.CreateTransactionRequest true "创建交易请求"
+// @Param data body nfcreq.CreateTransactionRequest true "创建交易请求"
 // @Success 200 {object} response.Response{data=response.CreateTransactionResponse} "创建成功"
 // @Router /nfc-relay/transactions [post]
 func (a *NFCTransactionApi) CreateTransaction(c *gin.Context) {
-	var req request.CreateTransactionRequest
+	var req nfcreq.CreateTransactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
 	}
-
-	// 参数验证
-	if err := utils.Verify(req, utils.CreateTransactionVerify); err != nil {
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-
-	// 获取当前用户UUID
 	userUUID := utils.GetUserUuid(c)
-	if userUUID == uuid.Nil {
-		response.FailWithMessage("获取用户信息失败", c)
-		return
-	}
-
-	ctx := context.WithValue(context.Background(), "userID", userUUID)
-
-	result, err := nfcTransactionService.CreateTransaction(ctx, &req, userUUID)
+	result, err := nfcTransactionService.CreateTransaction(context.Background(), &req, userUUID)
 	if err != nil {
 		global.GVA_LOG.Error("创建交易失败", zap.Error(err))
 		response.FailWithMessage(err.Error(), c)
 		return
 	}
-
 	response.OkWithDetailed(result, "创建交易成功", c)
+}
+
+// GetTransaction 获取交易详情
+// @Tags NFCTransaction
+// @Summary 获取交易详情
+// @Description 根据交易ID获取详细信息
+// @Security ApiKeyAuth
+// @accept application/json
+// @Produce application/json
+// @Param transaction_id path string true "交易ID"
+// @Success 200 {object} response.Response{data=response.TransactionDetailResponse} "获取成功"
+// @Router /nfc-relay/transactions/{transaction_id} [get]
+func (a *NFCTransactionApi) GetTransaction(c *gin.Context) {
+	transactionID := c.Param("transaction_id")
+	userUUID := utils.GetUserUuid(c)
+	req := &nfcreq.GetTransactionRequest{
+		TransactionID: transactionID,
+	}
+	result, err := nfcTransactionService.GetTransaction(context.Background(), req, userUUID)
+	if err != nil {
+		global.GVA_LOG.Error("获取交易详情失败", zap.Error(err))
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+	response.OkWithDetailed(result, "获取交易详情成功", c)
 }
 
 // UpdateTransactionStatus 更新交易状态
@@ -138,11 +208,11 @@ func (a *NFCTransactionApi) CreateTransaction(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data body request.UpdateTransactionStatusRequest true "更新状态请求"
+// @Param data body nfcreq.UpdateTransactionStatusRequest true "更新状态请求"
 // @Success 200 {object} response.Response{data=response.UpdateTransactionStatusResponse} "更新成功"
 // @Router /nfc-relay/transactions/status [put]
 func (a *NFCTransactionApi) UpdateTransactionStatus(c *gin.Context) {
-	var req request.UpdateTransactionStatusRequest
+	var req nfcreq.UpdateTransactionStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
@@ -173,50 +243,6 @@ func (a *NFCTransactionApi) UpdateTransactionStatus(c *gin.Context) {
 	response.OkWithDetailed(result, "更新交易状态成功", c)
 }
 
-// GetTransaction 获取交易详情
-// @Tags NFCTransaction
-// @Summary 获取交易详情
-// @Description 根据交易ID获取详细信息
-// @Security ApiKeyAuth
-// @accept application/json
-// @Produce application/json
-// @Param transaction_id path string true "交易ID"
-// @Param include_apdu query bool false "是否包含APDU消息" default(false)
-// @Success 200 {object} response.Response{data=response.TransactionDetailResponse} "获取成功"
-// @Router /nfc-relay/transactions/{transaction_id} [get]
-func (a *NFCTransactionApi) GetTransaction(c *gin.Context) {
-	transactionID := c.Param("transaction_id")
-	if transactionID == "" {
-		response.FailWithMessage("交易ID不能为空", c)
-		return
-	}
-
-	includeAPDU, _ := strconv.ParseBool(c.Query("include_apdu"))
-
-	req := request.GetTransactionRequest{
-		TransactionID: transactionID,
-		IncludeAPDU:   includeAPDU,
-	}
-
-	// 获取当前用户UUID
-	userUUID := utils.GetUserUuid(c)
-	if userUUID == uuid.Nil {
-		response.FailWithMessage("获取用户信息失败", c)
-		return
-	}
-
-	ctx := context.WithValue(context.Background(), "userID", userUUID)
-
-	result, err := nfcTransactionService.GetTransaction(ctx, &req, userUUID)
-	if err != nil {
-		global.GVA_LOG.Error("获取交易详情失败", zap.Error(err))
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-
-	response.OkWithDetailed(result, "获取交易详情成功", c)
-}
-
 // GetTransactionList 获取交易列表（完善实现）
 // @Tags NFCTransaction
 // @Summary 获取交易列表
@@ -224,11 +250,11 @@ func (a *NFCTransactionApi) GetTransaction(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data query request.GetTransactionListRequest true "查询参数"
+// @Param data query nfcreq.GetTransactionListRequest true "查询参数"
 // @Success 200 {object} response.Response{data=response.TransactionListResponse} "获取成功"
 // @Router /nfc-relay/transactions [get]
 func (a *NFCTransactionApi) GetTransactionList(c *gin.Context) {
-	var req request.GetTransactionListRequest
+	var req nfcreq.GetTransactionListRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
@@ -294,7 +320,7 @@ func (a *NFCTransactionApi) DeleteTransaction(c *gin.Context) {
 
 	ctx := context.WithValue(context.Background(), "userID", userUUID)
 
-	req := request.DeleteTransactionRequest{
+	req := nfcreq.DeleteTransactionRequest{
 		TransactionID: transactionID,
 		Force:         force,
 	}
@@ -317,11 +343,11 @@ func (a *NFCTransactionApi) DeleteTransaction(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data body request.BatchUpdateTransactionRequest true "批量更新请求"
+// @Param data body nfcreq.BatchUpdateTransactionRequest true "批量更新请求"
 // @Success 200 {object} response.Response{data=response.BatchOperationResponse} "更新成功"
 // @Router /nfc-relay/transactions/batch-update [put]
 func (a *NFCTransactionApi) BatchUpdateStatus(c *gin.Context) {
-	var req request.BatchUpdateTransactionRequest
+	var req nfcreq.BatchUpdateTransactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
@@ -365,11 +391,11 @@ func (a *NFCTransactionApi) BatchUpdateStatus(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data body request.SendAPDURequest true "APDU消息请求"
+// @Param data body nfcreq.SendAPDURequest true "APDU消息请求"
 // @Success 200 {object} response.Response{data=response.SendAPDUResponse} "发送成功"
 // @Router /nfc-relay/transactions/apdu [post]
 func (a *NFCTransactionApi) SendAPDU(c *gin.Context) {
-	var req request.SendAPDURequest
+	var req nfcreq.SendAPDURequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
@@ -408,11 +434,11 @@ func (a *NFCTransactionApi) SendAPDU(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data query request.GetAPDUListRequest true "查询参数"
+// @Param data query nfcreq.GetAPDUListRequest true "查询参数"
 // @Success 200 {object} response.Response{data=response.APDUMessageListResponse} "获取成功"
 // @Router /nfc-relay/transactions/apdu [get]
 func (a *NFCTransactionApi) GetAPDUList(c *gin.Context) {
-	var req request.GetAPDUListRequest
+	var req nfcreq.GetAPDUListRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
@@ -462,11 +488,11 @@ func (a *NFCTransactionApi) GetAPDUList(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data query request.GetStatisticsRequest true "统计查询参数"
+// @Param data query nfcreq.GetStatisticsRequest true "统计查询参数"
 // @Success 200 {object} response.Response{data=response.TransactionStatisticsResponse} "获取成功"
 // @Router /nfc-relay/transactions/statistics [get]
 func (a *NFCTransactionApi) GetStatistics(c *gin.Context) {
-	var req request.GetStatisticsRequest
+	var req nfcreq.GetStatisticsRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
@@ -548,11 +574,11 @@ func (a *NFCTransactionApi) ExportTransactions(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data body request.InitiateTransactionSessionRequest true "发起会话请求"
+// @Param data body nfcreq.InitiateTransactionSessionRequest true "发起会话请求"
 // @Success 200 {object} response.Response{data=request.TransactionSessionResponse} "发起成功"
 // @Router /nfc-relay/transactions/sessions/initiate [post]
 func (a *NFCTransactionApi) InitiateTransactionSession(c *gin.Context) {
-	var req request.InitiateTransactionSessionRequest
+	var req nfcreq.InitiateTransactionSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMessage("请求参数格式错误: "+err.Error(), c)
 		return
@@ -626,11 +652,11 @@ func (a *NFCTransactionApi) InitiateTransactionSession(c *gin.Context) {
 // @Security ApiKeyAuth
 // @accept application/json
 // @Produce application/json
-// @Param data body request.JoinTransactionSessionRequest true "加入会话请求"
+// @Param data body nfcreq.JoinTransactionSessionRequest true "加入会话请求"
 // @Success 200 {object} response.Response{data=request.TransactionSessionResponse} "加入成功"
 // @Router /nfc-relay/transactions/sessions/join [post]
 func (a *NFCTransactionApi) JoinTransactionSession(c *gin.Context) {
-	var req request.JoinTransactionSessionRequest
+	var req nfcreq.JoinTransactionSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMessage("请求参数格式错误: "+err.Error(), c)
 		return
@@ -731,7 +757,7 @@ func (a *NFCTransactionApi) GetTransactionSession(c *gin.Context) {
 	}
 
 	// 调用服务层获取交易详情（重用现有方法）
-	getReq := request.GetTransactionRequest{
+	getReq := nfcreq.GetTransactionRequest{
 		TransactionID: transactionID,
 		IncludeAPDU:   false, // 获取会话状态不需要APDU详情
 	}
@@ -780,4 +806,73 @@ func (a *NFCTransactionApi) GetTransactionSession(c *gin.Context) {
 	}
 
 	response.OkWithDetailed(sessionResponse, "获取交易会话状态成功", c)
+}
+
+// CancelPairing 取消配对请求
+// @Tags NFCRelay
+// @Summary 取消配对请求
+// @Description 用户取消当前的配对请求，清理相关状态
+// @Accept json
+// @Produce json
+// @Param role query string false "角色(transmitter/receiver)，为空则取消所有角色的配对"
+// @Success 200 {object} response.Response{msg=string} "取消成功"
+// @Router /nfc-relay/pairing/cancel [delete]
+func (n *NFCTransactionApi) CancelPairing(c *gin.Context) {
+	claims := utils.GetUserInfo(c)
+	if claims == nil {
+		global.GVA_LOG.Error("获取用户信息失败")
+		response.FailWithMessage("用户身份验证失败", c)
+		return
+	}
+
+	role := c.Query("role") // 可选参数，为空则取消所有角色
+
+	// 调用服务层取消配对
+	if err := nfcTransactionService.CancelPairing(context.Background(), claims.UUID, role); err != nil {
+		global.GVA_LOG.Error("取消配对失败",
+			zap.Error(err),
+			zap.String("userUUID", claims.UUID.String()),
+			zap.String("role", role))
+		response.FailWithMessage("取消配对失败: "+err.Error(), c)
+		return
+	}
+
+	global.GVA_LOG.Info("取消配对成功",
+		zap.String("userUUID", claims.UUID.String()),
+		zap.String("role", role))
+
+	response.OkWithMessage("取消配对成功", c)
+}
+
+// GetPairingStatus 获取配对状态
+// @Tags NFCRelay
+// @Summary 获取配对状态
+// @Description 获取当前用户的配对状态信息
+// @Accept json
+// @Produce json
+// @Success 200 {object} response.Response{data=nfc_relay.PairingStatus} "配对状态信息"
+// @Router /nfc-relay/pairing/status [get]
+func (n *NFCTransactionApi) GetPairingStatus(c *gin.Context) {
+	claims := utils.GetUserInfo(c)
+	if claims == nil {
+		global.GVA_LOG.Error("获取用户信息失败")
+		response.FailWithMessage("用户身份验证失败", c)
+		return
+	}
+
+	// 调用服务层获取配对状态
+	status, err := nfcTransactionService.GetPairingStatus(context.Background(), claims.UUID)
+	if err != nil {
+		global.GVA_LOG.Error("获取配对状态失败",
+			zap.Error(err),
+			zap.String("userUUID", claims.UUID.String()))
+		response.FailWithMessage("获取配对状态失败: "+err.Error(), c)
+		return
+	}
+
+	global.GVA_LOG.Debug("获取配对状态成功",
+		zap.String("userUUID", claims.UUID.String()),
+		zap.String("status", status.Status))
+
+	response.OkWithDetailed(status, "获取配对状态成功", c)
 }

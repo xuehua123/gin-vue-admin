@@ -178,6 +178,9 @@ func (s *RoleConflictService) handleForceKick(ctx context.Context, userID, role,
 	pipe.HDel(ctx, "client_connections", targetClientID)
 	// 同时从user:roles中也删除，确保状态一致
 	pipe.HDel(ctx, userRoleKey, role)
+	// 清理我们在V2.1版本中新增的角色键，确保数据一致性
+	roleKeyV21 := fmt.Sprintf("mqtt:client:%s:role", targetClientID)
+	pipe.Del(ctx, roleKeyV21)
 
 	// 6. 执行清理事务
 	if _, err := pipe.Exec(ctx); err != nil {

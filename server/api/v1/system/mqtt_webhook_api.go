@@ -1,14 +1,14 @@
 package system
 
 import (
-	"github.com/flipped-aurora/gin-vue-admin/server/service"
+	"github.com/flipped-aurora/gin-vue-admin/server/service/nfc_relay"
 	"github.com/gin-gonic/gin"
 )
 
 // MqttWebhookApi Mqtt Webhook API
 type MqttWebhookApi struct{}
 
-var mqttRelayService = service.ServiceGroupApp.NFCRelayServiceGroup.MQTTService
+var mqttRelayService = nfc_relay.GetMQTTService()
 
 // HandleRoleRequest 处理角色请求的Webhook
 func (api *MqttWebhookApi) HandleRoleRequest(c *gin.Context) {

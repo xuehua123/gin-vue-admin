@@ -221,7 +221,7 @@ cors:
 
 # MQTT配置
 mqtt:
-  host: 49.235.40.39
+  host: 192.168.50.194
   port: 8883
   username: nfc_server
   password: xuehua123
@@ -231,11 +231,11 @@ mqtt:
   clean-session: true
   use-tls: true
   api:
-    host: 49.235.40.39  # EMQX管理API主机，通常与MQTT主机相同
-    port: 18083         # EMQX管理API端口，默认18083
-    username: admin     # EMQX管理API用户名
-    password: xuehua123 # EMQX管理API密码 - 修复：与实际Dashboard密码一致
-    use-tls: false      # 管理API是否使用TLS
+    host: 192.168.50.194          # EMQX管理API主机，通常与MQTT主机相同
+    port: 18083                 # EMQX管理API端口，默认18083
+    username: 30ad44d40f17065d  # EMQX API Key (用作Basic Auth用户名)
+    password: JyXjEERdfHijUvzh9BtcJWljL9B4xOatExqgglQfaa5qM # EMQX Secret Key (用作Basic Auth密码)
+    use-tls: false              # 管理API是否使用TLS
   nfc-relay:
     topic-prefix: nfc_relay
     heartbeat-interval: 30

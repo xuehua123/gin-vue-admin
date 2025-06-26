@@ -75,8 +75,8 @@ chmod +x scripts/emqx_remote_setup.sh
 ```
 
 **远程EMQX实例信息：**
-- 地址：49.235.40.39
-- Dashboard：http://49.235.40.39:18083  
+- 地址：192.168.50.194
+- Dashboard：http://192.168.50.194:18083  
 - 用户名：admin
 - 密码：xuehua123
 
@@ -99,7 +99,7 @@ const jwtToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...";
 const clientId = "your-client-id-from-jwt";
 
 // 连接远程EMQX实例
-const client = mqtt.connect('mqtt://49.235.40.39:1883', {
+const client = mqtt.connect('mqtt://192.168.50.194:1883', {
   clientId: clientId,
   username: clientId,
   password: jwtToken,
@@ -130,7 +130,7 @@ client.on('connect', () => {
 1. **传卡端状态更新**:
    ```bash
    # 传卡端(client123)发布状态
-   mosquitto_pub -h 49.235.40.39 -p 1883 -u client123 -P jwt_token \
+   mosquitto_pub -h 192.168.50.194 -p 1883 -u client123 -P jwt_token \
      -t "client/client123/event/state_update" \
      -m '{"event_type":"nfc_transmitter_status_change","status_details":{"nfc_status":"card_detected"}}'
    ```
@@ -143,7 +143,7 @@ client.on('connect', () => {
 3. **收卡端接收同步**:
    ```bash
    # 收卡端(client456)订阅同步消息
-   mosquitto_sub -h 49.235.40.39 -p 1883 -u client456 -P jwt_token \
+   mosquitto_sub -h 192.168.50.194 -p 1883 -u client456 -P jwt_token \
      -t "client/client456/sync/#"
    ```
 
@@ -158,22 +158,22 @@ client.on('connect', () => {
 #### 允许的操作：
 ```bash
 # 客户端可以发布到自己的主题
-mosquitto_pub -h 49.235.40.39 -p 1883 -u client123 -P jwt_token \
+mosquitto_pub -h 192.168.50.194 -p 1883 -u client123 -P jwt_token \
   -t "client/client123/status" -m '{"online":true}'
 
 # 客户端可以订阅自己的控制主题
-mosquitto_sub -h 49.235.40.39 -p 1883 -u client123 -P jwt_token \
+mosquitto_sub -h 192.168.50.194 -p 1883 -u client123 -P jwt_token \
   -t "client/client123/control/#"
 ```
 
 #### 被拒绝的操作：
 ```bash
 # 尝试访问其他客户端主题(将被拒绝)
-mosquitto_pub -h 49.235.40.39 -p 1883 -u client123 -P jwt_token \
+mosquitto_pub -h 192.168.50.194 -p 1883 -u client123 -P jwt_token \
   -t "client/other_client/status" -m '{"test":true}'
 
 # 尝试访问系统主题(将被拒绝)  
-mosquitto_sub -h 49.235.40.39 -p 1883 -u client123 -P jwt_token \
+mosquitto_sub -h 192.168.50.194 -p 1883 -u client123 -P jwt_token \
   -t '$SYS/#'
 ```
 
