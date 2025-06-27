@@ -20,6 +20,8 @@ type CreateTransactionResponse struct {
 // TransactionDetailResponse 交易详情响应
 type TransactionDetailResponse struct {
 	nfc_relay.NFCTransaction
+	TransmitterClientOnline bool `json:"transmitter_client_online"`
+	ReceiverClientOnline    bool `json:"receiver_client_online"`
 
 	// 扩展信息
 	Statistics TransactionStatistics `json:"statistics"` // 统计信息

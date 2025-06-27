@@ -8,14 +8,12 @@ import (
 // MqttWebhookApi Mqtt Webhook API
 type MqttWebhookApi struct{}
 
-var mqttRelayService = nfc_relay.GetMQTTService()
-
-// HandleRoleRequest 处理角色请求的Webhook
-func (api *MqttWebhookApi) HandleRoleRequest(c *gin.Context) {
-	mqttRelayService.HandleRoleRequestWebhook(c)
+// HandleRoleRequest handles the webhook for role requests.
+func (h *MqttWebhookApi) HandleRoleRequest(c *gin.Context) {
+	nfc_relay.ServiceGroupApp.MqttService().HandleRoleRequestWebhook(c)
 }
 
-// HandleConnectionStatus 处理连接状态的Webhook
-func (api *MqttWebhookApi) HandleConnectionStatus(c *gin.Context) {
-	mqttRelayService.HandleConnectionStatusWebhook(c)
+// HandleConnectionStatus handles the webhook for connection status updates.
+func (h *MqttWebhookApi) HandleConnectionStatus(c *gin.Context) {
+	nfc_relay.ServiceGroupApp.MqttService().HandleConnectionStatusWebhook(c)
 }

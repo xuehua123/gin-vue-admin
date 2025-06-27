@@ -2,15 +2,17 @@ package config
 
 // MQTT MQTT连接配置
 type MQTT struct {
-	Host         string `mapstructure:"host" json:"host" yaml:"host"`                            // MQTT Broker地址
-	Port         int    `mapstructure:"port" json:"port" yaml:"port"`                            // MQTT Broker端口
-	Username     string `mapstructure:"username" json:"username" yaml:"username"`                // MQTT用户名
-	Password     string `mapstructure:"password" json:"password" yaml:"password"`                // MQTT密码
-	ClientID     string `mapstructure:"client-id" json:"client-id" yaml:"client-id"`             // 服务器端MQTT客户端ID
-	QoS          byte   `mapstructure:"qos" json:"qos" yaml:"qos"`                               // 默认QoS级别
-	KeepAlive    int    `mapstructure:"keep-alive" json:"keep-alive" yaml:"keep-alive"`          // 心跳间隔(秒)
-	CleanSession bool   `mapstructure:"clean-session" json:"clean-session" yaml:"clean-session"` // 清除会话
-	UseTLS       bool   `mapstructure:"use-tls" json:"use-tls" yaml:"use-tls"`                   // 是否使用TLS
+	Host               string `mapstructure:"host" json:"host" yaml:"host"`                                                 // MQTT Broker地址
+	Port               int    `mapstructure:"port" json:"port" yaml:"port"`                                                 // MQTT Broker端口
+	Username           string `mapstructure:"username" json:"username" yaml:"username"`                                     // MQTT用户名
+	Password           string `mapstructure:"password" json:"password" yaml:"password"`                                     // MQTT密码
+	ClientID           string `mapstructure:"client-id" json:"client-id" yaml:"client-id"`                                  // 服务器端MQTT客户端ID
+	QoS                byte   `mapstructure:"qos" json:"qos" yaml:"qos"`                                                    // 默认QoS级别
+	KeepAlive          int    `mapstructure:"keep-alive" json:"keep-alive" yaml:"keep-alive"`                               // 心跳间隔(秒)
+	CleanSession       bool   `mapstructure:"clean-session" json:"clean-session" yaml:"clean-session"`                      // 清除会话
+	UseTLS             bool   `mapstructure:"use-tls" json:"use-tls" yaml:"use-tls"`                                        // 是否使用TLS
+	CAFile             string `mapstructure:"ca-file" json:"ca-file" yaml:"ca-file"`                                        // CA证书文件路径
+	InsecureSkipVerify bool   `mapstructure:"insecure-skip-verify" json:"insecure-skip-verify" yaml:"insecure-skip-verify"` // 警告：仅用于开发环境，禁用TLS证书验证
 
 	// EMQX管理API配置
 	API EMQXAPIConfig `mapstructure:"api" json:"api" yaml:"api"`

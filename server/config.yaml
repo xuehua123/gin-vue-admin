@@ -263,14 +263,15 @@ zap:
 # MQTT配置
 mqtt:
   host: 192.168.50.194
-  port: 8883
-  username: nfc_server
+  port: 1883
+  username: admin
   password: xuehua123
   client-id: nfc-relay-server
   qos: 1
   keep-alive: 60
   clean-session: true
-  use-tls: true
+  use-tls: false
+  ca-file: "certs/emqx_ca.pem"
   api:
     host: 192.168.50.194          # EMQX管理API主机，通常与MQTT主机相同
     port: 18083                 # EMQX管理API端口，默认18083

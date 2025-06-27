@@ -3,12 +3,14 @@ package nfc_relay
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +45,15 @@ type MqttService struct {
 	mu          sync.RWMutex
 	isConnected bool
 }
+
+func (s *MqttService) checkClientOnlineViaAPI(ctx context.Context, d string) (any, any) {
+	panic("unimplemented")
+}
+
+// SetStateSyncService 设置状态同步服务 - 已移除企业级状态同步功能
+// func (s *MqttService) SetStateSyncService(stateSyncService *RealtimeStateSyncService) {
+//	s.stateSyncService = stateSyncService
+// }
 
 // NFCMessage NFC消息结构
 type NFCMessage struct {
@@ -98,17 +109,6 @@ type PairingNotificationMessage struct {
 	Payload          map[string]interface{} `json:"payload"`
 }
 
-var mqttService *MqttService
-var mqttOnce sync.Once
-
-// GetMQTTService 获取MQTT服务实例（单例模式）
-func GetMQTTService() *MqttService {
-	mqttOnce.Do(func() {
-		mqttService = &MqttService{}
-	})
-	return mqttService
-}
-
 // Initialize 初始化MQTT连接
 func (s *MqttService) Initialize() error {
 	if global.GVA_CONFIG.MQTT.Host == "" {
@@ -122,6 +122,28 @@ func (s *MqttService) Initialize() error {
 	var protocol string
 	if global.GVA_CONFIG.MQTT.UseTLS {
 		protocol = "ssl"
+		tlsConfig := new(tls.Config)
+
+		// 警告：此选项会禁用证书验证，使连接容易受到中间人攻击。
+		// 仅应在严格控制的开发或测试环境中使用。
+		if global.GVA_CONFIG.MQTT.InsecureSkipVerify {
+			global.GVA_LOG.Warn("MQTT TLS certificate verification is disabled. This is not safe for production.")
+			tlsConfig.InsecureSkipVerify = true
+		}
+
+		// 如果提供了CA证书文件，则加载它
+		if global.GVA_CONFIG.MQTT.CAFile != "" {
+			caCert, err := os.ReadFile(global.GVA_CONFIG.MQTT.CAFile)
+			if err != nil {
+				return fmt.Errorf("无法读取CA证书文件: %w", err)
+			}
+			caCertPool := x509.NewCertPool()
+			if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+				return fmt.Errorf("无法将CA证书添加到证书池")
+			}
+			tlsConfig.RootCAs = caCertPool
+		}
+		opts.SetTLSConfig(tlsConfig)
 	} else {
 		protocol = "tcp"
 	}
@@ -179,6 +201,31 @@ func (s *MqttService) defaultMessageHandler(client mqtt.Client, msg mqtt.Message
 		zap.String("payload", string(msg.Payload())),
 	)
 }
+
+// handlePeerStateUpdate 处理对端状态更新消息 - 已移除企业级状态同步功能
+// func (s *MqttService) handlePeerStateUpdate(client mqtt.Client, msg mqtt.Message) {
+//	global.GVA_LOG.Debug("收到对端状态更新消息",
+//		zap.String("topic", msg.Topic()),
+//		zap.String("payload", string(msg.Payload())))
+//
+//	var update PeerStateUpdate
+//	if err := json.Unmarshal(msg.Payload(), &update); err != nil {
+//		global.GVA_LOG.Error("解析对端状态更新消息失败",
+//			zap.Error(err),
+//			zap.String("payload", string(msg.Payload())))
+//		return
+//	}
+//
+//	// 如果状态同步服务可用，处理对端状态更新
+//	if s.stateSyncService != nil {
+//		if err := s.stateSyncService.HandlePeerStateUpdate(context.Background(), &update); err != nil {
+//			global.GVA_LOG.Error("处理对端状态更新失败",
+//				zap.Error(err),
+//				zap.String("messageID", update.MessageID),
+//				zap.String("peerState", update.PeerState))
+//		}
+//	}
+// }
 
 // subscribeSystemTopics 订阅系统主题
 func (s *MqttService) subscribeSystemTopics() {
@@ -587,6 +634,122 @@ func (s *MqttService) PublishPairingStatusUpdate(ctx context.Context, clientID, 
 	return nil
 }
 
+// 【企业级新增】PublishClientPairingNotification 发布客户端级配对通知
+// 作为用户级通知的冗余备份通道，确保通知可达
+func (s *MqttService) PublishClientPairingNotification(ctx context.Context, clientID string, payload map[string]interface{}) error {
+	if !s.IsConnected() {
+		return fmt.Errorf("MQTT未连接")
+	}
+
+	// 参数验证
+	if clientID == "" {
+		return fmt.Errorf("客户端ID不能为空")
+	}
+
+	// 构建客户端级配对通知消息
+	notification := map[string]interface{}{
+		"message_id":        fmt.Sprintf("client_pairing_%d", time.Now().UnixNano()),
+		"notification_type": "pairing_success",
+		"message_type":      "client_notification", // 区别于user_notification
+		"direction":         "server_to_client",
+		"timestamp":         time.Now().UTC().Format(time.RFC3339),
+		"target_client_id":  clientID, // 明确目标
+		"payload":           payload,
+		"channel_type":      "fallback", // 标识为备用通道
+	}
+
+	// 发布到客户端专属配对通知主题: nfc_relay/pairing/notifications/{clientID}
+	topicPrefix := global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix
+	topic := fmt.Sprintf("%s/pairing/notifications/%s", topicPrefix, clientID)
+
+	data, err := json.Marshal(notification)
+	if err != nil {
+		global.GVA_LOG.Error("序列化客户端配对通知失败",
+			zap.String("clientID", clientID),
+			zap.Error(err))
+		return fmt.Errorf("序列化客户端配对通知失败: %w", err)
+	}
+
+	qos := global.GVA_CONFIG.MQTT.QoS
+	token := s.client.Publish(topic, qos, false, data)
+
+	if token.Wait() && token.Error() != nil {
+		global.GVA_LOG.Error("发布客户端配对通知失败",
+			zap.String("topic", topic),
+			zap.String("clientID", clientID),
+			zap.Error(token.Error()))
+		return fmt.Errorf("发布客户端配对通知失败: %w", token.Error())
+	}
+
+	global.GVA_LOG.Info("客户端级配对通知发送成功",
+		zap.String("topic", topic),
+		zap.String("clientID", clientID),
+		zap.String("messageID", notification["message_id"].(string)))
+
+	return nil
+}
+
+// 【企业级新增】PublishDirectClientEvent 发布直接客户端事件通知
+// 通过客户端事件主题发送通知，作为第三重保障
+func (s *MqttService) PublishDirectClientEvent(ctx context.Context, clientID string, eventType string, payload map[string]interface{}) error {
+	if !s.IsConnected() {
+		return fmt.Errorf("MQTT未连接")
+	}
+
+	// 参数验证
+	if clientID == "" {
+		return fmt.Errorf("客户端ID不能为空")
+	}
+	if eventType == "" {
+		return fmt.Errorf("事件类型不能为空")
+	}
+
+	// 构建直接客户端事件消息
+	event := map[string]interface{}{
+		"message_id":   fmt.Sprintf("direct_event_%d", time.Now().UnixNano()),
+		"event_type":   eventType,
+		"message_type": "direct_event",
+		"direction":    "server_to_client",
+		"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		"client_id":    clientID,
+		"payload":      payload,
+		"channel_type": "direct", // 标识为直接通道
+	}
+
+	// 发布到客户端事件主题: nfc_relay/clients/{clientID}/events
+	topicPrefix := global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix
+	topic := fmt.Sprintf("%s/clients/%s/events", topicPrefix, clientID)
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		global.GVA_LOG.Error("序列化直接客户端事件失败",
+			zap.String("clientID", clientID),
+			zap.String("eventType", eventType),
+			zap.Error(err))
+		return fmt.Errorf("序列化直接客户端事件失败: %w", err)
+	}
+
+	qos := global.GVA_CONFIG.MQTT.QoS
+	token := s.client.Publish(topic, qos, false, data)
+
+	if token.Wait() && token.Error() != nil {
+		global.GVA_LOG.Error("发布直接客户端事件失败",
+			zap.String("topic", topic),
+			zap.String("clientID", clientID),
+			zap.String("eventType", eventType),
+			zap.Error(token.Error()))
+		return fmt.Errorf("发布直接客户端事件失败: %w", token.Error())
+	}
+
+	global.GVA_LOG.Info("直接客户端事件发送成功",
+		zap.String("topic", topic),
+		zap.String("clientID", clientID),
+		zap.String("eventType", eventType),
+		zap.String("messageID", event["message_id"].(string)))
+
+	return nil
+}
+
 // publishToClient 发布消息到指定客户端
 func (s *MqttService) publishToClient(clientID, subtopic string, payload interface{}) error {
 	topicPrefix := global.GVA_CONFIG.MQTT.NFCRelay.TopicPrefix
@@ -925,190 +1088,168 @@ func (s *MqttService) HandleConnectionStatusWebhook(c *gin.Context) {
 // handleClientConnected 处理客户端连接事件
 func (s *MqttService) handleClientConnected(req systemReq.MqttConnectionStatusRequest) {
 	ctx := context.Background()
-	global.GVA_LOG.Info("[Webhook] 开始处理客户端连接事件",
-		zap.String("clientID", req.ClientID),
-		zap.String("username", req.Username))
+	clientID := req.ClientID
+	username := req.Username
+	connectedAt := req.ConnectedAt
 
-	// 从Redis获取角色信息
-	role, err := s.getClientRoleFromRedis(req.ClientID)
-	if err != nil {
-		global.GVA_LOG.Error("无法从Redis获取客户端角色", zap.Error(err), zap.String("clientID", req.ClientID))
-		role = "" // 继续执行，某些客户端可能没有角色
+	// 安全处理时间戳字段，避免类型错误
+	var connectedAtLog string
+	if connectedAt != nil {
+		connectedAtLog = *connectedAt
+	} else {
+		connectedAtLog = "null"
 	}
 
-	// 更新Redis中的客户端在线状态
-	s.updateClientOnlineStatus(req.ClientID, role, true)
+	global.GVA_LOG.Info("[Webhook] 开始处理客户端连接事件",
+		zap.String("clientID", clientID),
+		zap.String("username", username),
+		zap.String("connectedAt", connectedAtLog),
+	)
 
-	// 根据角色执行特定逻辑
-	switch role {
-	case RoleReceiver:
-		s.handleReceiverConnected(ctx, req.ClientID)
-	case RoleTransmitter:
-		s.handleTransmitterConnected(ctx, req.ClientID)
-	default:
-		global.GVA_LOG.Info("客户端已连接，但没有特定角色或角色未知",
-			zap.String("clientID", req.ClientID),
-			zap.String("role", role))
+	// 从Redis获取客户端角色
+	role, err := s.getClientRoleFromRedis(clientID)
+	if err != nil {
+		global.GVA_LOG.Error("无法从Redis获取客户端角色", zap.Error(err), zap.String("clientID", clientID))
+		return
+	}
+
+	s.updateClientOnlineStatus(clientID, role, true)
+
+	// 根据角色执行不同的连接后逻辑
+	if role == RoleReceiver {
+		s.handleReceiverConnected(ctx, clientID)
+	} else if role == RoleTransmitter {
+		s.handleTransmitterConnected(ctx, clientID)
 	}
 }
 
 // handleReceiverConnected 处理 receiver 客户端连接
 func (s *MqttService) handleReceiverConnected(ctx context.Context, clientID string) {
-	global.GVA_LOG.Info("Receiver客户端已连接，查找待分配的交易", zap.String("clientID", clientID))
-
-	// 查找状态为 "pending" 且还没有分配 receiver 的交易
-	var pendingTransactions []nfc_relay.NFCTransaction
-	if err := global.GVA_DB.Where("status = ? AND receiver_client_id = ?", "pending", "").
-		Order("created_at ASC").
-		Limit(10). // 限制查询数量，避免性能问题
-		Find(&pendingTransactions).Error; err != nil {
-		global.GVA_LOG.Error("查询待分配交易失败", zap.Error(err), zap.String("clientID", clientID))
+	// 尝试寻找一个待处理的交易
+	var transaction nfc_relay.NFCTransaction
+	err := global.GVA_DB.Where("status = ? AND (receiver_client_id IS NULL OR receiver_client_id = '')", "pending").
+		Order("created_at asc").
+		First(&transaction).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			global.GVA_LOG.Info("没有待处理的交易需要分配给新连接的Receiver", zap.String("receiverClientID", clientID))
+		} else {
+			global.GVA_LOG.Error("查找待处理交易失败", zap.Error(err))
+		}
 		return
 	}
 
-	if len(pendingTransactions) == 0 {
-		global.GVA_LOG.Info("没有找到待分配的交易", zap.String("clientID", clientID))
+	// 将此Receiver分配给交易
+	transaction.ReceiverClientID = clientID
+	transaction.Status = nfc_relay.StatusActive // 更新为活跃状态
+	if err := global.GVA_DB.Save(&transaction).Error; err != nil {
+		global.GVA_LOG.Error("分配Receiver到交易失败", zap.Error(err), zap.String("transactionID", transaction.TransactionID))
 		return
 	}
 
-	// 选择第一个待分配的交易
-	transaction := pendingTransactions[0]
+	global.GVA_LOG.Info("成功将Receiver分配到交易",
+		zap.String("receiverClientID", clientID),
+		zap.String("transactionID", transaction.TransactionID),
+	)
 
-	// 更新交易，分配 receiver
-	if err := global.GVA_DB.Model(&transaction).Updates(map[string]interface{}{
-		"receiver_client_id": clientID,
-		"status":             "active",
-		"updated_at":         time.Now(),
-	}).Error; err != nil {
-		global.GVA_LOG.Error("分配Receiver到交易失败", zap.Error(err),
-			zap.String("clientID", clientID),
-			zap.String("transactionID", transaction.TransactionID))
-		return
-	}
-
-	global.GVA_LOG.Info("成功分配Receiver到交易",
-		zap.String("clientID", clientID),
-		zap.String("transactionID", transaction.TransactionID))
-
-	// 通知 transmitter 客户端 receiver 已就绪
-	go s.notifyTransmitterReceiverReady(ctx, transaction.TransmitterClientID, clientID, transaction.TransactionID)
-
-	// 通知 receiver 客户端已被分配到交易
-	go s.notifyReceiverAssignedToTransaction(ctx, clientID, transaction.TransactionID)
+	// 通知Transmitter，Receiver已准备就绪
+	s.notifyTransmitterReceiverReady(ctx, transaction.TransmitterClientID, clientID, transaction.TransactionID)
+	// 通知Receiver，它已被分配给一个交易
+	s.notifyReceiverAssignedToTransaction(ctx, clientID, transaction.TransactionID)
 }
 
 // handleTransmitterConnected 处理 transmitter 客户端连接
 func (s *MqttService) handleTransmitterConnected(ctx context.Context, clientID string) {
-	global.GVA_LOG.Info("Transmitter客户端已连接", zap.String("clientID", clientID))
-
-	// 检查是否有该 transmitter 的活跃交易
-	var activeTransaction nfc_relay.NFCTransaction
-	if err := global.GVA_DB.Where("transmitter_client_id = ? AND status IN (?)", clientID, []string{"pending", "active"}).
-		First(&activeTransaction).Error; err != nil {
-		if err != gorm.ErrRecordNotFound {
-			global.GVA_LOG.Error("查询Transmitter活跃交易失败", zap.Error(err), zap.String("clientID", clientID))
+	// 检查是否有属于此Transmitter的暂停交易
+	var transaction nfc_relay.NFCTransaction
+	err := global.GVA_DB.Where("transmitter_client_id = ? AND status = ?", clientID, "paused").
+		First(&transaction).Error
+	if err == nil {
+		// 恢复交易
+		transaction.Status = "active"
+		if err := global.GVA_DB.Save(&transaction).Error; err == nil {
+			global.GVA_LOG.Info("检测到Transmitter重连，已恢复其暂停的交易", zap.String("transactionID", transaction.TransactionID))
+			s.notifyTransmitterResumeTransaction(ctx, clientID, transaction.TransactionID, "active")
 		}
-		return
 	}
-
-	// 如果有活跃交易，通知 transmitter 恢复交易状态
-	global.GVA_LOG.Info("发现Transmitter的活跃交易",
-		zap.String("clientID", clientID),
-		zap.String("transactionID", activeTransaction.TransactionID))
-
-	go s.notifyTransmitterResumeTransaction(ctx, clientID, activeTransaction.TransactionID, activeTransaction.Status)
 }
 
-// handleClientDisconnected 处理客户端断开
+// handleClientDisconnected 处理客户端断开连接事件
 func (s *MqttService) handleClientDisconnected(req systemReq.MqttConnectionStatusRequest) {
 	ctx := context.Background()
 	clientID := req.ClientID
-	username := req.Username // username is userID
-	userID, _ := strconv.ParseUint(username, 10, 64)
+	reason := req.Reason
+	disconnectedAt := req.DisconnectedAt
 
-	global.GVA_LOG.Info("[Webhook] 开始处理客户端断开事件", zap.String("clientID", clientID), zap.String("username", username), zap.String("reason", req.Reason))
-
-	// 从clientID解析角色
-	role, err := getRoleFromClientID(clientID)
-	if err != nil {
-		global.GVA_LOG.Warn("无法从clientID解析角色，跳过状态清理", zap.String("clientID", clientID), zap.Error(err))
-	} else if userID > 0 {
-		// 调用我们新的服务来安全地注销设备
-		err := s.DeregisterDevice(uint(userID), role, clientID)
-		if err != nil {
-			global.GVA_LOG.Error("注销设备状态失败", zap.Error(err), zap.String("clientID", clientID))
-		} else {
-			global.GVA_LOG.Info("成功从配对池中移除下线设备", zap.String("clientID", clientID), zap.String("role", role), zap.Uint64("userID", userID))
-		}
+	// 安全处理时间戳字段，避免类型错误
+	var disconnectedAtLog string
+	if disconnectedAt != nil {
+		disconnectedAtLog = *disconnectedAt
+	} else {
+		disconnectedAtLog = "null"
 	}
 
-	// 清理客户端在Redis中的所有相关数据
-	s.cleanupClientRedisData(ctx, clientID)
+	global.GVA_LOG.Info("处理客户端断开连接事件",
+		zap.String("clientID", clientID),
+		zap.String("reason", reason),
+		zap.String("disconnectedAt", disconnectedAtLog),
+	)
 
-	// 处理交易相关的清理逻辑
-	s.handleTransactionCleanupOnDisconnect(ctx, clientID, req.Reason)
+	// 1. 从Redis获取客户端角色和用户ID
+	role, userID, err := s.getClientInfoFromRedis(ctx, clientID)
+	if err != nil {
+		global.GVA_LOG.Warn("无法从Redis获取断开连接客户端的信息，清理被跳过",
+			zap.String("clientID", clientID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	// 2. 更新客户端在线状态为离线
+	s.updateClientOnlineStatus(clientID, role, false)
+
+	// 3. 【重要重构】移除对 DeregisterDevice 的直接调用。
+	// 客户端断开连接（尤其是在配对成功后，为了重连而发生的正常断开）不应该无条件地清除其配对状态。
+	// 清理逻辑应该由更上层的业务（如交易超时、用户主动取消）来驱动。
+	// DeregisterDevice 已经被废弃，以支持更精确的清理方法。
+	global.GVA_LOG.Info("客户端断开事件处理：跳过通用的配对状态清理，相关逻辑已移至具体业务处理中",
+		zap.Uint("userID", uint(userID)),
+		zap.String("role", role),
+		zap.String("clientID", clientID),
+	)
+
+	// 4. 处理对进行中交易的影响 (此逻辑保持)
+	s.handleTransactionCleanupOnDisconnect(ctx, clientID, reason)
+
+	// 5. 清理客户端心跳等缓存数据 (此逻辑保持)
+	s.cleanupClientRedisData(ctx, clientID)
 }
 
-// cleanupClientRedisData removes all related data for a client from Redis upon disconnection.
-// It uses the reverse reference key to find and delete all associated data atomically.
+// cleanupClientRedisData 清理客户端在Redis中的各种缓存数据（不包括核心配对状态）
 func (s *MqttService) cleanupClientRedisData(ctx context.Context, clientID string) {
 	refKey := "mqtt:client_ref:" + clientID
-
-	// 1. Get the reference JSON string
-	refDataJSON, err := global.GVA_REDIS.Get(ctx, refKey).Result()
+	keys, err := global.GVA_REDIS.SMembers(ctx, refKey).Result()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			// This can happen if the key expired or was already deleted. Not a critical error.
-			global.GVA_LOG.Warn("MQTT客户端引用键未找到，可能已被清理",
-				zap.String("refKey", refKey),
-				zap.String("clientID", clientID))
-		} else {
-			global.GVA_LOG.Error("获取MQTT客户端引用数据失败",
-				zap.Error(err),
-				zap.String("refKey", refKey),
-				zap.String("clientID", clientID))
+		if err != redis.Nil {
+			global.GVA_LOG.Error("Failed to get client reference keys for cleanup", zap.Error(err), zap.String("clientID", clientID))
 		}
-		// In either case, we cannot proceed with this key.
 		return
 	}
 
-	// 2. Unmarshal the reference data
-	var refData struct {
-		ActiveKey string `json:"activeKey"`
-		RoleKey   string `json:"roleKey"`
-	}
-	if err := json.Unmarshal([]byte(refDataJSON), &refData); err != nil {
-		global.GVA_LOG.Error("解析MQTT客户端引用数据失败",
-			zap.Error(err),
-			zap.String("refKey", refKey),
-			zap.String("rawData", refDataJSON))
-		// If we can't parse, we should still try to delete the refKey itself.
-		_ = global.GVA_REDIS.Del(ctx, refKey).Err()
+	if len(keys) == 0 {
 		return
 	}
 
-	// 3. Collect all keys to be deleted
-	keysToDelete := []string{refKey}
-	if refData.ActiveKey != "" {
-		keysToDelete = append(keysToDelete, refData.ActiveKey)
+	pipe := global.GVA_REDIS.TxPipeline()
+	for _, key := range keys {
+		pipe.Del(ctx, key)
 	}
-	if refData.RoleKey != "" {
-		keysToDelete = append(keysToDelete, refData.RoleKey)
-	}
+	pipe.Del(ctx, refKey) // Also delete the reference set itself
 
-	// 4. Delete all keys in a single atomic operation
-	if len(keysToDelete) > 0 {
-		deletedCount, err := global.GVA_REDIS.Del(ctx, keysToDelete...).Result()
-		if err != nil {
-			global.GVA_LOG.Error("清理MQTT客户端Redis数据失败",
-				zap.Error(err),
-				zap.Strings("keys", keysToDelete))
-		} else {
-			global.GVA_LOG.Info("成功清理MQTT客户端Redis数据",
-				zap.String("clientID", clientID),
-				zap.Int64("deletedKeysCount", deletedCount),
-				zap.Strings("deletedKeys", keysToDelete))
-		}
+	if _, err := pipe.Exec(ctx); err != nil {
+		global.GVA_LOG.Error("Failed to execute pipeline for client data cleanup", zap.Error(err), zap.String("clientID", clientID))
+	} else {
+		global.GVA_LOG.Info("Successfully cleaned up all related Redis data for client", zap.String("clientID", clientID), zap.Strings("cleanedKeys", keys))
 	}
 }
 
@@ -1288,8 +1429,8 @@ func (s *MqttService) getClientRoleFromRedis(clientID string) (string, error) {
 	redisKey := common.RedisMqttRoleKeyPrefix + clientID
 	role, err := global.GVA_REDIS.Get(ctx, redisKey).Result()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			global.GVA_LOG.Warn("Role for clientID not found in Redis",
+		if err == redis.Nil {
+			global.GVA_LOG.Warn("Role for clientID not found in Redis.",
 				zap.String("clientID", clientID),
 				zap.String("redisKey", redisKey))
 			return "", fmt.Errorf("role for client %s not found", clientID)
@@ -1303,66 +1444,86 @@ func (s *MqttService) getClientRoleFromRedis(clientID string) (string, error) {
 	return role, nil
 }
 
+// getClientInfoFromRedis 从Redis获取客户端的角色和用户ID
+func (s *MqttService) getClientInfoFromRedis(ctx context.Context, clientID string) (string, int64, error) {
+	if clientID == "" {
+		return "", 0, errors.New("clientID cannot be empty for role lookup")
+	}
+
+	// 使用 'GET' 命令从正确的键 'mqtt:role:<clientID>' 获取角色。
+	redisKey := common.RedisMqttRoleKeyPrefix + clientID
+	role, err := global.GVA_REDIS.Get(ctx, redisKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			global.GVA_LOG.Warn("Role for clientID not found in Redis.",
+				zap.String("clientID", clientID),
+				zap.String("redisKey", redisKey))
+			return "", 0, fmt.Errorf("role for client %s not found", clientID)
+		}
+		global.GVA_LOG.Error("Failed to get role for clientID from Redis",
+			zap.Error(err),
+			zap.String("clientID", clientID),
+			zap.String("redisKey", redisKey))
+		return "", 0, err
+	}
+
+	// This is a placeholder for getting user ID.
+	// In a real system, you would have a mapping from clientID back to userID.
+	// For now, we return 0 and handle it in the caller.
+	var userID int64 = 0 // Placeholder
+
+	return role, userID, nil
+}
+
 // updateClientOnlineStatus 更新客户端在线状态
 func (s *MqttService) updateClientOnlineStatus(clientID, role string, isOnline bool) {
 	ctx := context.Background()
-	statusKey := fmt.Sprintf("client_status:%s", clientID)
-	statusData := map[string]interface{}{
-		"is_online":   isOnline,
-		"role":        role,
-		"last_change": time.Now().Unix(),
+	if isOnline {
+		global.GVA_REDIS.SAdd(ctx, "clients_online_all", clientID)
+		global.GVA_REDIS.SAdd(ctx, "clients_online:"+role, clientID)
+	} else {
+		global.GVA_REDIS.SRem(ctx, "clients_online_all", clientID)
+		global.GVA_REDIS.SRem(ctx, "clients_online:"+role, clientID)
 	}
-	if err := global.GVA_REDIS.HSet(ctx, statusKey, statusData).Err(); err != nil {
-		global.GVA_LOG.Error("更新客户端在线状态失败", zap.Error(err), zap.String("clientID", clientID))
-	}
-	// 为状态设置过期时间，防止离线客户端信息永久留存
-	global.GVA_REDIS.Expire(ctx, statusKey, 24*time.Hour)
 }
 
-// PublishToClient 公开的发布消息到客户端方法（供其他服务调用）
+// PublishToClient is a generic method to publish a message to a specific client's sub-topic.
 func (s *MqttService) PublishToClient(clientID, subtopic string, payload interface{}) error {
 	return s.publishToClient(clientID, subtopic, payload)
 }
 
-// checkClientOnlineViaAPI 通过EMQX的管理API实时检查客户端是否在线
-// 这是获取客户端在线状态的最可靠方法
-func (s *MqttService) checkClientOnlineViaAPI(ctx context.Context, clientID string) (bool, error) {
-	cfg := global.GVA_CONFIG.MQTT.API
-	if cfg.Host == "" || cfg.Port == 0 || cfg.Username == "" {
-		global.GVA_LOG.Warn("EMQX API配置不完整，无法进行实时在线状态检查")
-		// 在此返回错误，让调用者决定如何处理（例如，回退到Redis检查）
-		return false, errors.New("EMQX API配置不完整")
+// CheckClientOnlineViaAPI checks if a client is currently connected by querying the EMQX API.
+func (s *MqttService) CheckClientOnlineViaAPI(ctx context.Context, clientID string) (bool, error) {
+	if clientID == "" {
+		return false, errors.New("clientID cannot be empty")
 	}
 
-	// 构建请求URL
-	protocol := "http"
-	if cfg.UseTLS {
-		protocol = "https"
+	cfg := global.GVA_CONFIG.MQTT
+
+	// 使用API配置，如果未配置则使用默认值
+	apiHost := cfg.API.Host
+	if apiHost == "" {
+		apiHost = cfg.Host
 	}
-	url := fmt.Sprintf("%s://%s:%d/api/v5/clients/%s", protocol, cfg.Host, cfg.Port, clientID)
+	apiPort := cfg.API.Port
+	if apiPort == 0 {
+		apiPort = 18083 // 默认EMQX管理API端口
+	}
+
+	url := fmt.Sprintf("http://%s:%d/api/v5/clients/%s", apiHost, apiPort, clientID)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		global.GVA_LOG.Error("创建EMQX API请求失败", zap.Error(err), zap.String("url", url))
-		return false, fmt.Errorf("创建API请求失败: %w", err)
+		return false, fmt.Errorf("failed to create request: %w", err)
 	}
+	req.SetBasicAuth(cfg.API.Username, cfg.API.Password)
 
-	// 添加Basic Auth认证头
-	req.SetBasicAuth(cfg.Username, cfg.Password)
-
-	// 使用可配置超时的HTTP客户端
-	httpClient := &http.Client{
-		Timeout: 5 * time.Second, // 设置合理的超时时间
-	}
-
-	resp, err := httpClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		global.GVA_LOG.Error("调用EMQX API失败", zap.Error(err), zap.String("url", url))
-		return false, fmt.Errorf("调用EMQX API失败: %w", err)
+		return false, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// 分析响应
 	switch resp.StatusCode {
 	case http.StatusOK:
 		// 200 OK: 客户端在线
@@ -1385,14 +1546,14 @@ func (s *MqttService) checkClientOnlineViaAPI(ctx context.Context, clientID stri
 }
 
 // getPairingStateKey generates the Redis key for storing the pairing state HASH of a user.
-func (mqttService *MqttService) getPairingStateKey(userID uint) string {
+func (s *MqttService) getPairingStateKey(userID uint) string {
 	return fmt.Sprintf("pairing:state:%d", userID)
 }
 
 // CheckRoleConflict checks if a role for a given user is already occupied by another client.
 // It returns the existing clientID if a conflict is found, otherwise returns an empty string.
-func (mqttService *MqttService) CheckRoleConflict(userID uint, role string) (string, error) {
-	key := mqttService.getPairingStateKey(userID)
+func (s *MqttService) CheckRoleConflict(userID uint, role string) (string, error) {
+	key := s.getPairingStateKey(userID)
 	existingClientID, err := global.GVA_REDIS.HGet(context.Background(), key, role).Result()
 	if err == redis.Nil {
 		// No conflict found, this is the expected "not found" error.
@@ -1408,34 +1569,60 @@ func (mqttService *MqttService) CheckRoleConflict(userID uint, role string) (str
 
 // RegisterDevice registers a new device for a given role, effectively updating the pairing state.
 // This will overwrite any existing clientID for the same role.
-func (mqttService *MqttService) RegisterDevice(userID uint, role string, clientID string) error {
-	key := mqttService.getPairingStateKey(userID)
+func (s *MqttService) RegisterDevice(userID uint, role string, clientID string) error {
+	key := s.getPairingStateKey(userID)
 	return global.GVA_REDIS.HSet(context.Background(), key, role, clientID).Err()
 }
 
-// DeregisterDevice removes a device from the pairing state.
+// DeregisterDevice 废弃：此方法过于宽泛，容易在错误的业务场景下被调用。
+// 已被 pairing_pool_service 中的 CancelPairing 和 LeavePairingPool 替代，以实现更精确的控制。
 // It uses a Redis transaction to atomically check and delete, ensuring that it only removes the device
 // if the provided clientID matches the one currently stored. This prevents a stale disconnect message
 // from accidentally removing a newly logged-in device.
-func (mqttService *MqttService) DeregisterDevice(userID uint, role string, clientID string) error {
-	key := mqttService.getPairingStateKey(userID)
+func (s *MqttService) DeregisterDevice(userID uint, role string, clientID string) error {
+	key := s.getPairingStateKey(userID)
 	ctx := context.Background()
+
+	// 【可观测性增强】在操作前记录详细的意图日志
+	global.GVA_LOG.Warn("调用了已废弃的 DeregisterDevice 方法，请检查业务逻辑并迁移到新的清理服务",
+		zap.Uint("userID", userID),
+		zap.String("role", role),
+		zap.String("clientID", clientID),
+		zap.String("redisKey", key),
+	)
 
 	// Use WATCH for an optimistic lock to ensure atomicity.
 	return global.GVA_REDIS.Watch(ctx, func(tx *redis.Tx) error {
 		currentClientID, err := tx.HGet(ctx, key, role).Result()
 		if err == redis.Nil {
 			// Role is already empty, nothing to do.
+			global.GVA_LOG.Warn("尝试注销一个不存在或已为空的角色槽位",
+				zap.Uint("userID", userID),
+				zap.String("role", role),
+				zap.String("clientID", clientID),
+			)
 			return nil
 		}
 		if err != nil {
 			return err
 		}
 
+		// 【可观测性增强】记录读取到的当前值
+		global.GVA_LOG.Info("注销操作前检查：从Redis读取到当前角色槽位的ClientID",
+			zap.Uint("userID", userID),
+			zap.String("role", role),
+			zap.String("readClientID", currentClientID),
+			zap.String("requestClientID", clientID),
+		)
+
 		// Only proceed if the clientID from the disconnect event matches the one in Redis.
 		if currentClientID == clientID {
 			// The key hasn't been changed by another process, so we can safely delete it.
 			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				global.GVA_LOG.Info("ClientID匹配，执行HDEL从配对状态中移除设备",
+					zap.String("redisKey", key),
+					zap.String("field", role),
+				)
 				pipe.HDel(ctx, key, role)
 				return nil
 			})
@@ -1444,12 +1631,18 @@ func (mqttService *MqttService) DeregisterDevice(userID uint, role string, clien
 
 		// If clientIDs do not match, it means a new client has already registered for this role.
 		// We do nothing to avoid incorrectly removing the new session.
+		global.GVA_LOG.Warn("注销操作被中止：请求的ClientID与Redis中存储的不匹配，疑似新会话已建立",
+			zap.Uint("userID", userID),
+			zap.String("role", role),
+			zap.String("requestClientID", clientID),
+			zap.String("existingClientID", currentClientID),
+		)
 		return nil
 	}, key)
 }
 
 // FindPeerForPairing finds an available peer for a given user and their current role.
-func (mqttService *MqttService) FindPeerForPairing(userID uint, currentRole string) (string, error) {
+func (s *MqttService) FindPeerForPairing(userID uint, currentRole string) (string, error) {
 	var targetRole string
 	if currentRole == "transmitter" {
 		targetRole = "receiver"
@@ -1459,7 +1652,7 @@ func (mqttService *MqttService) FindPeerForPairing(userID uint, currentRole stri
 		return "", errors.New("invalid role for pairing")
 	}
 
-	key := mqttService.getPairingStateKey(userID)
+	key := s.getPairingStateKey(userID)
 	peerClientID, err := global.GVA_REDIS.HGet(context.Background(), key, targetRole).Result()
 	if err == redis.Nil {
 		// No peer found for the target role. This is not an error, just no one is available.
@@ -1469,36 +1662,24 @@ func (mqttService *MqttService) FindPeerForPairing(userID uint, currentRole stri
 }
 
 // Publish sends a message to a specific MQTT topic.
-// This is a generic publish method that can be used by other services.
-func (mqttService *MqttService) Publish(topic string, qos byte, retained bool, payload interface{}) error {
-	s := GetMQTTService() // Get the singleton instance
-	if !s.IsConnected() {
-		return errors.New("mqtt client is not connected")
+func (s *MqttService) Publish(topic string, qos byte, retained bool, payload interface{}) error {
+	bytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
 	}
-
-	token := s.client.Publish(topic, qos, retained, payload)
-	// We can wait for a short period to see if the publish was successful.
-	// This is optional and depends on whether we need to ensure the message is sent.
-	if token.WaitTimeout(2*time.Second) && token.Error() != nil {
-		global.GVA_LOG.Error("Failed to publish MQTT message", zap.String("topic", topic), zap.Error(token.Error()))
-		return token.Error()
-	}
-	return nil
+	token := s.client.Publish(topic, qos, retained, bytes)
+	return token.Error()
 }
 
-// getRoleFromClientID extracts the role from a clientID string.
-// Example: "admin-transmitter-007" -> "transmitter"
 func getRoleFromClientID(clientID string) (string, error) {
 	parts := strings.Split(clientID, "-")
 	if len(parts) < 2 {
-		return "", errors.New("invalid clientID format: not enough parts")
+		return "", fmt.Errorf("invalid clientID format: %s", clientID)
 	}
-	// The role is expected to be the second-to-last part.
-	// This is more robust than assuming a fixed position.
+	// The role is typically the second-to-last part, e.g., "admin-transmitter-001"
 	role := parts[len(parts)-2]
-	if role == RoleReceiver || role == RoleTransmitter {
-		return role, nil
+	if role != RoleTransmitter && role != RoleReceiver {
+		return "", fmt.Errorf("role '%s' parsed from clientID is invalid", role)
 	}
-
-	return "", fmt.Errorf("unknown role '%s' in clientID", role)
+	return role, nil
 }

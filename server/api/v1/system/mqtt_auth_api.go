@@ -206,14 +206,7 @@ func (m *MqttAuthApi) authorizeMqttAction(claims *request.MQTTClaims, topic, act
 		}
 	}
 
-	// 规则4: 配对业务主题 (新增)
-	// 格式: nfc_relay/pairing/...
-	const pairingPrefix = "nfc_relay/pairing/"
-	if strings.HasPrefix(topic, pairingPrefix) {
-		return m.checkPairingTopicPermissions(myClientID, topic, action)
-	}
-
-	// 规则5: admin角色的特殊权限 (原规则4)
+	// 规则4: admin角色的特殊权限 (优先级最高，在所有主题检查之前)
 	if myRole == "admin" {
 		// Admin可以订阅所有nfc_relay相关的主题
 		if action == "subscribe" && (strings.HasPrefix(topic, "nfc_relay/")) {
@@ -225,7 +218,71 @@ func (m *MqttAuthApi) authorizeMqttAction(claims *request.MQTTClaims, topic, act
 		}
 	}
 
+	// 规则5: 配对业务主题 (新增)
+	// 格式: nfc_relay/pairing/...
+	const pairingPrefix = "nfc_relay/pairing/"
+	if strings.HasPrefix(topic, pairingPrefix) {
+		return m.checkPairingTopicPermissions(myClientID, topic, action)
+	}
+
+	// 规则6: 用户级通知主题 (企业级Bug修复)
+	// 格式: nfc_relay/user/{username}/notifications
+	const userPrefix = "nfc_relay/user/"
+	if strings.HasPrefix(topic, userPrefix) {
+		return m.checkUserTopicPermissions(myClientID, topic, action)
+	}
+
 	// 默认拒绝所有其他情况
+	return false
+}
+
+// checkUserTopicPermissions 检查用户级主题的权限 (企业级Bug修复新增方法)
+// 格式: nfc_relay/user/{username}/notifications
+func (m *MqttAuthApi) checkUserTopicPermissions(clientID, topic, action string) bool {
+	// 用户级通知主题: nfc_relay/user/{username}/notifications
+	const userNotificationsPrefix = "nfc_relay/user/"
+	if strings.HasPrefix(topic, userNotificationsPrefix) {
+		trimmedTopic := strings.TrimPrefix(topic, userNotificationsPrefix)
+		parts := strings.Split(trimmedTopic, "/")
+
+		if len(parts) == 2 && parts[1] == "notifications" {
+			topicUsername := parts[0]
+			// 从ClientID中提取用户名进行比较
+			if clientUsername := m.extractUsernameFromClientID(clientID); clientUsername != "" {
+				if action == "subscribe" && topicUsername == clientUsername {
+					// 只在全局Logger初始化时记录日志，避免测试时空指针异常
+					if global.GVA_LOG != nil {
+						global.GVA_LOG.Debug("用户级通知主题权限检查通过",
+							zap.String("clientID", clientID),
+							zap.String("topicUsername", topicUsername),
+							zap.String("clientUsername", clientUsername),
+							zap.String("topic", topic))
+					}
+					return true
+				}
+				// 只在全局Logger初始化时记录日志，避免测试时空指针异常
+				if global.GVA_LOG != nil {
+					global.GVA_LOG.Debug("用户级通知主题权限检查失败",
+						zap.String("clientID", clientID),
+						zap.String("topicUsername", topicUsername),
+						zap.String("clientUsername", clientUsername),
+						zap.String("action", action),
+						zap.String("topic", topic))
+				}
+			} else {
+				// 只在全局Logger初始化时记录日志，避免测试时空指针异常
+				if global.GVA_LOG != nil {
+					global.GVA_LOG.Warn("无法从ClientID中提取用户名",
+						zap.String("clientID", clientID),
+						zap.String("topic", topic))
+				}
+			}
+		}
+		// 不允许发布到用户通知主题
+		return false
+	}
+
+	// 如果不是用户级通知主题，默认拒绝
 	return false
 }
 
@@ -243,25 +300,8 @@ func (m *MqttAuthApi) checkPairingTopicPermissions(clientID, topic, action strin
 		return false
 	}
 
-	// 【方案二：新增用户级通知主题】nfc_relay/user/{username}/notifications
-	// 这允许同一用户的不同ClientID都能接收到配对通知
-	const userNotificationsPrefix = "nfc_relay/user/"
-	if strings.HasPrefix(topic, userNotificationsPrefix) {
-		trimmedTopic := strings.TrimPrefix(topic, userNotificationsPrefix)
-		parts := strings.Split(trimmedTopic, "/")
-
-		if len(parts) == 2 && parts[1] == "notifications" {
-			topicUsername := parts[0]
-			// 从ClientID中提取用户名进行比较
-			if clientUsername := m.extractUsernameFromClientID(clientID); clientUsername != "" {
-				if action == "subscribe" && topicUsername == clientUsername {
-					return true
-				}
-			}
-		}
-		// 不允许发布到用户通知主题
-		return false
-	}
+	// 【方案二：用户级通知主题现在由专门的checkUserTopicPermissions处理】
+	// 这里不再处理nfc_relay/user/主题，避免重复处理
 
 	// 配对状态更新主题: nfc_relay/pairing/status_updates/{clientID}
 	const statusUpdatesPrefix = "nfc_relay/pairing/status_updates/"

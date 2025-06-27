@@ -48,8 +48,8 @@ type NFCTransactionService struct{}
 func (s *NFCTransactionService) RegisterForPairing(ctx context.Context, req *request.RegisterForPairingRequest, userID uuid.UUID, force bool, clientID string) (*PairingResult, error) {
 	// 获取用户缓存服务和配对池服务
 	userCacheService := commonService.UserCacheServiceApp
-	pairingPoolService := PairingPoolServiceApp
-	mqttService := GetMQTTService()
+	pairingPoolService := ServiceGroupApp.PairingPoolService()
+	mqttService := ServiceGroupApp.MqttService()
 
 	userIDStr := userID.String()
 
@@ -86,11 +86,8 @@ func (s *NFCTransactionService) RegisterForPairing(ctx context.Context, req *req
 		}
 
 		// 清理旧的配对池记录
-		_ = pairingPoolService.LeavePairingPool(userIDStr, req.Role)
-
-		// 清理旧的MQTT设备注册状态
-		if existingStatus.ClientID != "" {
-			_ = mqttService.DeregisterDevice(userIDUint, req.Role, existingStatus.ClientID)
+		if err := pairingPoolService.LeavePairingPool(userIDStr, req.Role); err != nil {
+			global.GVA_LOG.Warn("清理旧的等待中会话失败", zap.Error(err), zap.String("userUUID", userIDStr))
 		}
 	}
 
@@ -671,7 +668,7 @@ func (s *NFCTransactionService) notifyTransactionCreated(ctx context.Context, tr
 	})
 
 	// MQTT通知 - 通知传卡端
-	mqttService := GetMQTTService()
+	mqttService := ServiceGroupApp.MqttService()
 	if err := mqttService.PublishTransactionCreated(ctx, transaction); err != nil {
 		global.GVA_LOG.Error("MQTT通知传卡端失败",
 			zap.String("transactionID", transaction.TransactionID),
@@ -703,7 +700,7 @@ func (s *NFCTransactionService) notifyTransactionStatusUpdate(ctx context.Contex
 	})
 
 	// MQTT通知 - 通知相关客户端状态变更
-	mqttService := GetMQTTService()
+	mqttService := ServiceGroupApp.MqttService()
 
 	// 通知传卡端
 	if err := mqttService.PublishTransactionStatusUpdate(ctx,
@@ -1114,7 +1111,7 @@ func (s *NFCTransactionService) SendAPDU(ctx context.Context, req *request.SendA
 	}
 
 	// 通过MQTT发送到客户端
-	mqttService := GetMQTTService()
+	mqttService := ServiceGroupApp.MqttService()
 	mqttMsg := APDUMessage{
 		TransactionID:  req.TransactionID,
 		SequenceNumber: req.SequenceNumber,
@@ -1691,7 +1688,7 @@ func (nfcTransactionService *NFCTransactionService) JoinTransactionSession(ctx c
 
 	// 12. 如果双方都已连接，通知MQTT服务
 	if transaction.Status == nfc_relay.StatusActive {
-		mqttService := GetMQTTService()
+		mqttService := ServiceGroupApp.MqttService()
 		if err := mqttService.PublishTransactionSessionActive(ctx, &transaction); err != nil {
 			global.GVA_LOG.Warn("发布交易会话激活通知失败", zap.Error(err))
 		}
@@ -1903,168 +1900,102 @@ func (s *NFCTransactionService) buildConflictResponse(ctx context.Context, confl
 
 // AttemptPairing 尝试启动配对流程
 func (s *NFCTransactionService) AttemptPairing(ctx context.Context, userID uint, userUUID string, role string, peerClientID string) error {
-	// 这里可以实现具体的配对逻辑
-	// 例如：创建交易记录、发送MQTT消息等
-
-	global.GVA_LOG.Info("配对流程启动",
-		zap.Uint("userID", userID),
-		zap.String("userUUID", userUUID),
-		zap.String("role", role),
-		zap.String("peerClientID", peerClientID))
-
-	// 实际的配对逻辑实现
-	// TODO: 根据具体业务需求实现
-
-	return nil
+	// This is a simplified version for demonstration. A full implementation
+	// would involve more complex logic, possibly using the PairingPoolService.
+	pairingPoolService := ServiceGroupApp.PairingPoolService()
+	// The actual pairing logic is now encapsulated within the pairing pool service.
+	// This function might be deprecated or adapted.
+	_, err := pairingPoolService.JoinPairingPool(userUUID, role, "", nil)
+	return err
 }
 
 // CancelPairing 取消配对请求
 func (s *NFCTransactionService) CancelPairing(ctx context.Context, userID uuid.UUID, role string) error {
 	userIDStr := userID.String()
-
-	// 1. 验证用户身份
-	userIDUint, err := commonService.UserCacheServiceApp.GetUserIDByUUID(userIDStr)
+	_, err := commonService.UserCacheServiceApp.GetUserIDByUUID(userIDStr)
 	if err != nil {
-		global.GVA_LOG.Error("取消配对时验证用户身份失败", zap.Error(err), zap.String("userUUID", userIDStr))
-		return fmt.Errorf("用户身份验证失败: %w", err)
+		return fmt.Errorf("无法获取用户ID: %w", err)
 	}
 
-	// 【重要修复】先获取当前配对状态，以便获取clientID进行完整清理
-	var currentClientID string
-	if role != "" {
-		// 获取特定角色的clientID
-		stateKey := fmt.Sprintf("pairing:state:%d", userIDUint)
-		if cachedClientID, err := global.GVA_REDIS.HGet(ctx, stateKey, role).Result(); err == nil {
-			currentClientID = cachedClientID
-		}
-	}
-
-	// 2. 从配对池中移除
-	pairingPoolService := PairingPoolServiceApp
+	// 从新配对池中移除
+	pairingPoolService := ServiceGroupApp.PairingPoolService()
 	if err := pairingPoolService.CancelPairing(userIDStr, role); err != nil {
 		global.GVA_LOG.Error("从配对池移除失败", zap.Error(err), zap.String("userUUID", userIDStr), zap.String("role", role))
 		return fmt.Errorf("取消配对失败: %w", err)
 	}
 
-	// 3. 同时清理旧架构的状态（保持兼容性）
-	mqttService := GetMQTTService()
-	if err := mqttService.DeregisterDevice(userIDUint, role, ""); err != nil {
-		global.GVA_LOG.Warn("清理旧架构状态失败", zap.Error(err), zap.Uint("userID", userIDUint), zap.String("role", role))
-		// 不返回错误，因为新架构已经成功清理
-	}
-
-	// 【新增】4. 清理用户缓存（修复核心问题）
-	if err := commonService.UserCacheServiceApp.InvalidateUserCache(userIDStr); err != nil {
-		global.GVA_LOG.Warn("清理用户缓存失败", zap.Error(err), zap.String("userUUID", userIDStr))
-		// 记录警告但不影响主流程
-	}
-
-	// 【新增】5. 清理客户端相关缓存（如果有clientID）
-	if currentClientID != "" {
-		s.cleanupClientRelatedCache(ctx, currentClientID, userIDUint, role)
-	}
-
-	global.GVA_LOG.Info("取消配对成功",
-		zap.String("userUUID", userIDStr),
-		zap.Uint("userID", userIDUint),
-		zap.String("role", role),
-		zap.String("clientID", currentClientID))
-
-	// 【新增】6. 验证清理完整性（用于监控和故障排查）
-	if currentClientID != "" {
-		// 异步验证，不影响主流程性能
-		go func() {
-			time.Sleep(1 * time.Second) // 稍等确保所有清理操作完成
-			report := commonService.UserCacheServiceApp.VerifyCleanupCompleteness(
-				userIDStr, userIDUint, currentClientID, role)
-
-			if !report.IsComplete {
-				// 发现清理不完整，记录告警
-				global.GVA_LOG.Error("检测到缓存清理不完整",
-					zap.String("userUUID", userIDStr),
-					zap.Uint("userID", userIDUint),
-					zap.String("clientID", currentClientID),
-					zap.String("role", role),
-					zap.Int("issueCount", report.IssueCount),
-					zap.Strings("issues", report.Issues))
-
-				// 这里可以添加告警通知机制
-				// alertManager.SendAlert("cache_cleanup_incomplete", report)
-			}
-		}()
-	}
+	// 【重构移除】不再需要调用旧的、宽泛的清理方法。
+	// pairingPoolService.CancelPairing 已经处理了所有需要的清理逻辑。
+	// mqttService := ServiceGroupApp.MqttService()
+	// if err := mqttService.DeregisterDevice(userIDUint, role, ""); err != nil {
+	// 	global.GVA_LOG.Warn("清理旧架构状态失败", zap.Error(err), zap.Uint("userID", userIDUint), zap.String("role", role))
+	// 	// Do not return error, just log it
+	// }
 
 	return nil
 }
 
-// 【新增】cleanupClientRelatedCache 清理客户端相关的缓存
-// 这个方法整合了多种缓存的清理逻辑，确保一致性
+// cleanupClientRelatedCache is a comprehensive cleanup utility for all Redis keys associated with a clientID.
+// It is designed to be called when a client disconnects or a session is superseded.
+// It does not remove waiting entries from the new PairingPoolService.
 func (s *NFCTransactionService) cleanupClientRelatedCache(ctx context.Context, clientID string, userID uint, role string) {
-	if clientID == "" {
+	if role != "transmitter" && role != "receiver" {
 		return
 	}
 
-	// 使用Pipeline批量执行清理操作，提高性能
+	// 【重构移除】DeregisterDevice 已废弃，相关逻辑由 PairingPoolService 精确处理
+	// mqttService := ServiceGroupApp.MqttService()
+	// if err := mqttService.DeregisterDevice(userID, role, clientID); err != nil {
+	// 	global.GVA_LOG.Warn("Failed to deregister device from MQTT service cache",
+	// 		zap.Error(err),
+	// 		zap.Uint("userID", userID),
+	// 		zap.String("role", role),
+	// 		zap.String("clientID", clientID))
+	// }
+
+	// Use Pipeline for bulk cleanup for performance
 	pipe := global.GVA_REDIS.TxPipeline()
 
-	// 清理客户端心跳信息
+	// Cleanup heartbeat info
 	heartbeatKey := fmt.Sprintf("client_heartbeat:%s", clientID)
 	pipe.Del(ctx, heartbeatKey)
 
-	// 清理客户端状态信息
+	// Cleanup status info
 	statusKey := fmt.Sprintf("client_status:%s", clientID)
 	pipe.Del(ctx, statusKey)
 
-	// 从在线客户端集合中移除
-	if role != "" {
-		onlineRoleKey := fmt.Sprintf("clients_online:%s", role)
-		pipe.SRem(ctx, onlineRoleKey, clientID)
-	}
+	// Remove from online client sets
+	onlineRoleKey := fmt.Sprintf("clients_online:%s", role)
+	pipe.SRem(ctx, onlineRoleKey, clientID)
 	pipe.SRem(ctx, "clients_online_all", clientID)
 
-	// 清理用户角色信息中对应的客户端ID
-	userRoleKey := fmt.Sprintf("user_roles:%d", userID)
-	if role == "transmitter" {
-		pipe.HDel(ctx, userRoleKey, "transmitter_client_id", "transmitter_set_at_utc")
-	} else if role == "receiver" {
-		pipe.HDel(ctx, userRoleKey, "receiver_client_id", "receiver_set_at_utc")
-	}
-
-	// 执行批量清理
+	// Execute the pipeline
 	if _, err := pipe.Exec(ctx); err != nil {
-		global.GVA_LOG.Error("批量清理客户端相关缓存失败",
+		global.GVA_LOG.Error("Failed to execute pipeline for client cache cleanup",
 			zap.Error(err),
-			zap.String("clientID", clientID),
-			zap.Uint("userID", userID),
-			zap.String("role", role))
-	} else {
-		global.GVA_LOG.Info("成功清理客户端相关缓存",
-			zap.String("clientID", clientID),
-			zap.Uint("userID", userID),
-			zap.String("role", role))
+			zap.String("clientID", clientID))
 	}
-
-	// 复用现有的MQTT清理机制
-	mqttService := GetMQTTService()
-	mqttService.cleanupClientRedisData(ctx, clientID)
 }
 
 // GetPairingStatus 获取配对状态
-func (s *NFCTransactionService) GetPairingStatus(ctx context.Context, userID uuid.UUID) (*PairingStatus, error) {
+func (s *NFCTransactionService) GetPairingStatus(ctx context.Context, userID uuid.UUID, role string) (*PairingStatus, error) {
 	userIDStr := userID.String()
 
-	// 使用配对池服务获取状态
-	pairingPoolService := PairingPoolServiceApp
-	status, err := pairingPoolService.GetPairingStatus(userIDStr)
+	pairingPoolService := ServiceGroupApp.PairingPoolService()
+	status, err := pairingPoolService.GetUserPairingStatus(userIDStr, role)
 	if err != nil {
-		global.GVA_LOG.Error("获取配对状态失败", zap.Error(err), zap.String("userUUID", userIDStr))
-		return nil, fmt.Errorf("获取配对状态失败: %w", err)
+		global.GVA_LOG.Error("获取用户配对状态失败", zap.Error(err), zap.String("userUUID", userIDStr), zap.String("role", role))
+		return nil, fmt.Errorf("获取用户配对状态失败: %w", err)
 	}
 
-	global.GVA_LOG.Debug("获取配对状态成功",
-		zap.String("userUUID", userIDStr),
-		zap.String("status", status.Status),
-		zap.String("role", status.Role))
+	if status != nil {
+		global.GVA_LOG.Debug("获取用户配对状态成功",
+			zap.String("userUUID", userIDStr),
+			zap.String("status", status.Status),
+			zap.String("role", status.Role))
+	} else {
+		global.GVA_LOG.Debug("用户无活跃配对状态", zap.String("userUUID", userIDStr), zap.String("role", role))
+	}
 
 	return status, nil
 }
